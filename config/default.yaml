@@ -34,8 +34,8 @@ backtest:
   costs:
     spread_pips:
       XAUUSD: 0.20
-      EURUSD: 0.8
-      GBPUSD: 1.0
+      EURUSD: 0.00008
+      GBPUSD: 0.00010
       US30: 2.0
       NAS100: 1.5
       BRENT: 0.03

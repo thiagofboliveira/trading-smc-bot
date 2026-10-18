@@ -15,7 +15,7 @@ def _lifetime(
     close: np.ndarray,
     index: pd.DatetimeIndex,
     close_time: np.ndarray,
-    created_at,
+    created_at: pd.Timestamp,
     zone_low: float,
     zone_high: float,
     origin_long: bool,
@@ -26,6 +26,8 @@ def _lifetime(
     Fecha além do lado de origem => "invalidated"; senão "mitigated". Sem expiração por idade.
     """
     start = int(index.searchsorted(created_at, side="left"))
+    if start >= len(index):
+        return None, None
     if origin_long:
         touched = high[start:] >= zone_low
         beyond = close[start:] > zone_high
@@ -38,6 +40,46 @@ def _lifetime(
     first = int(hits[0])
     reason = "invalidated" if beyond[first] else "mitigated"
     return pd.Timestamp(close_time[start + first]), reason
+
+
+def _index_chochs(events: list[StructureEvent]) -> dict[str, np.ndarray]:
+    by_dir: dict[str, list[pd.Timestamp]] = {"up": [], "down": []}
+    for e in events:
+        if e.kind == "CHoCH" and e.direction in by_dir:
+            by_dir[e.direction].append(e.time)
+    return {d: np.array(times, dtype=object) for d, times in by_dir.items()}
+
+
+def _index_sweeps(sweeps: list[Sweep]) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    by_side: dict[str, list[Sweep]] = {"high": [], "low": []}
+    for s in sweeps:
+        if s.side in by_side:
+            by_side[s.side].append(s)
+    result = {}
+    for side, items in by_side.items():
+        times = np.array([s.sweep_time for s in items], dtype=object)
+        confirms = np.array([s.confirmed_at for s in items], dtype=object)
+        result[side] = (times, confirms)
+    return result
+
+
+def _has_sweep(
+    sweep_index: dict[str, tuple[np.ndarray, np.ndarray]],
+    side: str,
+    origin_created_at: pd.Timestamp,
+    breaker_created_at: pd.Timestamp,
+) -> bool:
+    times, confirms = sweep_index[side]
+    if times.size == 0:
+        return False
+    idx = int(np.searchsorted(times, origin_created_at, side="left"))
+    n = times.size
+    for i in range(idx, n):
+        if times[i] > breaker_created_at:
+            break
+        if confirms[i] <= breaker_created_at:
+            return True
+    return False
 
 
 def build_breakers(
@@ -71,31 +113,35 @@ def build_breakers(
     close = candles["close"].to_numpy()
     n = len(candles)
 
+    fvg_lookup = {(f.direction, f.start_time): f for f in fvgs}
+    choch_index = _index_chochs(events)
+    sweep_index = _index_sweeps(sweeps)
+
     breakers: list[Zone] = []
     for origin in zones:
         long = origin.direction == "long"
-        # sign > 0: origem de compra rompida para baixo; < 0: origem de venda para cima.
-        sign = 1 if long else -1
-        far = origin.low if long else origin.high
         against = "down" if long else "up"
         direction = "short" if long else "long"
 
-        found = np.flatnonzero(close_time == origin.created_at)
-        if found.size == 0:
+        pos = int(np.searchsorted(close_time, origin.created_at))
+        if pos >= n or close_time[pos] != origin.created_at:
             continue
-        bos_pos = int(found[0])
+        bos_pos = pos
+
         stop = n if cfg.breaker_max_age is None else min(n, bos_pos + cfg.breaker_max_age + 1)
-        j = next((i for i in range(bos_pos + 1, stop) if sign * (far - close[i]) > 0), None)
-        if j is None:
+        if bos_pos + 1 >= stop:
             continue
+        sub_close = close[bos_pos + 1 : stop]
+        cond = (sub_close < origin.low) if long else (sub_close > origin.high)
+        hits = np.flatnonzero(cond)
+        if hits.size == 0:
+            continue
+        j = bos_pos + 1 + int(hits[0])
 
         if cfg.breaker_require_imbalance:
             if j + 1 >= n:
                 continue
-            fvg = next(
-                (f for f in fvgs if f.direction == against and f.start_time == index[j - 1]),
-                None,
-            )
+            fvg = fvg_lookup.get((against, index[j - 1]))
             if fvg is None:
                 continue
             created_at = fvg.formed_at
@@ -104,18 +150,21 @@ def build_breakers(
             created_at = close_time[j]
             last = j
 
-        if cfg.breaker_require_choch and not any(
-            e.kind == "CHoCH" and e.direction == against and origin.created_at < e.time <= created_at
-            for e in events
-        ):
-            continue
+        if cfg.breaker_require_choch:
+            against_times = choch_index[against]
+            if against_times.size == 0:
+                continue
+            c_idx = int(np.searchsorted(against_times, origin.created_at, side="right"))
+            if c_idx >= against_times.size or against_times[c_idx] > created_at:
+                continue
 
         c = index.get_loc(origin.candle_time)
         if long:
-            range_high, range_low = high[c : j + 1].max(), low[j : last + 1].min()
+            range_high = float(high[c : j + 1].max())
+            range_low = float(low[j : last + 1].min())
         else:
-            range_low, range_high = low[c : j + 1].min(), high[j : last + 1].max()
-        range_low, range_high = float(range_low), float(range_high)
+            range_low = float(low[c : j + 1].min())
+            range_high = float(high[j : last + 1].max())
 
         sweep_side = "high" if long else "low"
         end_time, end_reason = _lifetime(
@@ -129,12 +178,7 @@ def build_breakers(
             origin.high,
             long,
         )
-        swept = any(
-            s.side == sweep_side
-            and s.sweep_time >= origin.created_at
-            and s.confirmed_at <= created_at
-            for s in sweeps
-        )
+        swept = _has_sweep(sweep_index, sweep_side, origin.created_at, created_at)
         breakers.append(
             Zone(
                 direction=direction,

@@ -1,5 +1,6 @@
 """Equivalência dos detectores de `src/` com o oráculo congelado `reference_impl`."""
 
+import copy
 from functools import lru_cache
 from pathlib import Path
 
@@ -214,3 +215,54 @@ def test_real_data_equivalent():
             breakers = ref_build_breakers(c, cands, events, fvgs, sweeps, cfg)
             assert len(breakers) > 0
             assert build_breakers(c, cands, events, fvgs, sweeps, cfg) == breakers
+
+
+@pytest.mark.parametrize("gen,seed,n,k", CASES)
+@pytest.mark.parametrize("cfg_name", BREAKER_CFGS)
+def test_pipeline_zones_breakers_chained_equivalent(gen, seed, n, k, cfg_name):
+    """Cadeia src_build_zones -> src_build_breakers igual à cadeia ref_."""
+    c = make(gen, seed, n)
+    _, events, fvgs, sweeps = pipeline(c, k)
+    open_cfg = ZoneConfig(require_discount=False, require_imbalance=False)
+    b_cfg = ZoneConfig(**BREAKER_CFGS[cfg_name])
+
+    src_cands = build_zones(c, events, fvgs, sweeps, open_cfg)
+    src_breakers = build_breakers(c, src_cands, events, fvgs, sweeps, b_cfg)
+
+    ref_cands = ref_build_zones(c, events, fvgs, sweeps, open_cfg)
+    ref_breakers = ref_build_breakers(c, ref_cands, events, fvgs, sweeps, b_cfg)
+
+    assert src_cands == ref_cands
+    assert src_breakers == ref_breakers
+
+
+def test_inputs_not_mutated():
+    """Garante que build_zones e build_breakers não mutam seus argumentos."""
+    c = make("walk", 1, 400)
+    _, events, fvgs, sweeps = pipeline(c, 2)
+    cfg = ZoneConfig()
+    open_cfg = ZoneConfig(require_discount=False, require_imbalance=False)
+
+    c_copy = c.copy(deep=True)
+    events_copy = copy.deepcopy(events)
+    fvgs_copy = copy.deepcopy(fvgs)
+    sweeps_copy = copy.deepcopy(sweeps)
+
+    zones = build_zones(c, events, fvgs, sweeps, open_cfg)
+
+    pd.testing.assert_frame_equal(c, c_copy)
+    assert events == events_copy
+    assert fvgs == fvgs_copy
+    assert sweeps == sweeps_copy
+
+    zones_copy = copy.deepcopy(zones)
+    breakers = build_breakers(c, zones, events, fvgs, sweeps, cfg)
+
+    pd.testing.assert_frame_equal(c, c_copy)
+    assert zones == zones_copy
+    assert events == events_copy
+    assert fvgs == fvgs_copy
+    assert sweeps == sweeps_copy
+    assert len(zones) > 0
+    assert len(breakers) > 0
+

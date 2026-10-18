@@ -42,12 +42,17 @@ def analyze(candles: pd.DataFrame, k: int, zones_cfg: ZoneConfig) -> Analysis:
     breakers: list[Zone] = []
     if zones_cfg.breakers_enabled:
         # A origem do breaker independe dos filtros de entrada das zonas.
-        candidates = build_zones(
-            candles,
-            events,
-            fvgs,
-            sweeps,
-            zones_cfg.model_copy(update={"require_discount": False, "require_imbalance": False}),
-        )
+        if zones_cfg.require_discount or zones_cfg.require_imbalance:
+            candidates = build_zones(
+                candles,
+                events,
+                fvgs,
+                sweeps,
+                zones_cfg.model_copy(
+                    update={"require_discount": False, "require_imbalance": False}
+                ),
+            )
+        else:
+            candidates = zones
         breakers = build_breakers(candles, candidates, events, fvgs, sweeps, zones_cfg)
     return Analysis(pivots, events, fvgs, sweeps, zones, breakers)

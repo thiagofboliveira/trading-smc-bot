@@ -20,3 +20,7 @@ zones:
   require_imbalance: false
   use_body: false
   fvg_min_size: 0.0
+  breakers_enabled: true
+  breaker_require_imbalance: true
+  breaker_require_choch: false
+  breaker_max_age: 96

@@ -1,18 +1,26 @@
-from helpers import BREAKER_TAIL, BREAKER_TAIL_NO_FVG, SERIE_A_ROWS, candles_from_ohlc, mirror
+import pandas as pd
+from helpers import (
+    BREAKER_TAIL,
+    BREAKER_TAIL_DEEP,
+    BREAKER_TAIL_NO_FVG,
+    SERIE_A_ROWS,
+    candles_from_ohlc,
+    mirror,
+)
 
 from smc_trader.config import ZoneConfig
 from smc_trader.structure.market_structure import detect_structure
 from smc_trader.structure.pivots import find_pivots
 from smc_trader.zones.breaker import build_breakers
 from smc_trader.zones.fvg import find_fvgs
-from smc_trader.zones.liquidity import find_sweeps
+from smc_trader.zones.liquidity import Sweep, find_sweeps
 from smc_trader.zones.orderblock import build_zones
 
 ROWS = SERIE_A_ROWS[0:6] + BREAKER_TAIL
 NO_FVG_ROWS = SERIE_A_ROWS[0:6] + BREAKER_TAIL_NO_FVG
 
 
-def _run(candles, cfg=None, k=1, events=None):
+def _run(candles, cfg=None, k=1, events=None, sweeps_override=None):
     cfg = cfg or ZoneConfig()
     pivots = find_pivots(candles, k)
     real_events = detect_structure(candles, pivots)
@@ -26,7 +34,8 @@ def _run(candles, cfg=None, k=1, events=None):
         cfg.model_copy(update={"require_discount": False, "require_imbalance": False}),
     )
     used_events = real_events if events is None else events
-    return build_breakers(candles, candidates, used_events, fvgs, sweeps, cfg)
+    used_sweeps = sweeps if sweeps_override is None else sweeps_override
+    return build_breakers(candles, candidates, used_events, fvgs, used_sweeps, cfg)
 
 
 def breakers_from(rows, cfg=None, k=1, events=None):
@@ -65,6 +74,8 @@ def test_mirrored_failed_short_ob_becomes_long_breaker():
     assert b.range_high == 91.0
     assert b.candle_time == c.index[3]
     assert b.created_at == c["close_time"].iloc[8]
+    assert b.swept_liquidity is False
+    assert b.in_discount is False
 
 
 def test_no_imbalance_no_breaker():
@@ -90,6 +101,9 @@ def test_close_exactly_on_limit_is_not_a_break():
 
 def test_max_age():
     assert breakers_from(ROWS, ZoneConfig(breaker_max_age=1)) == []
+    far = SERIE_A_ROWS[0:6] + [(13.2, 14.0, 12.5, 12.8)] * 3 + BREAKER_TAIL[1:]
+    assert len(breakers_from(far, ZoneConfig(breaker_max_age=None))) == 1
+    assert breakers_from(far, ZoneConfig(breaker_max_age=2)) == []
     assert len(breakers_from(ROWS, ZoneConfig(breaker_max_age=2))) == 1
     assert len(breakers_from(ROWS, ZoneConfig(breaker_max_age=None))) == 1
 
@@ -162,3 +176,72 @@ def test_lifetime_without_imbalance_starts_at_candle_j_close():
     assert b.created_at == c["close_time"].iloc[7]
     assert b.end_reason == "invalidated"
     assert b.end_time == c["close_time"].iloc[8]
+
+
+def _sweep(side, sweep_time, confirmed_at):
+    return Sweep(
+        side=side,
+        pivot_time=sweep_time,
+        pivot_price=14.0,
+        sweep_time=sweep_time,
+        confirmed_at=confirmed_at,
+        extreme=14.5,
+    )
+
+
+def _swept(sweep, rows=ROWS, flip=False):
+    c = candles_from_ohlc(rows)
+    if flip:
+        c = mirror(c)
+    (b,) = _run(c, sweeps_override=[sweep])
+    return b.swept_liquidity
+
+
+def test_swept_liquidity_window_boundaries():
+    c = candles_from_ohlc(ROWS)
+    idx, ct = c.index, c["close_time"]
+    step = pd.Timedelta(minutes=15)
+    # sweep_time == origin.created_at (abertura do candle 6), confirmado antes da criação
+    assert _swept(_sweep("high", idx[6], ct.iloc[7])) is True
+    # candle do BOS abre antes de origin.created_at
+    assert _swept(_sweep("high", idx[5], ct.iloc[5])) is False
+    # confirmed_at == created_at conta; um candle depois não
+    assert _swept(_sweep("high", idx[7], ct.iloc[8])) is True
+    assert _swept(_sweep("high", idx[7], ct.iloc[8] + step)) is False
+    # lado errado
+    assert _swept(_sweep("low", idx[6], ct.iloc[7])) is False
+
+
+def test_swept_liquidity_mirrored_long_breaker():
+    c = candles_from_ohlc(ROWS)
+    assert _swept(_sweep("low", c.index[6], c["close_time"].iloc[7]), flip=True) is True
+
+
+def test_in_discount_positive_with_deep_failure_leg():
+    rows = SERIE_A_ROWS[0:6] + BREAKER_TAIL_DEEP
+    (b,) = breakers_from(rows)
+    assert b.direction == "short"
+    assert b.range_low == 7.0
+    assert b.range_high == 14.0
+    assert b.in_discount is True
+
+
+def test_touch_equality_mitigates():
+    rows = _with_candle_9((9.2, 10.0, 9.1, 9.8))
+    c = candles_from_ohlc(rows)
+    (b,) = breakers_from(rows)
+    assert b.end_reason == "mitigated"
+    assert b.end_time == c["close_time"].iloc[9]
+
+
+def test_close_equal_to_origin_side_is_not_invalidation():
+    (b,) = breakers_from(_with_candle_9((9.2, 12.0, 9.1, 12.0)))
+    assert b.end_reason == "mitigated"
+
+
+def test_mirrored_invalidated():
+    c = mirror(candles_from_ohlc(_with_candle_9((9.2, 12.6, 9.1, 12.4))))
+    (b,) = _run(c)
+    assert b.direction == "long"
+    assert b.end_reason == "invalidated"
+    assert b.end_time == c["close_time"].iloc[9]

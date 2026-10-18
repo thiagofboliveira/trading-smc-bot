@@ -56,6 +56,11 @@ def build_breakers(
     breaker só vale a partir do fechamento do terceiro candle do FVG. Cada origem
     gera no máximo um breaker; a vida termina no primeiro toque após `created_at`
     (ver `_lifetime`).
+
+    Duas origens rompidas pelo mesmo candle geram dois breakers com o mesmo
+    `created_at` e a mesma direção; a ordem é determinística, por
+    `(created_at, candle_time)`. Uma origem cujo `created_at` não coincide com o
+    `close_time` de nenhum candle é ignorada, por contrato.
     """
     if candles.empty or not zones:
         return []
@@ -79,10 +84,9 @@ def build_breakers(
         if found.size == 0:
             continue
         bos_pos = int(found[0])
-        j = next((i for i in range(bos_pos + 1, n) if sign * (far - close[i]) > 0), None)
+        stop = n if cfg.breaker_max_age is None else min(n, bos_pos + cfg.breaker_max_age + 1)
+        j = next((i for i in range(bos_pos + 1, stop) if sign * (far - close[i]) > 0), None)
         if j is None:
-            continue
-        if cfg.breaker_max_age is not None and j - bos_pos > cfg.breaker_max_age:
             continue
 
         if cfg.breaker_require_imbalance:
@@ -127,7 +131,7 @@ def build_breakers(
         )
         swept = any(
             s.side == sweep_side
-            and s.sweep_time >= origin.candle_time
+            and s.sweep_time >= origin.created_at
             and s.confirmed_at <= created_at
             for s in sweeps
         )

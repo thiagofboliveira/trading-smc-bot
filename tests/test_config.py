@@ -14,6 +14,10 @@ def test_default_config_loads():
     assert cfg.structure.pivot_k_ltf == 2
     assert cfg.zones.require_discount is True
     assert cfg.zones.require_imbalance is False
+    assert cfg.zones.breakers_enabled is True
+    assert cfg.zones.breaker_require_imbalance is True
+    assert cfg.zones.breaker_require_choch is False
+    assert cfg.zones.breaker_max_age == 96
     assert cfg.symbols == ["XAUUSD", "EURUSD", "GBPUSD", "US30", "NAS100", "BRENT"]
     assert cfg.data.server_ny_offset_hours == 7
 

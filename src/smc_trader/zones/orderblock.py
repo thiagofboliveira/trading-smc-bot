@@ -31,8 +31,10 @@ class Zone:
     kind: Literal["OB", "FVOB", "BREAKER"]
     high: float
     low: float
-    candle_time: pd.Timestamp  # abertura do candle do OB
-    created_at: pd.Timestamp  # close_time do candle do BOS
+    # OB/FVOB: abertura do candle do OB. BREAKER: abertura do candle do OB de origem.
+    candle_time: pd.Timestamp
+    # OB/FVOB: close_time do candle do BOS. BREAKER: instante em que o breaker passa a valer.
+    created_at: pd.Timestamp
     range_low: float
     range_high: float
     in_discount: bool  # prêmio, para venda

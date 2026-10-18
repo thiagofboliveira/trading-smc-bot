@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- `ZoneConfig.blocks_filter: list[Literal["OB", "FVOB", "BB"]]`, padrão `["OB", "FVOB", "BB"]`. Lista vazia é rejeitada; valores repetidos são ignorados (mantém a ordem da primeira ocorrência); valor fora de `OB`/`FVOB`/`BB` é rejeitado.
+- `ZoneConfig.blocks_filter: list[Literal["OB", "FVOB", "BB"]]`, padrão `["OB", "FVOB", "BB"]`. Lista vazia é rejeitada; valores repetidos são ignorados e a lista é devolvida na ordem canônica OB, FVOB, BB (assim a ordem digitada não importa e a configuração tem um único hash); valor fora de `OB`/`FVOB`/`BB` é rejeitado.
 - Semântica: `OB` = zonas de `kind == "OB"` (sem imbalance); `FVOB` = zonas de `kind == "FVOB"`; `BB` = breakers (`kind == "BREAKER"`). `OB` e `FVOB` são excludentes; `[OB, FVOB]` devolve todas as zonas do tipo OB.
 - O breaker continua nascendo das candidatas a OB **independente** do filtro e dos flags `require_discount`/`require_imbalance`: `[BB]` produz breakers mesmo sem nenhuma zona OB/FVOB na saída.
 - O filtro só remove itens da **saída**; os resultados dos tipos mantidos não podem mudar em relação ao padrão (nenhum efeito sobre pivôs, eventos, FVGs, sweeps nem sobre o conteúdo de cada zona/breaker). `Analysis.pivots/events/fvgs/sweeps` não são filtrados.
@@ -36,7 +36,7 @@
 
 **Interfaces:**
 - Produces:
-  - `ZoneConfig.blocks_filter: list[Literal["OB", "FVOB", "BB"]]`, padrão `["OB", "FVOB", "BB"]`, com validador (não vazio, sem repetições, ordem preservada). O campo `breakers_enabled` é removido de `ZoneConfig`.
+  - `ZoneConfig.blocks_filter: list[Literal["OB", "FVOB", "BB"]]`, padrão `["OB", "FVOB", "BB"]`, com validador (não vazio, sem repetições, devolve na ordem canônica OB, FVOB, BB: assim a ordem digitada não importa e a configuração tem um único hash). O campo `breakers_enabled` é removido de `ZoneConfig`.
   - `analyze(candles, k, zones_cfg)` aplica o filtro: `Analysis.zones` contém só as zonas de `kind` em `blocks_filter` (`OB`/`FVOB`); `Analysis.breakers` é `[]` quando `"BB"` não está na lista. As candidatas a OB para os breakers vêm da lista de zonas **antes** do filtro por tipo (reaproveitada quando `require_discount` e `require_imbalance` já são ambos falsos; caso contrário, reconstruída com os dois filtros desligados).
 
 - [ ] **Step 1: Escrever os testes que falham.**
@@ -67,7 +67,7 @@
 - [ ] **Step 1: Escrever os testes que falham** em `tests/test_chart.py` (reaproveitar o padrão de `test_cli_chart_writes_html`, com M1 sintético em `tmp_path`):
   - `test_cli_chart_blocks_option_overrides_filter`: com `monkeypatch` envolvendo `smc_trader.cli.analyze` (grava o `zones_cfg` recebido e chama o original), `main(["chart", "XAUUSD", "--data-root", ..., "--out", ..., "--blocks", "fvob,bb"])` devolve 0 e o `zones_cfg.blocks_filter` recebido é `["FVOB", "BB"]`.
   - `test_cli_chart_blocks_invalid`: `--blocks XX` e `--blocks ""` devolvem 2, a mensagem em stderr cita `--blocks`, e o arquivo de saída não existe.
-  - `test_cli_chart_without_blocks_uses_config`: sem `--blocks`, o `zones_cfg.blocks_filter` recebido é `["OB", "FVOB", "BB"]` (o padrão da configuração).
+  - `test_cli_chart_without_blocks_uses_config`: sem `--blocks`, com `--config` apontando para uma cópia de `config/default.yaml` com `blocks_filter: [OB]`, o `zones_cfg.blocks_filter` recebido é `["OB"]`.
 - [ ] **Step 2: Rodar e ver falhar** → FAIL.
 - [ ] **Step 3: Implementar** a opção no parser do `chart`, a conversão (maiúsculas, divisão por vírgula, descarte de itens vazios) e a validação via `ZoneConfig`; capturar `ValidationError` para a mensagem e o código 2. O `cli.py` deve importar `analyze` pelo nome (`from smc_trader.analysis import analyze`) se ainda não o fizer.
 - [ ] **Step 4: Rodar e ver passar:** `uv run pytest -q` → todos PASS.

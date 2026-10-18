@@ -136,3 +136,19 @@ def test_blocks_filter_selects_kinds():
     assert run(fv, ["OB"]).zones == []
     a = run(bb, ["FVOB", "BB"])
     assert a.zones == [] and len(a.breakers) == 1
+
+
+def test_blocks_filter_without_discount_reuses_unfiltered_candidates():
+    # Com require_discount=False o atalho reaproveita `zones` como candidatas:
+    # o filtro por tipo não pode ser aplicado antes dos breakers.
+    bb = candles_from_ohlc(SERIE_A_ROWS[0:6] + BREAKER_TAIL)
+
+    def run(blocks):
+        return analyze(bb, 1, ZoneConfig(blocks_filter=blocks, require_discount=False))
+
+    a = run(["FVOB", "BB"])
+    assert a.zones == [] and len(a.breakers) == 1
+    a = run(["BB"])
+    assert a.zones == [] and len(a.breakers) == 1
+    a = run(["OB"])
+    assert len(a.zones) == 1 and a.breakers == []

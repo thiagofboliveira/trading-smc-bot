@@ -87,6 +87,11 @@ def test_blocks_filter_validation():
     with pytest.raises(ValidationError):
         ZoneConfig(blocks_filter=["XX"])
     assert ZoneConfig(blocks_filter=["OB", "OB", "BB"]).blocks_filter == ["OB", "BB"]
+    assert ZoneConfig(blocks_filter=["BB", "OB"]).blocks_filter == ["OB", "BB"]
+    a = ZoneConfig(blocks_filter=["BB", "OB"])
+    b = ZoneConfig(blocks_filter=["OB", "BB"])
+    assert a == b
+    assert a.model_dump_json() == b.model_dump_json()
 
 
 def test_breakers_enabled_is_gone():

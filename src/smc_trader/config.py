@@ -44,10 +44,10 @@ class ZoneConfig(BaseModel):
 
     @field_validator("blocks_filter")
     @classmethod
-    def _blocks_filter_non_empty_unique(cls, v: list[str]) -> list[str]:
+    def _blocks_filter_non_empty_canonical(cls, v: list[str]) -> list[str]:
         if not v:
             raise ValueError("blocks_filter não pode ser vazio")
-        return list(dict.fromkeys(v))
+        return [k for k in ("OB", "FVOB", "BB") if k in v]
 
 
 class DukascopyConfig(BaseModel):

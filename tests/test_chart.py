@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import plotly.graph_objects as go
 from helpers import BREAKER_TAIL, EXTRA_ROWS, SERIE_A_ROWS, candles_from_ohlc, random_walk_candles
 
@@ -109,7 +111,16 @@ def test_cli_chart_blocks_invalid(tmp_path, capsys):
 def test_cli_chart_without_blocks_uses_config(tmp_path, monkeypatch):
     _save_synthetic(tmp_path)
     seen = _spy_analyze(monkeypatch)
+    text = Path("config/default.yaml").read_text(encoding="utf-8")
+    assert "  blocks_filter: [OB, FVOB, BB]\n" in text
+    cfg_path = tmp_path / "cfg.yaml"
+    cfg_path.write_text(
+        text.replace("  blocks_filter: [OB, FVOB, BB]\n", "  blocks_filter: [OB]\n"),
+        encoding="utf-8",
+    )
     out = tmp_path / "c.html"
-    rc = main(["chart", "XAUUSD", "--data-root", str(tmp_path), "--out", str(out)])
+    rc = main(
+        ["chart", "XAUUSD", "--data-root", str(tmp_path), "--out", str(out), "--config", str(cfg_path)]
+    )
     assert rc == 0
-    assert seen[0].blocks_filter == ["OB", "FVOB", "BB"]
+    assert seen[0].blocks_filter == ["OB"]

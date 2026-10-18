@@ -28,6 +28,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     chart = sub.add_parser("chart", help="gera gráfico HTML com estrutura, FVG e zonas")
     chart.add_argument("symbol")
+    chart.add_argument("--source", choices=["dukascopy", "mt5"], default="dukascopy")
     chart.add_argument("--tf", choices=["M1", "M5", "M15"], default="M15")
     chart.add_argument("--from", dest="start", type=_utc, default=None)
     chart.add_argument("--to", dest="end", type=_utc, default=None)
@@ -53,7 +54,13 @@ def _cmd_fetch(args: argparse.Namespace, cfg: Config) -> int:
         return 2
     root = args.data_root if args.data_root is not None else cfg.data.root
     df = fetch_m1(instrument, args.start, args.end, cfg.dukascopy.offer_side)
-    save_m1(root, args.symbol, df)
+    if df.empty:
+        print(
+            f"{args.symbol}: nenhum candle no intervalo {args.start} a {args.end}; nada gravado",
+            file=sys.stderr,
+        )
+        return 1
+    save_m1(root, args.symbol, df, source="dukascopy")
     print(f"{args.symbol}: {len(df)} candles M1 gravados em {root}")
     return 0
 
@@ -61,7 +68,9 @@ def _cmd_fetch(args: argparse.Namespace, cfg: Config) -> int:
 def _cmd_chart(args: argparse.Namespace, cfg: Config) -> int:
     root = args.data_root if args.data_root is not None else cfg.data.root
     try:
-        candles = load_candles(root, args.symbol, args.tf, args.start, args.end)
+        candles = load_candles(
+            root, args.symbol, args.tf, args.start, args.end, source=args.source
+        )
     except FileNotFoundError as exc:
         print(exc, file=sys.stderr)
         return 2
@@ -77,7 +86,7 @@ def _cmd_chart(args: argparse.Namespace, cfg: Config) -> int:
 def _cmd_import_csv(args: argparse.Namespace, cfg: Config) -> int:
     root = args.data_root if args.data_root is not None else cfg.data.root
     df = import_mt5_csv(args.csv, cfg.data)
-    save_m1(root, args.symbol, df)
+    save_m1(root, args.symbol, df, source="mt5")
     print(f"{args.symbol}: {len(df)} candles M1 importados em {root}")
     return 0
 

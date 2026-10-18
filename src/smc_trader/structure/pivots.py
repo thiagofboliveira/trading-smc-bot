@@ -10,6 +10,8 @@ def find_pivots(candles: pd.DataFrame, k: int) -> pd.DataFrame:
     Topo em i: high[i] > max(high[i-k:i]) e high[i] >= max(high[i+1:i+k+1]).
     Fundo: espelho com < e <=. `confirmed_at` é o close_time do candle i+k.
     """
+    if k < 1:
+        raise ValueError("k must be >= 1")
     n = len(candles)
     records = []
     if n >= 2 * k + 1:

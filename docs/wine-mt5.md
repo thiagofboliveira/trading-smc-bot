@@ -8,7 +8,7 @@ O MT5 é fonte secundária (a primária é a Dukascopy). Use quando quiser os da
 Instale o MetaTrader 5 da sua corretora com `wine` em um prefixo dedicado (ex.: `~/.wine-mt5`) e faça login na conta.
 
 ## 2. Python do Windows no mesmo prefixo
-Instale o instalador do Python para Windows com `WINEPREFIX=~/.wine-mt5 wine python-installer.exe` (marque "Add to PATH"). Depois:
+Instale o instalador do Python para Windows (versão 3.10 ou mais nova) com `WINEPREFIX=~/.wine-mt5 wine python-installer.exe` (marque "Add to PATH"). Depois:
 
 ```
 WINEPREFIX=~/.wine-mt5 wine python -m pip install MetaTrader5
@@ -31,4 +31,6 @@ A regra padrão é servidor = hora de Nova York + 7h (com horário de verão dos
 ```
 uv run smc import-csv out/mt5/XAUUSD_M1.csv --symbol XAUUSD
 ```
+O import é gravado separado da Dukascopy, em `data/XAUUSD_M1_mt5.parquet`; para ver no gráfico use `uv run smc chart XAUUSD --source mt5`.
+
 Horários ambíguos/inexistentes na troca de horário de verão são descartados; duplicados ficam com a última linha do arquivo.

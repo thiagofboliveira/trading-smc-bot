@@ -51,6 +51,11 @@ def main(argv: list[str] | None = None) -> int:
                 for chunk_start, chunk_end in _month_chunks(args.start, args.end):
                     rates = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_M1, chunk_start, chunk_end)
                     if rates is None:
+                        print(
+                            f"{symbol}: copy_rates_range falhou em {chunk_start:%Y-%m}: "
+                            f"{mt5.last_error()}",
+                            file=sys.stderr,
+                        )
                         continue
                     for r in rates:
                         writer.writerow([int(r["time"]), r["open"], r["high"], r["low"],

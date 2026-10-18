@@ -33,7 +33,8 @@ def test_cli_fetch_saves_m1(tmp_path, monkeypatch):
     assert rc == 0
     assert calls[0][0] == "XAU/USD"
     assert calls[0][1].utcoffset().total_seconds() == 0
-    out = load_candles(tmp_path, "XAUUSD")
+    assert (tmp_path / "XAUUSD_M1_dukascopy.parquet").exists()
+    out = load_candles(tmp_path, "XAUUSD", source="dukascopy")
     assert len(out) == 3
     assert out["close"].tolist() == [1.2, 2.2, 3.2]
 
@@ -48,4 +49,20 @@ def test_cli_fetch_unknown_symbol(tmp_path, monkeypatch, capsys):
     assert rc == 2
     assert "FOO" in capsys.readouterr().err
     assert calls == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_cli_fetch_empty_frame_fails_without_saving(tmp_path, monkeypatch, capsys):
+    def empty(instrument, start, end, offer_side):
+        idx = pd.DatetimeIndex([], tz="UTC", name="time")
+        cols = ["open", "high", "low", "close", "volume", "spread"]
+        return pd.DataFrame({c: pd.Series(dtype=float) for c in cols}, index=idx)
+
+    monkeypatch.setattr("smc_trader.cli.fetch_m1", empty)
+    rc = main(
+        ["fetch", "XAUUSD", "--from", "2024-06-01", "--to", "2024-06-03",
+         "--data-root", str(tmp_path)]
+    )
+    assert rc == 1
+    assert "XAUUSD" in capsys.readouterr().err
     assert list(tmp_path.iterdir()) == []

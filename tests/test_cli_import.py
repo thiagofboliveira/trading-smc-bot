@@ -13,6 +13,8 @@ def test_cli_import_csv(tmp_path):
     csv.write_text("\n".join(lines) + "\n")
     code = main(["import-csv", str(csv), "--symbol", "XAUUSD", "--data-root", str(tmp_path)])
     assert code == 0
-    df = load_candles(tmp_path, "XAUUSD")
+    df = load_candles(tmp_path, "XAUUSD", source="mt5")
     assert len(df) == 3
     assert list(df["close"]) == [1.0, 2.0, 3.0]
+    assert (tmp_path / "XAUUSD_M1_mt5.parquet").exists()
+    assert not (tmp_path / "XAUUSD_M1_dukascopy.parquet").exists()

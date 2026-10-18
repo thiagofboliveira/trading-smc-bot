@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -6,17 +7,28 @@ from smc_trader.data.candles import tf_minutes, with_close_time
 from smc_trader.data.resample import resample_ohlc
 
 
-def _path(root: Path, symbol: str) -> Path:
-    return Path(root) / f"{symbol}_M1.parquet"
+SOURCES = ("dukascopy", "mt5")
 
 
-def save_m1(root: Path, symbol: str, df: pd.DataFrame) -> None:
-    path = _path(root, symbol)
+def _path(root: Path, symbol: str, source: str) -> Path:
+    if source not in SOURCES:
+        raise ValueError(f"source deve ser um de {sorted(SOURCES)}, recebido: {source!r}")
+    return Path(root) / f"{symbol}_M1_{source}.parquet"
+
+
+def save_m1(root: Path, symbol: str, df: pd.DataFrame, source: str = "dukascopy") -> None:
+    path = _path(root, symbol, source)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         df = pd.concat([pd.read_parquet(path), df])
     df = df[~df.index.duplicated(keep="last")].sort_index()
-    df.to_parquet(path)
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        df.to_parquet(tmp)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def load_candles(
@@ -25,10 +37,11 @@ def load_candles(
     tf: str = "M1",
     start: pd.Timestamp | None = None,
     end: pd.Timestamp | None = None,
+    source: str = "dukascopy",
 ) -> pd.DataFrame:
-    path = _path(root, symbol)
+    path = _path(root, symbol, source)
     if not path.exists():
-        raise FileNotFoundError(f"Sem dados M1 para {symbol}: arquivo não encontrado em {path}")
+        raise FileNotFoundError(f"Sem dados M1 para {symbol} (fonte {source}): arquivo não encontrado em {path}")
     tf_minutes(tf)
     m1 = pd.read_parquet(path)
     out = m1 if tf == "M1" else resample_ohlc(m1, tf)

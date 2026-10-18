@@ -1,10 +1,11 @@
 from pathlib import Path
 
 import pytest
+import yaml
 from dukascopy_python import instruments
 from pydantic import ValidationError
 
-from smc_trader.config import DataConfig, StructureConfig, load_config
+from smc_trader.config import Config, DataConfig, StructureConfig, ZoneConfig, load_config
 
 
 def test_default_config_loads():
@@ -41,3 +42,19 @@ def test_every_symbol_has_dukascopy_instrument():
     for value in cfg.dukascopy.instruments.values():
         assert value in known
     assert cfg.dukascopy.offer_side == "bid"
+
+
+def test_unknown_keys_are_rejected():
+    with pytest.raises(ValidationError):
+        ZoneConfig(require_discont=False)
+    raw = yaml.safe_load(Path("config/default.yaml").read_text(encoding="utf-8"))
+    Config.model_validate(raw)
+    with pytest.raises(ValidationError):
+        Config.model_validate({**raw, "stray": 1})
+
+
+def test_symbol_without_dukascopy_mapping_is_rejected():
+    raw = yaml.safe_load(Path("config/default.yaml").read_text(encoding="utf-8"))
+    raw["symbols"] = [*raw["symbols"], "FOOBAR"]
+    with pytest.raises(ValidationError, match="FOOBAR"):
+        Config.model_validate(raw)

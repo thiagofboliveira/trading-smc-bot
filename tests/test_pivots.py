@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from helpers import candles_from_ohlc
 from smc_trader.structure.pivots import find_pivots
@@ -42,3 +43,9 @@ def test_short_or_empty_frame():
         p = find_pivots(c, 3)
         assert p.empty
         assert list(p.columns) == COLS
+
+
+@pytest.mark.parametrize("k", [0, -1])
+def test_k_must_be_positive(k):
+    with pytest.raises(ValueError, match="k must be >= 1"):
+        find_pivots(_candles([1, 2, 3]), k)

@@ -31,3 +31,15 @@ def test_cli_chart_missing_data(tmp_path, capsys):
     rc = main(["chart", "XAUUSD", "--data-root", str(tmp_path), "--out", str(tmp_path / "c.html")])
     assert rc == 2
     assert "XAUUSD" in capsys.readouterr().err
+
+
+def test_cli_chart_source_mt5(tmp_path, capsys):
+    m1 = random_walk_candles(3 * 1440, seed=3, tf="M1").drop(columns="close_time")
+    m1["spread"] = 0.0
+    save_m1(tmp_path, "XAUUSD", m1, source="mt5")
+    out = tmp_path / "c.html"
+    base = ["chart", "XAUUSD", "--data-root", str(tmp_path), "--out", str(out)]
+    assert main(base) == 2
+    assert "dukascopy" in capsys.readouterr().err
+    assert main(base + ["--source", "mt5"]) == 0
+    assert out.exists()

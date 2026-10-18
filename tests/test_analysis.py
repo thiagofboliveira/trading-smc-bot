@@ -1,4 +1,5 @@
-import pandas as pd
+from dataclasses import replace
+
 from helpers import EXTRA_ROWS, SERIE_A_ROWS, candles_from_ohlc, random_walk_candles
 
 from smc_trader.analysis import Analysis, analyze
@@ -25,23 +26,27 @@ def test_empty_and_short_frames():
         assert a.events == [] and a.fvgs == [] and a.sweeps == [] and a.zones == []
 
 
-def test_zones_have_no_lookahead():
+def test_analysis_has_no_lookahead_both_directions():
     c = random_walk_candles(300, seed=11)
     cfg = ZoneConfig()
-    full = analyze(c, 2, cfg).zones
-    assert len(full) >= 3
-    fields = (
-        "direction kind high low candle_time created_at range_low range_high "
-        "in_discount swept_liquidity"
-    ).split()
+    full = analyze(c, 2, cfg)
+    assert len(full.zones) >= 3
+    assert full.events and full.fvgs and full.sweeps
     for n in range(10, 301, 10):
         t = c["close_time"].iloc[n - 1]
-        part = analyze(c.iloc[:n], 2, cfg).zones
-        for z in (z for z in full if z.created_at <= t):
-            matches = [
-                p for p in part
-                if all(getattr(p, f) == getattr(z, f) for f in fields)
-            ]
-            assert len(matches) == 1, (n, z)
-            expected_end = None if z.end_time is not None and z.end_time > t else z.end_time
-            assert matches[0].end_time == expected_end, (n, z)
+        part = analyze(c.iloc[:n], 2, cfg)
+        assert part.zones == [
+            replace(z, end_time=None, end_reason=None) if z.end_time is not None and z.end_time > t else z
+            for z in full.zones
+            if z.created_at <= t
+        ], n
+        assert part.events == [e for e in full.events if e.time <= t], n
+        assert part.fvgs == [f for f in full.fvgs if f.formed_at <= t], n
+        assert part.sweeps == [s for s in full.sweeps if s.confirmed_at <= t], n
+
+
+def test_exact_minimum_lengths():
+    c = candles_from_ohlc(SERIE_A_ROWS)
+    four = analyze(c.iloc[:4], 2, ZoneConfig())
+    assert four.pivots.empty
+    analyze(c.iloc[:5], 2, ZoneConfig())

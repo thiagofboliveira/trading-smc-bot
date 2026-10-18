@@ -114,3 +114,51 @@ def test_empty_inputs():
     assert candidates
     assert build_breakers(c.iloc[:0], candidates, events, fvgs, sweeps, cfg) == []
     assert build_breakers(c, [], events, fvgs, sweeps, cfg) == []
+
+
+def _with_candle_9(row):
+    return ROWS + [row]
+
+
+def test_mitigated_on_retest():
+    rows = _with_candle_9((9.2, 10.5, 9.1, 10.2))
+    c = candles_from_ohlc(rows)
+    (b,) = breakers_from(rows)
+    assert b.end_reason == "mitigated"
+    assert b.end_time == c["close_time"].iloc[9]
+
+
+def test_invalidated_when_retest_candle_closes_beyond_origin_side():
+    rows = _with_candle_9((9.2, 12.6, 9.1, 12.4))
+    c = candles_from_ohlc(rows)
+    (b,) = breakers_from(rows)
+    assert b.end_reason == "invalidated"
+    assert b.end_time == c["close_time"].iloc[9]
+
+
+def test_no_touch_keeps_breaker_open():
+    (b,) = breakers_from(_with_candle_9((9.2, 9.8, 9.0, 9.4)))
+    assert b.end_time is None
+    assert b.end_reason is None
+
+
+def test_formation_candle_touch_does_not_mitigate():
+    (b,) = breakers_from(ROWS)
+    assert b.end_time is None
+    assert b.end_reason is None
+
+
+def test_mirrored_lifetime():
+    c = mirror(candles_from_ohlc(_with_candle_9((9.2, 10.5, 9.1, 10.2))))
+    (b,) = _run(c)
+    assert b.direction == "long"
+    assert b.end_reason == "mitigated"
+    assert b.end_time == c["close_time"].iloc[9]
+
+
+def test_lifetime_without_imbalance_starts_at_candle_j_close():
+    c = candles_from_ohlc(NO_FVG_ROWS)
+    (b,) = breakers_from(NO_FVG_ROWS, ZoneConfig(breaker_require_imbalance=False))
+    assert b.created_at == c["close_time"].iloc[7]
+    assert b.end_reason == "invalidated"
+    assert b.end_time == c["close_time"].iloc[8]

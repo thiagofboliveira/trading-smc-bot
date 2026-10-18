@@ -9,6 +9,37 @@ from smc_trader.zones.orderblock import Zone
 from smc_trader.zones.premium_discount import in_discount
 
 
+def _lifetime(
+    high: np.ndarray,
+    low: np.ndarray,
+    close: np.ndarray,
+    index: pd.DatetimeIndex,
+    close_time: np.ndarray,
+    created_at,
+    zone_low: float,
+    zone_high: float,
+    origin_long: bool,
+) -> tuple[pd.Timestamp | None, str | None]:
+    """Primeiro candle com open_time >= created_at que toca a zona encerra o breaker.
+
+    Breaker de venda (origem long): toque é `high >= zone_low`; de compra: `low <= zone_high`.
+    Fecha além do lado de origem => "invalidated"; senão "mitigated". Sem expiração por idade.
+    """
+    start = int(index.searchsorted(created_at, side="left"))
+    if origin_long:
+        touched = high[start:] >= zone_low
+        beyond = close[start:] > zone_high
+    else:
+        touched = low[start:] <= zone_high
+        beyond = close[start:] < zone_low
+    hits = np.flatnonzero(touched)
+    if hits.size == 0:
+        return None, None
+    first = int(hits[0])
+    reason = "invalidated" if beyond[first] else "mitigated"
+    return pd.Timestamp(close_time[start + first]), reason
+
+
 def build_breakers(
     candles: pd.DataFrame,
     zones: list[Zone],
@@ -23,7 +54,8 @@ def build_breakers(
     do lado oposto da zona; não há busca por candles posteriores. Com imbalance
     exigido, esse candle precisa ser o do meio de um FVG contra a origem, e o
     breaker só vale a partir do fechamento do terceiro candle do FVG. Cada origem
-    gera no máximo um breaker; o fim de vida fica em aberto (`end_time=None`).
+    gera no máximo um breaker; a vida termina no primeiro toque após `created_at`
+    (ver `_lifetime`).
     """
     if candles.empty or not zones:
         return []
@@ -69,7 +101,9 @@ def build_breakers(
             last = j
 
         if cfg.breaker_require_choch and not any(
-            e.kind == "CHoCH" and e.direction == against and origin.created_at < e.time <= created_at
+            e.kind == "CHoCH"
+            and e.direction == against
+            and origin.created_at < e.time <= created_at
             for e in events
         ):
             continue
@@ -82,6 +116,17 @@ def build_breakers(
         range_low, range_high = float(range_low), float(range_high)
 
         sweep_side = "high" if long else "low"
+        end_time, end_reason = _lifetime(
+            high,
+            low,
+            close,
+            index,
+            close_time,
+            created_at,
+            origin.low,
+            origin.high,
+            long,
+        )
         swept = any(
             s.side == sweep_side
             and s.sweep_time >= origin.candle_time
@@ -100,8 +145,8 @@ def build_breakers(
                 range_high=range_high,
                 in_discount=in_discount(direction, origin.low, origin.high, range_low, range_high),
                 swept_liquidity=swept,
-                end_time=None,
-                end_reason=None,
+                end_time=end_time,
+                end_reason=end_reason,
             )
         )
     breakers.sort(key=lambda z: (z.created_at, z.candle_time))

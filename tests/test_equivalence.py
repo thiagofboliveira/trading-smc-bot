@@ -1,5 +1,6 @@
 """Equivalência dos detectores de `src/` com o oráculo congelado `reference_impl`."""
 
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -45,10 +46,7 @@ CASES = [
     for k in (2, 3)
 ]
 
-# Acumuladores de não trivialidade (conferidos por `test_reference_is_not_vacuous`).
-SEEN = {"zones": 0, "breakers": 0, "breakers_choch": 0, "breakers_age1": 0}
-
-
+@lru_cache(maxsize=None)
 def make(gen: str, seed: int, n: int) -> pd.DataFrame:
     return GENERATORS[gen](n, seed)
 
@@ -60,6 +58,20 @@ def pipeline(candles: pd.DataFrame, k: int, cfg: ZoneConfig | None = None):
     fvgs = find_fvgs(candles, (cfg or ZoneConfig()).fvg_min_size)
     sweeps = find_sweeps(candles, pivots)
     return pivots, events, fvgs, sweeps
+
+
+@lru_cache(maxsize=None)
+def cached_inputs(gen: str, seed: int, n: int, k: int):
+    """Eventos, FVGs e sweeps (src) e candidatas a breaker (referência).
+
+    As candidatas vêm da referência, com os filtros de entrada desligados como em
+    `analyze`, para isolar a equivalência dos breakers da das zonas.
+    """
+    c = make(gen, seed, n)
+    _, events, fvgs, sweeps = pipeline(c, k)
+    open_cfg = ZoneConfig(require_discount=False, require_imbalance=False)
+    candidates = ref_build_zones(c, events, fvgs, sweeps, open_cfg)
+    return c, events, fvgs, sweeps, candidates
 
 
 @pytest.mark.parametrize("gen,seed,n,k", CASES)
@@ -98,13 +110,11 @@ ZONE_CFGS = {
 @pytest.mark.parametrize("gen,seed,n,k", CASES)
 @pytest.mark.parametrize("cfg_name", ZONE_CFGS)
 def test_build_zones_equivalent(gen, seed, n, k, cfg_name):
-    c = make(gen, seed, n)
+    c, events, fvgs, sweeps, _ = cached_inputs(gen, seed, n, k)
     cfg = ZoneConfig(**ZONE_CFGS[cfg_name])
-    _, events, fvgs, sweeps = pipeline(c, k)
     expected = ref_build_zones(c, events, fvgs, sweeps, cfg)
-    SEEN["zones"] += len(expected)
-    if n == 1500 and cfg_name == "no_discount":
-        assert len(expected) > 0
+    # Verificado: toda configuração rende zonas em todos os 24 casos.
+    assert len(expected) > 0
     assert build_zones(c, events, fvgs, sweeps, cfg) == expected
 
 
@@ -113,27 +123,34 @@ BREAKER_CFGS = {
     "no_imbalance": {"breaker_require_imbalance": False},
     "choch": {"breaker_require_choch": True},
     "age_none": {"breaker_max_age": None},
-    "age_1": {"breaker_max_age": 1},
 }
+
+# Com `breaker_max_age=1` o resultado pode ser vazio (0 em 22 dos 24 casos);
+# estas configurações têm teste próprio, num caso verificado como não vazio.
+AGE_ONE_CFGS = {
+    "age_1": {"breaker_max_age": 1},
+    "age_1_no_imbalance": {"breaker_max_age": 1, "breaker_require_imbalance": False},
+}
+AGE_ONE_CASE = ("walk", 3, 1500, 2)
 
 
 @pytest.mark.parametrize("gen,seed,n,k", CASES)
 @pytest.mark.parametrize("cfg_name", BREAKER_CFGS)
 def test_build_breakers_equivalent(gen, seed, n, k, cfg_name):
-    c = make(gen, seed, n)
+    c, events, fvgs, sweeps, zones = cached_inputs(gen, seed, n, k)
     cfg = ZoneConfig(**BREAKER_CFGS[cfg_name])
-    _, events, fvgs, sweeps = pipeline(c, k)
-    # Candidatas com os filtros de entrada desligados, como em `analyze`.
-    open_cfg = ZoneConfig(require_discount=False, require_imbalance=False)
-    zones = build_zones(c, events, fvgs, sweeps, open_cfg)
     expected = ref_build_breakers(c, zones, events, fvgs, sweeps, cfg)
-    SEEN["breakers"] += len(expected)
-    if cfg_name == "choch":
-        SEEN["breakers_choch"] += len(expected)
-    if cfg_name == "age_1":
-        SEEN["breakers_age1"] += len(expected)
-    if n == 1500 and cfg_name in ("no_imbalance", "age_none"):
-        assert len(expected) > 0
+    # Verificado: estas configurações rendem breakers em todos os 24 casos.
+    assert len(expected) > 0
+    assert build_breakers(c, zones, events, fvgs, sweeps, cfg) == expected
+
+
+@pytest.mark.parametrize("cfg_name", AGE_ONE_CFGS)
+def test_build_breakers_age_one_equivalent(cfg_name):
+    c, events, fvgs, sweeps, zones = cached_inputs(*AGE_ONE_CASE)
+    cfg = ZoneConfig(**AGE_ONE_CFGS[cfg_name])
+    expected = ref_build_breakers(c, zones, events, fvgs, sweeps, cfg)
+    assert len(expected) > 0
     assert build_breakers(c, zones, events, fvgs, sweeps, cfg) == expected
 
 
@@ -142,6 +159,11 @@ def test_build_breakers_equivalent(gen, seed, n, k, cfg_name):
 def test_edge_frames_equivalent(gen, n):
     c = make(gen, 1, 4).iloc[:n]
     assert len(c) == n
+    if n == 4 and gen == "tied":  # com FVG: high[0] < low[2], mais um pivô para k=1
+        c = candles_from_ohlc(
+            [(10, 11, 9, 10.5), (10.5, 13, 10, 12.5), (12.5, 12.8, 11.5, 12), (12, 12.5, 11.8, 12.2)]
+        )
+        assert len(ref_find_fvgs(c)) > 0 and len(ref_find_pivots(c, 1)) > 0
     for k in (1, 2, 3):
         pd.testing.assert_frame_equal(find_pivots(c, k), ref_find_pivots(c, k))
     assert find_fvgs(c) == ref_find_fvgs(c)
@@ -184,19 +206,11 @@ def test_real_data_equivalent():
         assert fvgs == expected_fvgs
         for cfg in (ZoneConfig(), ZoneConfig(breaker_require_imbalance=False)):
             zones = ref_build_zones(c, events, fvgs, sweeps, cfg)
+            assert len(zones) > 0
             assert build_zones(c, events, fvgs, sweeps, cfg) == zones
             open_cfg = ZoneConfig(require_discount=False, require_imbalance=False)
             cands = ref_build_zones(c, events, fvgs, sweeps, open_cfg)
             assert len(cands) > 0
             breakers = ref_build_breakers(c, cands, events, fvgs, sweeps, cfg)
+            assert len(breakers) > 0
             assert build_breakers(c, cands, events, fvgs, sweeps, cfg) == breakers
-
-
-def test_reference_is_not_vacuous():
-    """Fecha o ciclo: a referência produziu zonas e breakers de cada variante."""
-    if not SEEN["zones"] or not SEEN["breakers"]:
-        pytest.skip("rode junto com os testes de zonas e breakers")
-    assert SEEN["zones"] > 0
-    assert SEEN["breakers"] > 0
-    assert SEEN["breakers_choch"] > 0
-    assert SEEN["breakers_age1"] > 0

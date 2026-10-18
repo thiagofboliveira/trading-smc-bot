@@ -40,7 +40,7 @@ def analyze(candles: pd.DataFrame, k: int, zones_cfg: ZoneConfig) -> Analysis:
     sweeps = find_sweeps(candles, pivots)
     zones = build_zones(candles, events, fvgs, sweeps, zones_cfg)
     breakers: list[Zone] = []
-    if zones_cfg.breakers_enabled:
+    if "BB" in zones_cfg.blocks_filter:
         # A origem do breaker independe dos filtros de entrada das zonas.
         if zones_cfg.require_discount or zones_cfg.require_imbalance:
             candidates = build_zones(
@@ -55,4 +55,6 @@ def analyze(candles: pd.DataFrame, k: int, zones_cfg: ZoneConfig) -> Analysis:
         else:
             candidates = zones
         breakers = build_breakers(candles, candidates, events, fvgs, sweeps, zones_cfg)
+    # O filtro por tipo só vale para a saída; as candidatas acima ficam intactas.
+    zones = [z for z in zones if z.kind in zones_cfg.blocks_filter]
     return Analysis(pivots, events, fvgs, sweeps, zones, breakers)

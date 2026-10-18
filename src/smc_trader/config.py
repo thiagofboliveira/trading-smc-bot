@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Literal, Self
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class DataConfig(BaseModel):
@@ -35,10 +35,19 @@ class ZoneConfig(BaseModel):
     require_imbalance: bool = False
     use_body: bool = False
     fvg_min_size: float = Field(0.0, ge=0)
-    breakers_enabled: bool = True
+    blocks_filter: list[Literal["OB", "FVOB", "BB"]] = Field(
+        default_factory=lambda: ["OB", "FVOB", "BB"]
+    )
     breaker_require_imbalance: bool = True
     breaker_require_choch: bool = False
     breaker_max_age: int | None = Field(96, ge=1)
+
+    @field_validator("blocks_filter")
+    @classmethod
+    def _blocks_filter_non_empty_unique(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("blocks_filter não pode ser vazio")
+        return list(dict.fromkeys(v))
 
 
 class DukascopyConfig(BaseModel):

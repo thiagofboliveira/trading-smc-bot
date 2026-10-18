@@ -14,7 +14,7 @@ def test_default_config_loads():
     assert cfg.structure.pivot_k_ltf == 2
     assert cfg.zones.require_discount is True
     assert cfg.zones.require_imbalance is False
-    assert cfg.zones.breakers_enabled is True
+    assert cfg.zones.blocks_filter == ["OB", "FVOB", "BB"]
     assert cfg.zones.breaker_require_imbalance is True
     assert cfg.zones.breaker_require_choch is False
     assert cfg.zones.breaker_max_age == 96
@@ -66,7 +66,6 @@ def test_symbol_without_dukascopy_mapping_is_rejected():
 
 def test_breaker_defaults():
     cfg = ZoneConfig()
-    assert cfg.breakers_enabled is True
     assert cfg.breaker_require_imbalance is True
     assert cfg.breaker_require_choch is False
     assert cfg.breaker_max_age == 96
@@ -76,3 +75,20 @@ def test_breaker_defaults():
 def test_breaker_max_age_must_be_positive():
     with pytest.raises(ValidationError):
         ZoneConfig(breaker_max_age=0)
+
+
+def test_blocks_filter_default():
+    assert ZoneConfig().blocks_filter == ["OB", "FVOB", "BB"]
+
+
+def test_blocks_filter_validation():
+    with pytest.raises(ValidationError):
+        ZoneConfig(blocks_filter=[])
+    with pytest.raises(ValidationError):
+        ZoneConfig(blocks_filter=["XX"])
+    assert ZoneConfig(blocks_filter=["OB", "OB", "BB"]).blocks_filter == ["OB", "BB"]
+
+
+def test_breakers_enabled_is_gone():
+    with pytest.raises(ValidationError):
+        ZoneConfig(breakers_enabled=False)

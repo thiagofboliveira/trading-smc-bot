@@ -86,7 +86,7 @@ def test_breaker_origin_filtered_out_of_zones_still_breaks():
 
 def test_breakers_disabled():
     c = candles_from_ohlc(SERIE_A_ROWS[0:6] + BREAKER_TAIL)
-    assert analyze(c, 1, ZoneConfig(breakers_enabled=False)).breakers == []
+    assert analyze(c, 1, ZoneConfig(blocks_filter=["OB", "FVOB"])).breakers == []
 
 
 _BREAKER_FIELDS = (
@@ -114,3 +114,25 @@ def test_breakers_have_no_lookahead():
                 assert p.end_time is None and p.end_reason is None, n
             else:
                 assert (p.end_time, p.end_reason) == (f.end_time, f.end_reason), n
+
+
+def test_blocks_filter_selects_kinds():
+    bb = candles_from_ohlc(SERIE_A_ROWS[0:6] + BREAKER_TAIL)
+    fv = candles_from_ohlc(SERIE_A_ROWS[0:5] + [(12.3, 13.5, 12.2, 13.2)])
+
+    def run(c, blocks):
+        return analyze(c, 1, ZoneConfig(blocks_filter=blocks))
+
+    a = run(bb, ["OB"])
+    assert [z.kind for z in a.zones] == ["OB"] and a.breakers == []
+    a = run(bb, ["BB"])
+    assert a.zones == [] and len(a.breakers) == 1
+    a = run(bb, ["OB", "FVOB"])
+    assert len(a.zones) == 1 and a.breakers == []
+    a = run(bb, ["OB", "FVOB", "BB"])
+    assert len(a.zones) == 1 and len(a.breakers) == 1
+    a = run(fv, ["FVOB"])
+    assert [z.kind for z in a.zones] == ["FVOB"]
+    assert run(fv, ["OB"]).zones == []
+    a = run(bb, ["FVOB", "BB"])
+    assert a.zones == [] and len(a.breakers) == 1

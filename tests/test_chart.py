@@ -1,5 +1,5 @@
 import plotly.graph_objects as go
-from helpers import EXTRA_ROWS, SERIE_A_ROWS, candles_from_ohlc, random_walk_candles
+from helpers import BREAKER_TAIL, EXTRA_ROWS, SERIE_A_ROWS, candles_from_ohlc, random_walk_candles
 
 from smc_trader.analysis import analyze
 from smc_trader.cli import main
@@ -15,6 +15,24 @@ def test_build_chart_counts():
     assert sum(isinstance(t, go.Candlestick) for t in fig.data) == 1
     assert len(fig.layout.shapes) == len(a.fvgs) + len(a.zones)
     assert len(fig.layout.annotations) >= len(a.events)
+
+
+def test_breaker_rectangles_are_dashed():
+    c = candles_from_ohlc(SERIE_A_ROWS[0:6] + BREAKER_TAIL)
+    a = analyze(c, 1, ZoneConfig())
+    assert len(a.breakers) == 1
+    fig = build_chart(c, a, "teste")
+    assert len(fig.layout.shapes) == len(a.fvgs) + len(a.zones) + len(a.breakers)
+    assert sum(s.line.dash == "dash" for s in fig.layout.shapes) == 1
+    assert any(x.text.startswith("BB") for x in fig.layout.annotations)
+
+
+def test_chart_without_breakers_unchanged():
+    c = candles_from_ohlc(SERIE_A_ROWS[0:6] + EXTRA_ROWS)
+    a = analyze(c, 1, ZoneConfig())
+    fig = build_chart(c, a, "teste")
+    assert len(fig.layout.shapes) == len(a.fvgs) + len(a.zones)
+    assert not any(s.line.dash == "dash" for s in fig.layout.shapes)
 
 
 def test_cli_chart_writes_html(tmp_path):

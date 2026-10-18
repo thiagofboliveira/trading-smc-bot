@@ -101,9 +101,7 @@ def build_breakers(
             last = j
 
         if cfg.breaker_require_choch and not any(
-            e.kind == "CHoCH"
-            and e.direction == against
-            and origin.created_at < e.time <= created_at
+            e.kind == "CHoCH" and e.direction == against and origin.created_at < e.time <= created_at
             for e in events
         ):
             continue

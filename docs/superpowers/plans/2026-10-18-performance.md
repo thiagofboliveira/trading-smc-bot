@@ -70,11 +70,11 @@
   - **Quebra do breaker:** a procura do primeiro `close` além do lado oposto vira uma comparação vetorial sobre `close[bos_pos+1 : stop]` com `argmax`, mantendo o corte por `breaker_max_age`.
   - **Posição do candle do BOS** (`close_time == created_at`) por `searchsorted` sobre o array de `close_time` (que é crescente), com checagem de igualdade (origem sem candle correspondente continua sendo ignorada).
 
-- [ ] **Step 1: Rodar o oráculo antes de mexer** (`uv run pytest tests/test_equivalence.py -q` → PASS) e medir a linha de partida de `build_zones` e `build_breakers` com `scripts/bench.py`.
-- [ ] **Step 2: Implementar** as mudanças acima em `orderblock.py` e `breaker.py`, uma função privada por responsabilidade (preparar índices, primeiro toque, etc.); não alterar nenhuma assinatura pública nem dataclass.
-- [ ] **Step 3: Rodar:** `uv run pytest -q` → tudo PASS (equivalência inclusive, sem mudar nenhum teste).
-- [ ] **Step 4: Medir** com `scripts/bench.py` e registrar a tabela no relatório; metas: `build_zones` < 0,4 s e `build_breakers` < 0,5 s em 12.000 candles M15. Se uma meta não for atingida, relatar o gargalo restante com um perfil (`cProfile`) em vez de forçar.
-- [ ] **Step 5: Commit** `perf: buscas ordenadas em build_zones e build_breakers`.
+- [x] **Step 1: Rodar o oráculo antes de mexer** (`uv run pytest tests/test_equivalence.py -q` → PASS) e medir a linha de partida de `build_zones` e `build_breakers` com `scripts/bench.py`.
+- [x] **Step 2: Implementar** as mudanças acima em `orderblock.py` e `breaker.py`, uma função privada por responsabilidade (preparar índices, primeiro toque, etc.); não alterar nenhuma assinatura pública nem dataclass.
+- [x] **Step 3: Rodar:** `uv run pytest -q` → tudo PASS (equivalência inclusive, sem mudar nenhum teste).
+- [x] **Step 4: Medir** com `scripts/bench.py` e registrar a tabela no relatório; metas: `build_zones` < 0,4 s e `build_breakers` < 0,5 s em 12.000 candles M15. Se uma meta não for atingida, relatar o gargalo restante com um perfil (`cProfile`) em vez de forçar.
+- [x] **Step 5: Commit** `perf: buscas ordenadas em build_zones e build_breakers`.
 
 ---
 
@@ -89,11 +89,11 @@
   - `find_pivots(candles, k)`: comparações vetoriais com janelas deslizantes (por exemplo `numpy.lib.stride_tricks.sliding_window_view`) para as regras `high[i] > max(high[i-k:i])` e `high[i] >= max(high[i+1:i+k+1])` (e o espelho para fundos), mais a montagem do DataFrame de uma vez (colunas `time, kind, price, confirmed_at`, ordenado por `time`, mesmo `RangeIndex` e dtypes). `k < 1` continua levantando `ValueError`.
   - `find_fvgs(candles, min_size=0.0)`: máscara vetorial `high[i-2] < low[i]` (alta) e `low[i-2] > high[i]` (baixa) com o filtro `>= min_size`; a lista de `FVG` na mesma ordem (por `formed_at`) e com os mesmos campos; NaN continua não gerando FVG.
 
-- [ ] **Step 1: Rodar o oráculo** (`uv run pytest tests/test_equivalence.py -q` → PASS) e medir a partida de `find_pivots` e `find_fvgs` com `scripts/bench.py`.
-- [ ] **Step 2: Implementar** a vetorização.
-- [ ] **Step 3: Rodar:** `uv run pytest -q` → tudo PASS.
-- [ ] **Step 4: Medir** e registrar a tabela final de `analyze` e de cada detector no relatório; metas: `find_pivots` e `find_fvgs` < 0,1 s em 12.000 candles M15 e `analyze` < 1,5 s.
-- [ ] **Step 5: Commit** `perf: pivôs e FVG vetorizados`.
+- [x] **Step 1: Rodar o oráculo** (`uv run pytest tests/test_equivalence.py -q` → PASS) e medir a partida de `find_pivots` e `find_fvgs` com `scripts/bench.py`.
+- [x] **Step 2: Implementar** a vetorização.
+- [x] **Step 3: Rodar:** `uv run pytest -q` → tudo PASS.
+- [x] **Step 4: Medir** e registrar a tabela final de `analyze` e de cada detector no relatório; metas: `find_pivots` e `find_fvgs` < 0,1 s em 12.000 candles M15 e `analyze` < 1,5 s.
+- [x] **Step 5: Commit** `perf: pivôs e FVG vetorizados`.
 
 ---
 

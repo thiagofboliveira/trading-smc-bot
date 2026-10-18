@@ -58,3 +58,17 @@ def test_symbol_without_dukascopy_mapping_is_rejected():
     raw["symbols"] = [*raw["symbols"], "FOOBAR"]
     with pytest.raises(ValidationError, match="FOOBAR"):
         Config.model_validate(raw)
+
+
+def test_breaker_defaults():
+    cfg = ZoneConfig()
+    assert cfg.breakers_enabled is True
+    assert cfg.breaker_require_imbalance is True
+    assert cfg.breaker_require_choch is False
+    assert cfg.breaker_max_age == 96
+    assert ZoneConfig(breaker_max_age=None).breaker_max_age is None
+
+
+def test_breaker_max_age_must_be_positive():
+    with pytest.raises(ValidationError):
+        ZoneConfig(breaker_max_age=0)

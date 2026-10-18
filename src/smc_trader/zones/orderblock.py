@@ -12,17 +12,23 @@ from smc_trader.zones.premium_discount import in_discount
 
 @dataclass(frozen=True)
 class Zone:
-    """Zona OB/FVOB.
+    """Zona OB, FVOB ou BREAKER.
 
     `end_time`/`end_reason` só são conhecidos quando `t >= end_time`; quem consome
-    deve filtrá-los por tempo (ver `is_active_at`). A mitigação é julgada na
-    resolução do timeframe da própria zona (M15), pelo `close_time` do primeiro
-    candle que toca a zona, a partir de `created_at` (um toque entre o candle do
-    OB e o BOS não mitiga).
+    deve filtrá-los por tempo (ver `is_active_at`). O toque é julgado na resolução
+    do timeframe da própria zona (M15), pelo `close_time` do primeiro candle que
+    toca a zona, a partir de `created_at` (um toque entre o candle de origem e a
+    criação não conta).
+
+    Há duas vidas:
+    - OB/FVOB: terminam `mitigated` no primeiro toque, ou `invalidated` por um
+      CHoCH contra a zona.
+    - BREAKER: termina no primeiro toque; `invalidated` se o candle do toque fecha
+      além do lado de origem, senão `mitigated`.
     """
 
     direction: Literal["long", "short"]
-    kind: Literal["OB", "FVOB"]
+    kind: Literal["OB", "FVOB", "BREAKER"]
     high: float
     low: float
     candle_time: pd.Timestamp  # abertura do candle do OB

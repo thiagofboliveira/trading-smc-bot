@@ -35,6 +35,10 @@ class ZoneConfig(BaseModel):
     require_imbalance: bool = False
     use_body: bool = False
     fvg_min_size: float = Field(0.0, ge=0)
+    breakers_enabled: bool = True
+    breaker_require_imbalance: bool = True
+    breaker_require_choch: bool = False
+    breaker_max_age: int | None = Field(96, ge=1)
 
 
 class DukascopyConfig(BaseModel):

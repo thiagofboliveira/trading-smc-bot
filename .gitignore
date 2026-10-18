@@ -1,6 +1,6 @@
 .venv/
 __pycache__/
-data/
-out/
+/data/
+/out/
 .superpowers/
 .worktrees/

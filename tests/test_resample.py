@@ -1,3 +1,4 @@
+import pytest
 import pandas as pd
 
 from smc_trader.data.resample import resample_ohlc
@@ -52,3 +53,26 @@ def test_incomplete_tail_dropped_by_default():
     assert out.empty
     assert list(out.columns) == COLS
     assert len(resample_ohlc(m1, "M15", drop_incomplete_tail=False)) == 1
+
+
+def test_naive_index_raises():
+    m1 = _m1(_range("2024-01-02 10:00", "2024-01-02 10:14"))
+    m1.index = m1.index.tz_localize(None)
+    with pytest.raises(ValueError, match="tz-aware"):
+        resample_ohlc(m1, "M15")
+
+
+def test_unsorted_and_duplicated_input_is_normalized():
+    m1 = _m1(_range("2024-01-02 10:00", "2024-01-02 10:14"), first_open=1.0, last_close=2.0)
+    dup = m1.iloc[[0]].copy()
+    dup["open"] = 3.0  # duplicate of 10:00 appearing later wins
+    messy = pd.concat([m1.iloc[::-1], dup])
+    out = resample_ohlc(messy, "M15")
+    assert out.iloc[0].open == 3.0
+    assert out.iloc[0].close == 2.0
+
+
+def test_unknown_tf_raises():
+    m1 = _m1(_range("2024-01-02 10:00", "2024-01-02 10:14"))
+    with pytest.raises(ValueError, match="M15"):
+        resample_ohlc(m1, "H4")

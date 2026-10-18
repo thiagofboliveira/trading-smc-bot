@@ -1,3 +1,4 @@
+import pytest
 import pandas as pd
 
 from smc_trader.data.store import load_candles, save_m1
@@ -37,3 +38,15 @@ def test_load_m15_resamples_and_filters(tmp_path):
     end = pd.Timestamp("2024-01-02 10:45", tz="UTC")
     out = load_candles(tmp_path, "EURUSD", "M15", start, end)
     assert list(out.index) == [start, pd.Timestamp("2024-01-02 10:30", tz="UTC")]
+
+
+def test_missing_file_names_symbol_and_path(tmp_path):
+    with pytest.raises(FileNotFoundError, match="EURUSD") as e:
+        load_candles(tmp_path, "EURUSD")
+    assert "EURUSD_M1.parquet" in str(e.value)
+
+
+def test_unknown_tf_raises(tmp_path):
+    save_m1(tmp_path, "EURUSD", _m1("2024-01-02 10:00", 5))
+    with pytest.raises(ValueError, match="M15"):
+        load_candles(tmp_path, "EURUSD", "H4")

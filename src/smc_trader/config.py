@@ -57,6 +57,57 @@ class DukascopyConfig(BaseModel):
     offer_side: Literal["bid", "ask"] = "bid"
 
 
+class CostsConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    spread_pips: dict[str, float] = Field(default_factory=dict)
+    commission_per_lot: float = Field(0.0, ge=0.0)
+    slippage_points: float = Field(0.0, ge=0.0)
+
+
+class SessionWindow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    start: str
+    end: str
+
+
+class SessionConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    windows: list[SessionWindow] = Field(
+        default_factory=lambda: [
+            SessionWindow(name="london", start="07:00", end="15:30"),
+            SessionWindow(name="ny", start="13:00", end="20:00"),
+        ]
+    )
+    force_close_time: str | None = Field(default="21:00")
+
+
+class LimitsConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    max_trades_per_day: int = Field(3, ge=1)
+    max_stops_per_day: int = Field(2, ge=1)
+    max_gains_per_day: int = Field(1, ge=1)
+
+
+class BacktestConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entry_mode: Literal["touch", "confirmation", "hybrid"] = "confirmation"
+    stop_mode: Literal["ob", "swing", "m1_swing"] = "ob"
+    target_mode: Literal["fixed_r", "none"] = "fixed_r"
+    target_r: float = Field(3.0, gt=0.0)
+    max_open_per_symbol: int = Field(1, ge=1)
+    confirmation_timeout_minutes: int | None = Field(default=None, ge=1)
+    costs: CostsConfig = Field(default_factory=CostsConfig)
+    session: SessionConfig = Field(default_factory=SessionConfig)
+    limits: LimitsConfig = Field(default_factory=LimitsConfig)
+
+
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -65,6 +116,7 @@ class Config(BaseModel):
     dukascopy: DukascopyConfig
     structure: StructureConfig
     zones: ZoneConfig
+    backtest: BacktestConfig = Field(default_factory=BacktestConfig)
 
     @model_validator(mode="after")
     def _symbols_have_dukascopy_instrument(self) -> Self:

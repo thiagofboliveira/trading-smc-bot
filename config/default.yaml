@@ -24,3 +24,34 @@ zones:
   breaker_require_imbalance: true
   breaker_require_choch: false
   breaker_max_age: 96
+backtest:
+  entry_mode: confirmation
+  stop_mode: ob
+  target_mode: fixed_r
+  target_r: 3.0
+  max_open_per_symbol: 1
+  confirmation_timeout_minutes: null
+  costs:
+    spread_pips:
+      XAUUSD: 0.20
+      EURUSD: 0.8
+      GBPUSD: 1.0
+      US30: 2.0
+      NAS100: 1.5
+      BRENT: 0.03
+    commission_per_lot: 0.0
+    slippage_points: 0.0
+  session:
+    windows:
+      - name: london
+        start: "07:00"
+        end: "15:30"
+      - name: ny
+        start: "13:00"
+        end: "20:00"
+    force_close_time: "21:00"
+  limits:
+    enabled: false
+    max_trades_per_day: 3
+    max_stops_per_day: 2
+    max_gains_per_day: 1

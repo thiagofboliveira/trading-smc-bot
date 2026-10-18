@@ -3,8 +3,10 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from smc_trader.analysis import analyze
-from smc_trader.config import Config, load_config
+from smc_trader.config import Config, ZoneConfig, load_config
 from smc_trader.data.dukascopy_source import fetch_m1
 from smc_trader.data.mt5_bridge import import_mt5_csv
 from smc_trader.data.store import load_candles, save_m1
@@ -35,6 +37,11 @@ def _build_parser() -> argparse.ArgumentParser:
     chart.add_argument("--out", type=Path, default=Path("out/chart.html"))
     chart.add_argument("--config", type=Path, default=Path("config/default.yaml"))
     chart.add_argument("--data-root", type=Path, default=None)
+    chart.add_argument(
+        "--blocks",
+        default=None,
+        help="tipos de bloco a mostrar, separados por vírgula: OB, FVOB, BB (sobrescreve a config)",
+    )
 
     imp = sub.add_parser("import-csv", help="importa CSV M1 exportado do MT5")
     imp.add_argument("csv", type=Path)
@@ -66,6 +73,17 @@ def _cmd_fetch(args: argparse.Namespace, cfg: Config) -> int:
 
 
 def _cmd_chart(args: argparse.Namespace, cfg: Config) -> int:
+    zones_cfg = cfg.zones
+    if args.blocks is not None:
+        parsed = [b.strip().upper() for b in args.blocks.split(",") if b.strip()]
+        try:
+            zones_cfg = ZoneConfig.model_validate({**cfg.zones.model_dump(), "blocks_filter": parsed})
+        except ValidationError:
+            print(
+                f"--blocks inválido: {args.blocks!r}; use uma lista não vazia de OB, FVOB, BB",
+                file=sys.stderr,
+            )
+            return 2
     root = args.data_root if args.data_root is not None else cfg.data.root
     try:
         candles = load_candles(
@@ -75,7 +93,7 @@ def _cmd_chart(args: argparse.Namespace, cfg: Config) -> int:
         print(exc, file=sys.stderr)
         return 2
     k = cfg.structure.pivot_k_ltf if args.tf == "M1" else cfg.structure.pivot_k_htf
-    analysis = analyze(candles, k, cfg.zones)
+    analysis = analyze(candles, k, zones_cfg)
     fig = build_chart(candles, analysis, f"{args.symbol} {args.tf}")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fig.write_html(args.out, include_plotlyjs=True)

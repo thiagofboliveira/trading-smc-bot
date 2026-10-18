@@ -30,8 +30,8 @@
 
 1. **Frames vazios ou curtos** (menos de `2k+1` candles): todo detector devolve resultado vazio, sem exceção (Tasks 4 e 9).
 2. **Buracos no M1** (fim de semana, feriado, falha da corretora): a reamostragem não cria buckets vazios nem candles com NaN (Task 2).
-3. **Horário do servidor do MT5** (fonte secundária; a Dukascopy já vem em UTC): conversão correta para UTC nas semanas em que o DST dos EUA e o da Europa divergem (ex.: 2024-03-20), e horas ambíguas do fim do DST não derrubam o import (Task 3b).
-4. **Dados sobrepostos, duplicados ou fora de ordem** (reexportação incremental, candle na fronteira dos blocos mensais do download da Dukascopy): índice final único e ordenado; a linha mais recente vence (Tasks 2, 3 e 3b).
+3. **Horário do servidor do MT5** (fonte secundária; a Dukascopy já vem em UTC): conversão correta para UTC nas semanas em que o DST dos EUA e o da Europa divergem (ex.: 2024-03-20), e horas ambíguas do fim do DST não derrubam o import (Task 11).
+4. **Dados sobrepostos, duplicados ou fora de ordem** (reexportação incremental, candle na fronteira dos blocos mensais do download da Dukascopy): índice final único e ordenado; a linha mais recente vence (Tasks 2, 3 e 11).
 5. **Máximas/mínimas iguais e candles doji** (`open == close`): um único pivô por topo/fundo igual; doji não é candle de alta nem de baixa para o OB; nenhum erro (Tasks 4 e 8).
 
 ---
@@ -157,7 +157,7 @@ git commit -m "feat: scaffold do projeto e configuração"
 
 ---
 
-### Task 3b: Importação do MT5 via Wine (fonte secundária)
+### Task 11: Importação do MT5 via Wine (fonte secundária)
 
 > Necessária só para o scanner ao vivo (Plano 3) ou se você quiser os dados exatos da sua corretora. Pode ser executada depois da Task 10.
 
@@ -388,6 +388,6 @@ Regras de `build_zones`:
 
 ## Autoavaliação
 
-- **Cobertura da spec (fases 1 a 4):** scaffold, config, fonte Dukascopy, store e reamostragem (Tasks 1–3); ponte Wine/MT5 secundária (Task 3b); pivôs e BOS/CHoCH (4–5); OB/FVOB, FVG, sweep, premium/discount e mitigação/invalidação (6–8); visualização e checkpoint (10). Fases 5 a 8 ficam para os Planos 2 e 3.
+- **Cobertura da spec (fases 1 a 4):** scaffold, config, fonte Dukascopy, store e reamostragem (Tasks 1–3); ponte Wine/MT5 secundária (Task 11); pivôs e BOS/CHoCH (4–5); OB/FVOB, FVG, sweep, premium/discount e mitigação/invalidação (6–8); visualização e checkpoint (10). Fases 5 a 8 ficam para os Planos 2 e 3.
 - **Decisões minhas a sinalizar:** Dukascopy como fonte primária (lado `bid`; spread de custo vindo da configuração no Plano 2, porque o M1 da Dukascopy não traz spread); MT5/Wine como fonte secundária, com regra de fuso padrão NY+7 (comum em corretoras de Forex; configurável); só BOS gera zona; `k = 2` no M1; definição de `swept_liquidity` (sweep entre o candle do OB e o candle do BOS); `leg_time` como a última ocorrência do extremo da correção.
 - **Consistência de tipos:** `StructureEvent.leg_time/range_low/range_high/break_time`, `Zone`, `FVG.start_time/formed_at` e `Sweep.side` são usados com os mesmos nomes nas Tasks 5 a 10.

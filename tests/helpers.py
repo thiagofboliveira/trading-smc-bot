@@ -4,6 +4,21 @@ import pandas as pd
 from smc_trader.data.candles import TF_MINUTES, with_close_time
 
 
+SERIE_A_ROWS: list[tuple[float, float, float, float]] = [
+    (10, 11, 9, 10.5),
+    (10.5, 13, 10, 12.5),
+    (12.5, 12.5, 11, 11.5),
+    (11.5, 12, 10, 10.5),
+    (10.5, 11.5, 10.2, 11),
+    (11, 13.5, 10.8, 13.2),
+    (13.2, 14, 12.8, 13.8),
+    (13.8, 13.9, 12.5, 12.6),
+    (12.6, 13.0, 11.8, 12.0),
+    (12.0, 12.6, 11.9, 12.4),
+    (12.4, 12.5, 9.5, 9.8),
+]
+
+
 def _frame(o, h, l, c, tf: str, start: str) -> pd.DataFrame:
     idx = pd.date_range(start, periods=len(o), freq=f"{TF_MINUTES[tf]}min", tz="UTC", name="time")
     df = pd.DataFrame(

@@ -1,23 +1,10 @@
 import pandas as pd
 import pytest
+from helpers import SERIE_A_ROWS as SERIE_A
 from helpers import candles_from_ohlc, mirror, random_walk_candles
 
 from smc_trader.structure.market_structure import detect_structure
 from smc_trader.structure.pivots import find_pivots
-
-SERIE_A = [
-    (10, 11, 9, 10.5),
-    (10.5, 13, 10, 12.5),
-    (12.5, 12.5, 11, 11.5),
-    (11.5, 12, 10, 10.5),
-    (10.5, 11.5, 10.2, 11),
-    (11, 13.5, 10.8, 13.2),
-    (13.2, 14, 12.8, 13.8),
-    (13.8, 13.9, 12.5, 12.6),
-    (12.6, 13.0, 11.8, 12.0),
-    (12.0, 12.6, 11.9, 12.4),
-    (12.4, 12.5, 9.5, 9.8),
-]
 
 
 def _events(candles, k):

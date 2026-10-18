@@ -6,6 +6,7 @@ from pathlib import Path
 from smc_trader.analysis import analyze
 from smc_trader.config import Config, load_config
 from smc_trader.data.dukascopy_source import fetch_m1
+from smc_trader.data.mt5_bridge import import_mt5_csv
 from smc_trader.data.store import load_candles, save_m1
 from smc_trader.viz.chart import build_chart
 
@@ -33,6 +34,12 @@ def _build_parser() -> argparse.ArgumentParser:
     chart.add_argument("--out", type=Path, default=Path("out/chart.html"))
     chart.add_argument("--config", type=Path, default=Path("config/default.yaml"))
     chart.add_argument("--data-root", type=Path, default=None)
+
+    imp = sub.add_parser("import-csv", help="importa CSV M1 exportado do MT5")
+    imp.add_argument("csv", type=Path)
+    imp.add_argument("--symbol", required=True)
+    imp.add_argument("--config", type=Path, default=Path("config/default.yaml"))
+    imp.add_argument("--data-root", type=Path, default=None)
     return parser
 
 
@@ -67,7 +74,15 @@ def _cmd_chart(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
-_COMMANDS = {"fetch": _cmd_fetch, "chart": _cmd_chart}
+def _cmd_import_csv(args: argparse.Namespace, cfg: Config) -> int:
+    root = args.data_root if args.data_root is not None else cfg.data.root
+    df = import_mt5_csv(args.csv, cfg.data)
+    save_m1(root, args.symbol, df)
+    print(f"{args.symbol}: {len(df)} candles M1 importados em {root}")
+    return 0
+
+
+_COMMANDS = {"fetch": _cmd_fetch, "chart": _cmd_chart, "import-csv": _cmd_import_csv}
 
 
 def main(argv: list[str] | None = None) -> int:

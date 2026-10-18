@@ -18,6 +18,13 @@ SERIE_A_ROWS: list[tuple[float, float, float, float]] = [
     (12.4, 12.5, 9.5, 9.8),
 ]
 
+EXTRA_ROWS: list[tuple[float, float, float, float]] = [
+    (13.2, 14, 13.5, 13.9),
+    (13.9, 14.2, 13.2, 14.0),
+    (14.0, 14.5, 13.4, 14.4),
+    (14.4, 14.4, 12.8, 12.9),
+]
+
 
 def _frame(o, h, l, c, tf: str, start: str) -> pd.DataFrame:
     idx = pd.date_range(start, periods=len(o), freq=f"{TF_MINUTES[tf]}min", tz="UTC", name="time")

@@ -1,15 +1,8 @@
 import pandas as pd
-from helpers import SERIE_A_ROWS, candles_from_ohlc, random_walk_candles
+from helpers import EXTRA_ROWS, SERIE_A_ROWS, candles_from_ohlc, random_walk_candles
 
 from smc_trader.analysis import Analysis, analyze
 from smc_trader.config import ZoneConfig
-
-EXTRA_ROWS = [
-    (13.2, 14, 13.5, 13.9),
-    (13.9, 14.2, 13.2, 14.0),
-    (14.0, 14.5, 13.4, 14.4),
-    (14.4, 14.4, 12.8, 12.9),
-]
 
 
 def test_end_to_end_sequence():

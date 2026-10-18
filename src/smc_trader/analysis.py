@@ -1,3 +1,12 @@
+"""Pipeline de análise SMC.
+
+Contrato para o Plan 2: rode `analyze()` uma vez no frame completo e filtre cada
+saída por tempo (pivôs por `confirmed_at`, eventos/zonas por `time`/`created_at`,
+FVGs por `formed_at`, sweeps por `confirmed_at`, fim de zona por `end_time`).
+Sob esse filtro o resultado não tem look-ahead (verificado por testes). Uso em
+janela exige aquecimento: o primeiro rompimento da janela é rotulado BOS
+(trend None).
+"""
 from dataclasses import dataclass
 
 import pandas as pd

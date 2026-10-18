@@ -1,4 +1,7 @@
-from helpers import SERIE_A_ROWS, candles_from_ohlc, mirror
+import dataclasses
+
+import pandas as pd
+from helpers import EXTRA_ROWS, SERIE_A_ROWS, candles_from_ohlc, mirror
 
 from smc_trader.config import ZoneConfig
 from smc_trader.structure.market_structure import detect_structure
@@ -87,6 +90,7 @@ def test_swept_liquidity_window():
             pivot_time=c.index[0],
             pivot_price=9.0,
             sweep_time=c.index[pos],
+            confirmed_at=c["close_time"].iloc[pos],
             extreme=8.5,
         )
 
@@ -107,13 +111,7 @@ def test_mitigated():
 
 def test_invalidated_before_touch():
     c = candles_from_ohlc(
-        PLAIN
-        + [
-            (13.2, 14, 13.5, 13.9),
-            (13.9, 14.2, 13.2, 14.0),
-            (14.0, 14.5, 13.4, 14.4),
-            (14.4, 14.4, 12.8, 12.9),
-        ]
+        PLAIN + EXTRA_ROWS
     )
     (z,) = _zones(c)
     assert z.end_reason == "invalidated"
@@ -141,3 +139,17 @@ def test_doji_is_not_ob_candle():
     assert len(zones) == 1
     assert zones[0].candle_time == c.index[2]
     assert zones[0].direction == "long"
+
+
+def test_zone_is_active_at():
+    c = candles_from_ohlc(PLAIN + [(13.2, 14, 11.5, 13.8)])
+    (z,) = _zones(c)
+    assert z.end_time is not None
+    assert z.is_active_at(z.created_at - pd.Timedelta(minutes=1)) is False
+    assert z.is_active_at(z.created_at) is True
+    assert z.is_active_at(z.end_time - pd.Timedelta(minutes=1)) is True
+    assert z.is_active_at(z.end_time) is False
+    assert z.is_active_at(z.end_time + pd.Timedelta(days=1)) is False
+    open_ended = dataclasses.replace(z, end_time=None, end_reason=None)
+    assert open_ended.is_active_at(z.created_at - pd.Timedelta(minutes=1)) is False
+    assert open_ended.is_active_at(z.created_at + pd.Timedelta(days=365)) is True

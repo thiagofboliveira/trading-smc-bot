@@ -11,6 +11,7 @@ class Sweep:
     pivot_time: pd.Timestamp
     pivot_price: float
     sweep_time: pd.Timestamp  # abertura do candle que varreu
+    confirmed_at: pd.Timestamp  # close_time do candle que varreu (known-at)
     extreme: float  # extremo do pavio
 
 
@@ -27,6 +28,7 @@ def find_sweeps(candles: pd.DataFrame, pivots: pd.DataFrame) -> list[Sweep]:
     high = candles["high"].to_numpy()
     low = candles["low"].to_numpy()
     close = candles["close"].to_numpy()
+    close_times = candles["close_time"]
     sweeps: list[Sweep] = []
     for p in pivots.itertuples(index=False):
         start = times.searchsorted(p.confirmed_at, side="left")
@@ -43,7 +45,14 @@ def find_sweeps(candles: pd.DataFrame, pivots: pd.DataFrame) -> list[Sweep]:
             swept, extreme = close[j] < p.price, high[j]
         if swept:
             sweeps.append(
-                Sweep(p.kind, p.time, float(p.price), times[j], float(extreme))
+                Sweep(
+                    p.kind,
+                    p.time,
+                    float(p.price),
+                    times[j],
+                    close_times.iloc[j],
+                    float(extreme),
+                )
             )
     sweeps.sort(key=lambda s: s.sweep_time)
     return sweeps

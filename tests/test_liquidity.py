@@ -22,6 +22,7 @@ def test_low_sweep():
             pivot_time=c.index[1],
             pivot_price=8.0,
             sweep_time=c.index[4],
+            confirmed_at=c["close_time"].iloc[4],
             extreme=7.5,
         )
     ]
@@ -44,3 +45,4 @@ def test_high_sweep_mirrored():
     assert s.pivot_price == 92.0
     assert s.sweep_time == c.index[4]
     assert s.extreme == 92.5
+    assert s.confirmed_at == c["close_time"].iloc[4]

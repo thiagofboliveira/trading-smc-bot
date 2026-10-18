@@ -1,6 +1,5 @@
 import plotly.graph_objects as go
-from helpers import SERIE_A_ROWS, candles_from_ohlc, random_walk_candles
-from test_analysis import EXTRA_ROWS
+from helpers import EXTRA_ROWS, SERIE_A_ROWS, candles_from_ohlc, random_walk_candles
 
 from smc_trader.analysis import analyze
 from smc_trader.cli import main

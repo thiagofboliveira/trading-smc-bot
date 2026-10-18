@@ -12,6 +12,15 @@ from smc_trader.zones.premium_discount import in_discount
 
 @dataclass(frozen=True)
 class Zone:
+    """Zona OB/FVOB.
+
+    `end_time`/`end_reason` só são conhecidos quando `t >= end_time`; quem consome
+    deve filtrá-los por tempo (ver `is_active_at`). A mitigação é julgada na
+    resolução do timeframe da própria zona (M15), pelo `close_time` do primeiro
+    candle que toca a zona, a partir de `created_at` (um toque entre o candle do
+    OB e o BOS não mitiga).
+    """
+
     direction: Literal["long", "short"]
     kind: Literal["OB", "FVOB"]
     high: float
@@ -24,6 +33,9 @@ class Zone:
     swept_liquidity: bool
     end_time: pd.Timestamp | None
     end_reason: Literal["mitigated", "invalidated"] | None
+
+    def is_active_at(self, t: pd.Timestamp) -> bool:
+        return self.created_at <= t and (self.end_time is None or self.end_time > t)
 
 
 def build_zones(
@@ -80,7 +92,7 @@ def build_zones(
             continue
         sweep_side = "low" if long else "high"
         swept = any(
-            s.side == sweep_side and candle_time <= s.sweep_time <= event.break_time
+            s.side == sweep_side and s.sweep_time >= candle_time and s.confirmed_at <= event.time
             for s in sweeps
         )
         end_time, end_reason = _lifetime(

@@ -93,6 +93,19 @@ def run_cross_asset_study(
                     }
                     for s in ranking[:15]
                 ],
+                "all_variants": [
+                    {
+                        "config_hash": s.config_hash,
+                        "blocks_filter": s.blocks_filter,
+                        "entry_mode": s.entry_mode,
+                        "stop_mode": s.stop_mode,
+                        "trailing_mode": s.trailing_mode,
+                        "confluence_profile": s.confluence_profile,
+                        "is_metrics": s.is_metrics,
+                        "oos_metrics": s.oos_metrics,
+                    }
+                    for s in grid_res.summaries
+                ],
             }
             json.dump(json_payload, f, indent=2, ensure_ascii=False)
 
@@ -151,4 +164,6 @@ def run_cross_asset_study(
 
 
 if __name__ == "__main__":
-    run_cross_asset_study()
+    import sys
+
+    run_cross_asset_study(sys.argv[1:] or None)

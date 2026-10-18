@@ -222,3 +222,42 @@ def test_real_data_backtest_consistency():
     assert len(res_no_limits.trades) >= len(res_limits.trades)
     assert res_no_limits.metrics["total_trades"] == len(res_no_limits.trades)
 
+
+
+def _long_zone(now, end_time=None, end_reason=None):
+    return Zone(
+        direction="long",
+        kind="OB",
+        high=100.0,
+        low=90.0,
+        candle_time=now - pd.Timedelta(minutes=30),
+        created_at=now - pd.Timedelta(minutes=15),
+        range_low=85.0,
+        range_high=115.0,
+        in_discount=True,
+        swept_liquidity=False,
+        end_time=end_time,
+        end_reason=end_reason,
+    )
+
+
+def test_zone_ended_before_window_is_not_traded():
+    """Zona mitigada no M15 antes do início do recorte (ex.: OOS) não gera trade fantasma."""
+    cfg = BacktestConfig(entry_mode="touch", stop_mode="ob", target_r=3.0)
+    now = pd.Timestamp("2026-10-18 10:00:00", tz="UTC")
+    zone = _long_zone(now, end_time=now - pd.Timedelta(minutes=5), end_reason="mitigated")
+    # Preço já bem abaixo da zona: antes da correção, abria a 80 com stop em 90 (+1R falso).
+    c_m1 = candles_from_ohlc([(80.0, 81.0, 79.0, 80.5), (80.5, 81.0, 79.5, 80.0)], tf="M1", start=now)
+    result = BacktestEngine(cfg).run(c_m1, [zone], symbol="XAUUSD")
+    assert result.trades == []
+
+
+def test_entry_beyond_stop_is_rejected():
+    """Gap através da zona inteira: execução abaixo do stop é recusada."""
+    cfg = BacktestConfig(entry_mode="touch", stop_mode="ob", target_r=3.0)
+    now = pd.Timestamp("2026-10-18 10:00:00", tz="UTC")
+    zone = _long_zone(now)
+    c_m1 = candles_from_ohlc([(85.0, 86.0, 84.0, 85.5), (85.5, 86.0, 84.5, 85.0)], tf="M1", start=now)
+    result = BacktestEngine(cfg).run(c_m1, [zone], symbol="XAUUSD")
+    assert result.trades == []
+    assert all(t.r_multiple <= 3.0 for t in result.trades)

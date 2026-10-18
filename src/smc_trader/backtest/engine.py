@@ -96,9 +96,23 @@ class BacktestEngine:
         trailing_mgr: TrailingManager | None = None
         trade_counter = 0
 
-        # Estado de rastreamento de cada zona
+        # Estado de rastreamento de cada zona.
+        # Zonas cuja vida terminou (mitigada/invalidada no M15) antes do início da
+        # janela simulada já nascem CONSUMED: sem isso, ao simular um recorte
+        # (OOS / walk-forward) com zonas detectadas no período inteiro, zonas
+        # já mitigadas seriam "tocadas" no 1º candle com o preço além do stop.
+        window_start = candles_m1.index[0] if len(candles_m1) else None
         zone_states: dict[tuple[pd.Timestamp, pd.Timestamp], dict[str, Any]] = {
-            (z.candle_time, z.created_at): {"state": "UNTOUCHED", "touch_time": None}
+            (z.candle_time, z.created_at): {
+                "state": (
+                    "CONSUMED"
+                    if window_start is not None
+                    and z.end_time is not None
+                    and z.end_time <= window_start
+                    else "UNTOUCHED"
+                ),
+                "touch_time": None,
+            }
             for z in zones
         }
         zones_sorted = sorted(zones, key=lambda z: z.created_at)
@@ -264,10 +278,11 @@ class BacktestEngine:
                                     current_pos = self._open_position(
                                         zone, nominal_entry, t, symbol, "touch"
                                     )
-                                    trailing_mgr = TrailingManager(
-                                        self.config.trailing, current_pos.stop_loss
-                                    )
-                                    entered = True
+                                    if current_pos is not None:
+                                        trailing_mgr = TrailingManager(
+                                            self.config.trailing, current_pos.stop_loss
+                                        )
+                                        entered = True
                             elif self.config.entry_mode == "hybrid":
                                 # Confluência técnica no momento do toque
                                 touch_p = min(c_open, zone.high) if long else max(c_open, zone.low)
@@ -289,10 +304,11 @@ class BacktestEngine:
                                         current_pos = self._open_position(
                                             zone, touch_p, t, symbol, "hybrid"
                                         )
-                                        trailing_mgr = TrailingManager(
-                                            self.config.trailing, current_pos.stop_loss
-                                        )
-                                        entered = True
+                                        if current_pos is not None:
+                                            trailing_mgr = TrailingManager(
+                                                self.config.trailing, current_pos.stop_loss
+                                            )
+                                            entered = True
                                 else:
                                     z_info["state"] = "ARMED"
                                     remaining_active.append(zone)
@@ -331,10 +347,11 @@ class BacktestEngine:
                                         "confirmation",
                                         m1_swing=m1_swing,
                                     )
-                                    trailing_mgr = TrailingManager(
-                                        self.config.trailing, current_pos.stop_loss
-                                    )
-                                    entered = True
+                                    if current_pos is not None:
+                                        trailing_mgr = TrailingManager(
+                                            self.config.trailing, current_pos.stop_loss
+                                        )
+                                        entered = True
                             else:
                                 remaining_active.append(zone)
                         else:
@@ -365,7 +382,7 @@ class BacktestEngine:
         symbol: str,
         entry_mode: Literal["touch", "confirmation", "hybrid"],
         m1_swing: float | None = None,
-    ) -> Position:
+    ) -> Position | None:
         long = zone.direction == "long"
         entry_price, _ = self.costs_calc.get_entry_price(zone.direction, nominal_entry, symbol)
 
@@ -376,6 +393,11 @@ class BacktestEngine:
             stop_loss = zone.range_low if long else zone.range_high
         else:
             stop_loss = zone.low if long else zone.high
+
+        # Sanidade: preço de execução já além do stop (gap através da zona) não é
+        # um setup válido — o stop seria "atingido" com lucro no mesmo candle.
+        if (long and entry_price <= stop_loss) or (not long and entry_price >= stop_loss):
+            return None
 
         risk = abs(entry_price - stop_loss)
         if risk == 0:

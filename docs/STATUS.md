@@ -38,16 +38,18 @@ Resultados finais (12k candles M15):
 - `analyze`: 0,815 s (meta < 1,50 s; antes 17,214 s)
 Em 30k candles M1: `analyze` caiu de 82,6 s para 2,698 s.
 
-## O que falta
+### Plano 2b — Motor de backtest no M1 (concluído)
+- [x] Entrada por toque (`touch`), por confirmação (`confirmation` com CHoCH no M1) e híbrida (`hybrid`)
+- [x] Stops `ob` / `swing` / `m1_swing`; alvo `fixed_r` (3R) e `none`
+- [x] Custos: spread por símbolo (`spread_pips`), comissão por lote, slippage
+- [x] Sessões configuráveis (`SessionConfig` com janelas Londres/NY UTC) e horário limite de fechamento forçado
+- [x] Limites de produção (máx. 3 operações/dia, para após 2 stops ou 1 gain), desligáveis no backtest (`limits.enabled = false`)
+- [x] Uma posição aberta por símbolo (`max_open_per_symbol: 1`); ambiguidade intrabar: stop e alvo no mesmo candle M1 → assume stop
+- [x] Métricas: nº de trades, taxa de acerto, R médio, expectativa matemática, profit factor, max drawdown em R, resultado mensal
+- [x] CLI `smc backtest <symbol>` funcional com saída no terminal e exportação JSON
+- [x] 480 testes passando na suíte completa (`uv run pytest -q`)
 
-### Plano 2b — Motor de backtest no M1
-- [ ] Entrada por toque, por confirmação (CHoCH no M1) e híbrida (primeiro toque; confluência decide)
-- [ ] Stops `ob` / `swing` / `m1_swing`; alvo `fixed_r` (3R) ou `none`
-- [ ] Custos: spread por símbolo (Dukascopy não tem spread), comissão, slippage
-- [ ] Sessões configuráveis e horário limite
-- [ ] Limites de produção (máx. 3 operações/dia, para após 2 stops ou 1 gain), desligáveis no backtest
-- [ ] Uma posição aberta por símbolo; stop e alvo no mesmo candle → assume stop
-- [ ] Métricas: nº de trades, acerto, R médio, expectativa, profit factor, drawdown em R, resultado mensal
+## O que falta
 
 ### Plano 2c — Condução e confluências
 - [ ] Trailing `none` / `ema` (período configurável) / `bos`; ativação por novo BOS, 1R ou o que vier primeiro; timeframe configurável

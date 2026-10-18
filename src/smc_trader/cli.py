@@ -3,12 +3,16 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import json
+
 from pydantic import ValidationError
 
 from smc_trader.analysis import analyze
+from smc_trader.backtest.engine import BacktestEngine
 from smc_trader.config import Config, ZoneConfig, load_config
 from smc_trader.data.dukascopy_source import fetch_m1
 from smc_trader.data.mt5_bridge import import_mt5_csv
+from smc_trader.data.resample import resample_ohlc
 from smc_trader.data.store import load_candles, save_m1
 from smc_trader.viz.chart import build_chart
 
@@ -48,6 +52,14 @@ def _build_parser() -> argparse.ArgumentParser:
     imp.add_argument("--symbol", required=True)
     imp.add_argument("--config", type=Path, default=Path("config/default.yaml"))
     imp.add_argument("--data-root", type=Path, default=None)
+
+    bt = sub.add_parser("backtest", help="executa backtest orientado a eventos no M1")
+    bt.add_argument("symbol")
+    bt.add_argument("--from", dest="start", type=_utc, default=None)
+    bt.add_argument("--to", dest="end", type=_utc, default=None)
+    bt.add_argument("--out", type=Path, default=None)
+    bt.add_argument("--config", type=Path, default=Path("config/default.yaml"))
+    bt.add_argument("--data-root", type=Path, default=None)
     return parser
 
 
@@ -109,7 +121,70 @@ def _cmd_import_csv(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
-_COMMANDS = {"fetch": _cmd_fetch, "chart": _cmd_chart, "import-csv": _cmd_import_csv}
+def _cmd_backtest(args: argparse.Namespace, cfg: Config) -> int:
+    root = args.data_root if args.data_root is not None else cfg.data.root
+    try:
+        c_m1 = load_candles(root, args.symbol, "M1", args.start, args.end)
+    except FileNotFoundError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+
+    if c_m1.empty:
+        print("Nenhum candle encontrado para o período especificado.", file=sys.stderr)
+        return 1
+
+    c_m15 = resample_ohlc(c_m1, "M15")
+    analysis = analyze(c_m15, cfg.structure.pivot_k_htf, cfg.zones)
+    all_zones = analysis.zones + analysis.breakers
+
+    engine = BacktestEngine(cfg.backtest)
+    result = engine.run(c_m1, all_zones, symbol=args.symbol)
+
+    m = result.metrics
+    print(f"=== Backtest SMC: {args.symbol} ===")
+    print(f"Total de trades:   {m['total_trades']}")
+    print(f"Taxa de acerto:    {m['win_rate']:.1f}% ({m['win_trades']}W / {m['loss_trades']}L)")
+    print(f"R Médio:           {m['avg_r']:+.2f}R")
+    print(f"Expectativa:       {m['expectancy']:+.2f}R")
+    print(f"Profit Factor:     {m['profit_factor']:.2f}")
+    print(f"Max Drawdown:      {m['max_drawdown_r']:.2f}R")
+
+    if args.out is not None:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        trades_dict = [
+            {
+                "id": t.id,
+                "symbol": t.symbol,
+                "direction": t.direction,
+                "zone_kind": t.zone_kind,
+                "entry_mode": t.entry_mode,
+                "entry_time": t.entry_time.isoformat(),
+                "entry_price": t.entry_price,
+                "stop_loss": t.stop_loss,
+                "take_profit": t.take_profit,
+                "exit_time": t.exit_time.isoformat(),
+                "exit_price": t.exit_price,
+                "exit_reason": t.exit_reason,
+                "r_multiple": t.r_multiple,
+                "pnl": t.pnl,
+                "costs": t.costs,
+            }
+            for t in result.trades
+        ]
+        out_payload = {"metrics": m, "trades": trades_dict}
+        with open(args.out, "w", encoding="utf-8") as f:
+            json.dump(out_payload, f, indent=2, ensure_ascii=False)
+        print(f"Relatório gravado em {args.out}")
+
+    return 0
+
+
+_COMMANDS = {
+    "fetch": _cmd_fetch,
+    "chart": _cmd_chart,
+    "import-csv": _cmd_import_csv,
+    "backtest": _cmd_backtest,
+}
 
 
 def main(argv: list[str] | None = None) -> int:

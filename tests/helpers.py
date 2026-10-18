@@ -59,3 +59,15 @@ def random_walk_candles(n: int, seed: int, tf: str = "M15") -> pd.DataFrame:
     high = np.maximum(open_, close) + rng.uniform(0, 0.5, n)
     low = np.minimum(open_, close) - rng.uniform(0, 0.5, n)
     return _frame(open_, high, low, close, tf, "2024-01-02 00:00")
+
+BREAKER_TAIL: list[tuple[float, float, float, float]] = [
+    (13.2, 14.0, 12.5, 12.8),
+    (12.8, 12.9, 9.4, 9.5),
+    (9.5, 10.0, 9.0, 9.2),
+]
+
+BREAKER_TAIL_NO_FVG: list[tuple[float, float, float, float]] = [
+    (13.2, 14.0, 12.5, 12.8),
+    (12.8, 12.9, 9.4, 9.5),
+    (9.5, 12.6, 9.0, 12.3),
+]

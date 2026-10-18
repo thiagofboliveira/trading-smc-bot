@@ -71,6 +71,12 @@ def _build_parser() -> argparse.ArgumentParser:
     grid.add_argument("--out", type=Path, default=Path("out/grid_report.md"), help="caminho do relatório Markdown de saída")
     grid.add_argument("--config", type=Path, default=Path("config/default.yaml"))
     grid.add_argument("--data-root", type=Path, default=None)
+
+    ui = sub.add_parser("ui", help="inicia servidor web com frontend interativo SMC")
+    ui.add_argument("--host", default="127.0.0.1", help="endereço do host (padrão: 127.0.0.1)")
+    ui.add_argument("--port", type=int, default=8080, help="porta do servidor (padrão: 8080)")
+    ui.add_argument("--config", type=Path, default=Path("config/default.yaml"))
+    ui.add_argument("--data-root", type=Path, default=None)
     return parser
 
 
@@ -270,12 +276,19 @@ def _cmd_grid(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def _cmd_ui(args: argparse.Namespace, cfg: Config) -> int:
+    from smc_trader.ui.server import run_ui_server
+    run_ui_server(cfg, host=args.host, port=args.port, data_root=args.data_root)
+    return 0
+
+
 _COMMANDS = {
     "fetch": _cmd_fetch,
     "chart": _cmd_chart,
     "import-csv": _cmd_import_csv,
     "backtest": _cmd_backtest,
     "grid": _cmd_grid,
+    "ui": _cmd_ui,
 }
 
 

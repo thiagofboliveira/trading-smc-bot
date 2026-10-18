@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SMC Trade Assistant — Painel Analítico</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Plotly.js CDN -->
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <!-- FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            },
+            dark: {
+              bg: '#0b0f19',
+              card: '#111827',
+              border: '#1f2937',
+              hover: '#1e293b'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #0b0f19;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #111827;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #374151;
+      border-radius: 3px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #4b5563;
+    }
+  </style>
+</head>
+<body class="text-gray-200 antialiased h-screen flex flex-col overflow-hidden">
+
+  <!-- Header -->
+  <header class="bg-gray-900 border-b border-gray-800 px-6 py-3 flex items-center justify-between shrink-0">
+    <div class="flex items-center space-x-3">
+      <div class="h-9 w-9 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+        <i class="fa-solid fa-chart-line text-lg"></i>
+      </div>
+      <div>
+        <h1 class="text-base font-bold text-white tracking-wide flex items-center gap-2">
+          SMC Trade Assistant
+          <span class="text-xs bg-indigo-900/60 text-indigo-300 border border-indigo-700/50 px-2 py-0.5 rounded-full font-mono">v2.0 M1 Engine</span>
+        </h1>
+        <p class="text-xs text-gray-400">Smart Money Concepts &bull; Day Trade Quantitativo</p>
+      </div>
+    </div>
+
+    <div class="flex items-center space-x-4">
+      <div class="flex items-center space-x-2 text-xs bg-gray-800/80 border border-gray-700 px-3 py-1.5 rounded-md">
+        <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span class="text-gray-300 font-medium" id="status-text">Pronto para simulação</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <div class="flex flex-1 overflow-hidden">
+
+    <!-- Sidebar de Controles -->
+    <aside class="w-96 bg-gray-900 border-r border-gray-800 flex flex-col justify-between shrink-0 overflow-y-auto custom-scrollbar p-5 space-y-6">
+      <div class="space-y-5">
+        
+        <!-- Ativo e Dados -->
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Ativo (Símbolo)</label>
+          <select id="select-symbol" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition">
+            <option value="XAUUSD">XAUUSD (Ouro / Dólar)</option>
+            <option value="EURUSD">EURUSD (Euro / Dólar)</option>
+            <option value="GBPUSD">GBPUSD (Libra / Dólar)</option>
+            <option value="US30">US30 (Dow Jones)</option>
+            <option value="NAS100">NAS100 (Nasdaq)</option>
+            <option value="BRENT">BRENT (Petróleo)</option>
+          </select>
+          <div id="symbol-info" class="text-xs text-gray-400 mt-1 flex justify-between font-mono">
+            <span>Carregando dados...</span>
+          </div>
+        </div>
+
+        <!-- Intervalo Temporal -->
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Período de Análise</label>
+          <div class="grid grid-cols-2 gap-2 mb-2">
+            <div>
+              <span class="text-[10px] text-gray-500">De (Início)</span>
+              <input type="date" id="input-start" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            </div>
+            <div>
+              <span class="text-[10px] text-gray-500">Até (Fim)</span>
+              <input type="date" id="input-end" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            </div>
+          </div>
+          <!-- Presets rápidos -->
+          <div class="flex gap-1.5">
+            <button onclick="setPreset('1m')" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-[11px] py-1 rounded transition border border-gray-700/60">Último Mês</button>
+            <button onclick="setPreset('3m')" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-[11px] py-1 rounded transition border border-gray-700/60">Últimos 3M</button>
+            <button onclick="setPreset('all')" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-[11px] py-1 rounded transition border border-gray-700/60">Todo Histórico</button>
+          </div>
+        </div>
+
+        <!-- Configuração de Estratégia SMC -->
+        <div class="border-t border-gray-800 pt-4 space-y-4">
+          <h2 class="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+            <i class="fa-solid fa-sliders"></i> Parâmetros da Estratégia
+          </h2>
+
+          <!-- Blocos POI -->
+          <div>
+            <label class="block text-xs text-gray-300 font-medium mb-1">Blocos de Interesse (POI)</label>
+            <div class="grid grid-cols-3 gap-1.5">
+              <label class="flex items-center space-x-1.5 bg-gray-800/60 px-2 py-1.5 rounded border border-gray-700/60 cursor-pointer text-xs">
+                <input type="checkbox" id="poi-ob" value="OB" checked class="rounded bg-gray-700 text-indigo-600 focus:ring-0">
+                <span>OB</span>
+              </label>
+              <label class="flex items-center space-x-1.5 bg-gray-800/60 px-2 py-1.5 rounded border border-gray-700/60 cursor-pointer text-xs">
+                <input type="checkbox" id="poi-fvob" value="FVOB" checked class="rounded bg-gray-700 text-indigo-600 focus:ring-0">
+                <span>FVOB</span>
+              </label>
+              <label class="flex items-center space-x-1.5 bg-gray-800/60 px-2 py-1.5 rounded border border-gray-700/60 cursor-pointer text-xs">
+                <input type="checkbox" id="poi-bb" value="BB" checked class="rounded bg-gray-700 text-indigo-600 focus:ring-0">
+                <span>Breaker</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Modo de Entrada -->
+          <div>
+            <label class="block text-xs text-gray-300 font-medium mb-1">Modo de Entrada (M1)</label>
+            <select id="select-entry" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              <option value="confirmation" selected>Confirmação (CHoCH M1 dentro da zona)</option>
+              <option value="touch">Toque Puro (Entrada imediata)</option>
+              <option value="hybrid">Híbrido (Toque se confluência, senão CHoCH)</option>
+            </select>
+          </div>
+
+          <!-- Modo de Stop Loss -->
+          <div>
+            <label class="block text-xs text-gray-300 font-medium mb-1">Modo de Stop Loss</label>
+            <select id="select-stop" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              <option value="swing" selected>Swing (Além do swing da correção macro)</option>
+              <option value="ob">OB (Além da zona M15)</option>
+              <option value="m1_swing">M1 Swing (Fundo/topo do CHoCH no micro)</option>
+            </select>
+          </div>
+
+          <!-- Alvo R:R -->
+          <div>
+            <div class="flex justify-between items-center mb-1">
+              <label class="text-xs text-gray-300 font-medium">Alvo Fixo (R:R)</label>
+              <span id="target-r-label" class="text-xs font-mono text-indigo-400 font-bold">1:3.0</span>
+            </div>
+            <input type="range" id="input-target-r" min="1.0" max="6.0" step="0.5" value="3.0" oninput="document.getElementById('target-r-label').textContent = '1:' + parseFloat(this.value).toFixed(1)" class="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+          </div>
+
+          <!-- Trailing Stop -->
+          <div>
+            <label class="block text-xs text-gray-300 font-medium mb-1">Condução (Trailing Stop)</label>
+            <select id="select-trailing" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              <option value="none" selected>Nenhum (Alvo fixo integral)</option>
+              <option value="ema">EMA Trailing (M1 Período 20)</option>
+              <option value="bos">BOS Trailing (Condução por novos fundos/topos)</option>
+            </select>
+          </div>
+
+          <!-- Confluências Técnicas -->
+          <div>
+            <label class="block text-xs text-gray-300 font-medium mb-1">Filtros de Confluência</label>
+            <div class="grid grid-cols-2 gap-1.5">
+              <label class="flex items-center space-x-1.5 bg-gray-800/40 p-1.5 rounded border border-gray-700/50 cursor-pointer text-[11px]">
+                <input type="checkbox" id="conf-ema80" class="rounded bg-gray-700 text-indigo-600 focus:ring-0">
+                <span>MME 80</span>
+              </label>
+              <label class="flex items-center space-x-1.5 bg-gray-800/40 p-1.5 rounded border border-gray-700/50 cursor-pointer text-[11px]">
+                <input type="checkbox" id="conf-sma200" class="rounded bg-gray-700 text-indigo-600 focus:ring-0">
+                <span>MMA 200</span>
+              </label>
+              <label class="flex items-center space-x-1.5 bg-gray-800/40 p-1.5 rounded border border-gray-700/50 cursor-pointer text-[11px]">
+                <input type="checkbox" id="conf-fib618" class="rounded bg-gray-700 text-indigo-600 focus:ring-0">
+                <span>Fibo 61.8%</span>
+              </label>
+              <label class="flex items-center space-x-1.5 bg-gray-800/40 p-1.5 rounded border border-gray-700/50 cursor-pointer text-[11px]">
+                <input type="checkbox" id="conf-fib790" class="rounded bg-gray-700 text-indigo-600 focus:ring-0">
+                <span>Fibo 79.0%</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Limites de Gestão Diária -->
+          <div class="pt-1">
+            <label class="flex items-center space-x-2 text-xs text-gray-300 cursor-pointer">
+              <input type="checkbox" id="input-limits" class="rounded bg-gray-700 text-indigo-600 focus:ring-0">
+              <span>Ativar travas diárias (máx 3 trades, para em 2 stops ou 1 gain)</span>
+            </label>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Botões de Ação -->
+      <div class="space-y-2 pt-4 border-t border-gray-800">
+        <button id="btn-backtest" onclick="runBacktest()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 px-4 rounded-lg text-xs shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition active:scale-[0.98]">
+          <i class="fa-solid fa-play"></i>
+          <span>Executar Backtest M1</span>
+        </button>
+
+        <button id="btn-chart" onclick="loadChart()" class="w-full bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium py-2 px-4 rounded-lg text-xs border border-gray-700 flex items-center justify-center gap-2 transition">
+          <i class="fa-solid fa-chart-candlestick"></i>
+          <span>Ver Gráfico SMC</span>
+        </button>
+
+        <button id="btn-grid" onclick="runGridExploration()" class="w-full bg-slate-800 hover:bg-slate-700 text-amber-300 font-medium py-2 px-4 rounded-lg text-xs border border-amber-500/30 flex items-center justify-center gap-2 transition">
+          <i class="fa-solid fa-layer-group"></i>
+          <span>Explorar Grade & Refinamento</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Área Principal de Resultados -->
+    <main class="flex-1 flex flex-col overflow-hidden bg-gray-950">
+      
+      <!-- Cards de Métricas Principais (KPIs) -->
+      <div class="grid grid-cols-6 gap-3 p-4 bg-gray-900/60 border-b border-gray-800 shrink-0">
+        
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-3">
+          <span class="text-[10px] uppercase font-bold text-gray-400">Taxa de Acerto</span>
+          <div class="text-xl font-bold font-mono text-emerald-400 mt-0.5" id="kpi-winrate">--%</div>
+          <span class="text-[10px] text-gray-400" id="kpi-win-count">-- W / -- L</span>
+        </div>
+
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-3">
+          <span class="text-[10px] uppercase font-bold text-gray-400">Expectativa (R)</span>
+          <div class="text-xl font-bold font-mono text-indigo-400 mt-0.5" id="kpi-expectancy">-- R</div>
+          <span class="text-[10px] text-gray-400">Por operação</span>
+        </div>
+
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-3">
+          <span class="text-[10px] uppercase font-bold text-gray-400">Profit Factor</span>
+          <div class="text-xl font-bold font-mono text-cyan-400 mt-0.5" id="kpi-pf">--</div>
+          <span class="text-[10px] text-gray-400">Gains / Losses</span>
+        </div>
+
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-3">
+          <span class="text-[10px] uppercase font-bold text-gray-400">Max Drawdown</span>
+          <div class="text-xl font-bold font-mono text-rose-400 mt-0.5" id="kpi-drawdown">-- R</div>
+          <span class="text-[10px] text-gray-400">Risco em R</span>
+        </div>
+
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-3">
+          <span class="text-[10px] uppercase font-bold text-gray-400">Total de Trades</span>
+          <div class="text-xl font-bold font-mono text-white mt-0.5" id="kpi-trades">--</div>
+          <span class="text-[10px] text-gray-400" id="kpi-candles">-- candles M1</span>
+        </div>
+
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-3">
+          <span class="text-[10px] uppercase font-bold text-gray-400">Resultado Acumulado</span>
+          <div class="text-xl font-bold font-mono text-emerald-400 mt-0.5" id="kpi-cum-r">-- R</div>
+          <span class="text-[10px] text-gray-400" id="kpi-pnl">$ --</span>
+        </div>
+
+      </div>
+
+      <!-- Abas de Navegação -->
+      <div class="flex items-center space-x-2 px-4 pt-3 bg-gray-900/30 border-b border-gray-800 shrink-0">
+        <button onclick="switchTab('equity')" id="tab-btn-equity" class="px-4 py-2 text-xs font-semibold rounded-t-lg border-b-2 border-indigo-500 text-white bg-gray-900">
+          <i class="fa-solid fa-chart-area mr-1.5 text-indigo-400"></i> Curva de Patrimônio (Equity)
+        </button>
+        <button onclick="switchTab('chart')" id="tab-btn-chart" class="px-4 py-2 text-xs font-semibold rounded-t-lg border-b-2 border-transparent text-gray-400 hover:text-gray-200">
+          <i class="fa-solid fa-candlestick-chart mr-1.5 text-emerald-400"></i> Gráfico SMC (Zonas & Velas)
+        </button>
+        <button onclick="switchTab('trades')" id="tab-btn-trades" class="px-4 py-2 text-xs font-semibold rounded-t-lg border-b-2 border-transparent text-gray-400 hover:text-gray-200">
+          <i class="fa-solid fa-list-check mr-1.5 text-amber-400"></i> Tabela de Trades
+        </button>
+        <button onclick="switchTab('grid')" id="tab-btn-grid" class="px-4 py-2 text-xs font-semibold rounded-t-lg border-b-2 border-transparent text-gray-400 hover:text-gray-200">
+          <i class="fa-solid fa-trophy mr-1.5 text-yellow-400"></i> Ranking da Grade & Atribuição
+        </button>
+      </div>
+
+      <!-- Conteúdo das Abas -->
+      <div class="flex-1 overflow-auto custom-scrollbar p-4 relative">
+        
+        <!-- Loading Overlay -->
+        <div id="loading-overlay" class="hidden absolute inset-0 bg-gray-950/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center space-y-3">
+          <div class="animate-spin rounded-full h-10 w-10 border-4 border-indigo-500 border-t-transparent"></div>
+          <span class="text-sm font-medium text-gray-300" id="loading-text">Processando backtest M1...</span>
+        </div>
+
+        <!-- TAB 1: Curva de Patrimônio -->
+        <div id="tab-equity" class="h-full flex flex-col space-y-4">
+          <div id="plotly-equity" class="w-full flex-1 min-h-[450px] bg-gray-900 rounded-lg border border-gray-800 p-2"></div>
+        </div>
+
+        <!-- TAB 2: Gráfico SMC -->
+        <div id="tab-chart" class="hidden h-full flex flex-col space-y-3">
+          <div class="flex items-center justify-between bg-gray-900 px-3 py-2 rounded-lg border border-gray-800">
+            <span class="text-xs text-gray-400">Visualização interativa das últimas 600 barras com Order Blocks, FVGs e Breakers destacados</span>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-gray-400">Timeframe:</span>
+              <select id="chart-tf" onchange="loadChart()" class="bg-gray-800 border border-gray-700 text-xs rounded px-2 py-1 text-white">
+                <option value="M15" selected>M15 (Macro POI)</option>
+                <option value="M5">M5</option>
+                <option value="M1">M1 (Micro Entrada)</option>
+              </select>
+            </div>
+          </div>
+          <div id="plotly-smc" class="w-full flex-1 min-h-[500px] bg-gray-900 rounded-lg border border-gray-800 p-2"></div>
+        </div>
+
+        <!-- TAB 3: Tabela de Trades -->
+        <div id="tab-trades" class="hidden h-full flex flex-col">
+          <div class="bg-gray-900 rounded-lg border border-gray-800 overflow-hidden flex flex-col h-full">
+            <div class="overflow-x-auto custom-scrollbar flex-1">
+              <table class="w-full text-left text-xs text-gray-300">
+                <thead class="bg-gray-800/80 text-[11px] uppercase font-bold text-gray-400 border-b border-gray-700 sticky top-0">
+                  <tr>
+                    <th class="p-3">#</th>
+                    <th class="p-3">Entrada (Data/Hora)</th>
+                    <th class="p-3">Direção</th>
+                    <th class="p-3">Bloco</th>
+                    <th class="p-3">Modo</th>
+                    <th class="p-3">Preço Entrada</th>
+                    <th class="p-3">Stop Loss</th>
+                    <th class="p-3">Take Profit</th>
+                    <th class="p-3">Saída (Preço / Motivo)</th>
+                    <th class="p-3 text-right">R Múltiplo</th>
+                    <th class="p-3 text-right">Resultado</th>
+                  </tr>
+                </thead>
+                <tbody id="trades-tbody" class="divide-y divide-gray-800 font-mono">
+                  <tr>
+                    <td colspan="11" class="text-center py-10 text-gray-500 font-sans">Nenhum trade executado. Clique em "Executar Backtest" para simular.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 4: Grade e Refinamento -->
+        <div id="tab-grid" class="hidden h-full overflow-y-auto space-y-6 custom-scrollbar pb-6">
+          <div class="bg-gray-900 p-4 rounded-lg border border-gray-800">
+            <h3 class="text-sm font-bold text-white mb-2 flex items-center gap-2">
+              <i class="fa-solid fa-trophy text-amber-400"></i> Ranking das Melhores Estratégias Robustas
+            </h3>
+            <p class="text-xs text-gray-400 mb-4">Combinações ranqueadas com divisão 70% In-Sample e 30% Out-of-Sample com proteção contra sobreajuste.</p>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs text-gray-300 font-mono">
+                <thead class="bg-gray-800/80 text-[11px] uppercase font-bold text-gray-400 border-b border-gray-700">
+                  <tr>
+                    <th class="p-2.5">#</th>
+                    <th class="p-2.5">Hash</th>
+                    <th class="p-2.5">Blocos</th>
+                    <th class="p-2.5">Entrada</th>
+                    <th class="p-2.5">Stop</th>
+                    <th class="p-2.5">Trailing</th>
+                    <th class="p-2.5">Confluência</th>
+                    <th class="p-2.5">IS Exp</th>
+                    <th class="p-2.5">OOS Exp</th>
+                    <th class="p-2.5">OOS Acerto</th>
+                    <th class="p-2.5">OOS PF</th>
+                    <th class="p-2.5 text-right">Queda IS→OOS</th>
+                  </tr>
+                </thead>
+                <tbody id="grid-ranking-tbody" class="divide-y divide-gray-800">
+                  <tr>
+                    <td colspan="12" class="text-center py-8 text-gray-500 font-sans">Clique em "Explorar Grade Completa" para gerar o ranking comparativo.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Cards de Atribuição por Fator -->
+          <div id="grid-attribution-container" class="grid grid-cols-2 gap-4"></div>
+        </div>
+
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Script da Aplicação -->
+  <script>
+    let symbolsData = [];
+    let currentTrades = [];
+
+    // Carregar Símbolos e Inicializar
+    async function init() {
+      try {
+        const resp = await fetch('/api/symbols');
+        const data = await resp.json();
+        symbolsData = data.symbols || [];
+        
+        const select = document.getElementById('select-symbol');
+        select.innerHTML = '';
+        symbolsData.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.symbol;
+          opt.textContent = `${s.symbol} (${s.source.toUpperCase()})`;
+          select.appendChild(opt);
+        });
+
+        select.addEventListener('change', updateSymbolDates);
+        updateSymbolDates();
+      } catch (err) {
+        console.error("Erro ao carregar símbolos:", err);
+      }
+    }
+
+    function updateSymbolDates() {
+      const sym = document.getElementById('select-symbol').value;
+      const found = symbolsData.find(s => s.symbol === sym);
+      if (found) {
+        const dStart = found.start.split('T')[0];
+        const dEnd = found.end.split('T')[0];
+        document.getElementById('symbol-info').innerHTML = `
+          <span>Disponível: ${dStart} até ${dEnd}</span>
+          <span>${found.count.toLocaleString()} candles M1</span>
+        `;
+        document.getElementById('input-start').value = dStart;
+        document.getElementById('input-end').value = dEnd;
+      }
+    }
+
+    function setPreset(p) {
+      const sym = document.getElementById('select-symbol').value;
+      const found = symbolsData.find(s => s.symbol === sym);
+      if (!found) return;
+
+      const endDt = new Date(found.end);
+      let startDt = new Date(endDt);
+
+      if (p === '1m') {
+        startDt.setMonth(startDt.getMonth() - 1);
+      } else if (p === '3m') {
+        startDt.setMonth(startDt.getMonth() - 3);
+      } else if (p === 'all') {
+        startDt = new Date(found.start);
+      }
+
+      document.getElementById('input-start').value = startDt.toISOString().split('T')[0];
+      document.getElementById('input-end').value = endDt.toISOString().split('T')[0];
+    }
+
+    function switchTab(tab) {
+      ['equity', 'chart', 'trades', 'grid'].forEach(t => {
+        document.getElementById(`tab-${t}`).classList.add('hidden');
+        document.getElementById(`tab-btn-${t}`).className = 'px-4 py-2 text-xs font-semibold rounded-t-lg border-b-2 border-transparent text-gray-400 hover:text-gray-200';
+      });
+
+      document.getElementById(`tab-${tab}`).classList.remove('hidden');
+      document.getElementById(`tab-btn-${tab}`).className = 'px-4 py-2 text-xs font-semibold rounded-t-lg border-b-2 border-indigo-500 text-white bg-gray-900';
+
+      if (tab === 'equity') Plotly.Plots.resize('plotly-equity');
+      if (tab === 'chart') Plotly.Plots.resize('plotly-smc');
+    }
+
+    function showLoading(text) {
+      document.getElementById('loading-text').textContent = text;
+      document.getElementById('loading-overlay').classList.remove('hidden');
+    }
+
+    function hideLoading() {
+      document.getElementById('loading-overlay').classList.add('hidden');
+    }
+
+    function getPayload() {
+      const blocks = [];
+      if (document.getElementById('poi-ob').checked) blocks.push('OB');
+      if (document.getElementById('poi-fvob').checked) blocks.push('FVOB');
+      if (document.getElementById('poi-bb').checked) blocks.push('BB');
+
+      return {
+        symbol: document.getElementById('select-symbol').value,
+        start: document.getElementById('input-start').value ? document.getElementById('input-start').value + 'T00:00:00Z' : null,
+        end: document.getElementById('input-end').value ? document.getElementById('input-end').value + 'T23:59:59Z' : null,
+        blocks_filter: blocks.length ? blocks : ['OB'],
+        entry_mode: document.getElementById('select-entry').value,
+        stop_mode: document.getElementById('select-stop').value,
+        target_r: parseFloat(document.getElementById('input-target-r').value),
+        trailing: {
+          mode: document.getElementById('select-trailing').value,
+          ema_period: 20,
+          timeframe: 'M1',
+          activation: 'either',
+          r_threshold: 1.0
+        },
+        confluence: {
+          use_ema80: document.getElementById('conf-ema80').checked,
+          use_sma200: document.getElementById('conf-sma200').checked,
+          use_fib618: document.getElementById('conf-fib618').checked,
+          use_fib790: document.getElementById('conf-fib790').checked,
+          min_rules: 1,
+          tolerance: 0.0
+        },
+        limits_enabled: document.getElementById('input-limits').checked
+      };
+    }
+
+    // Executar Backtest
+    async function runBacktest() {
+      showLoading("Executando simulação de backtest no M1...");
+      const payload = getPayload();
+
+      try {
+        const resp = await fetch('/api/backtest', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        hideLoading();
+
+        if (data.error) {
+          alert(data.error);
+          return;
+        }
+
+        // Atualizar KPIs
+        const m = data.metrics;
+        document.getElementById('kpi-winrate').textContent = `${m.win_rate.toFixed(1)}%`;
+        document.getElementById('kpi-win-count').textContent = `${m.win_trades} W / ${m.loss_trades} L`;
+        document.getElementById('kpi-expectancy').textContent = `${m.expectancy >= 0 ? '+' : ''}${m.expectancy.toFixed(2)} R`;
+        document.getElementById('kpi-pf').textContent = m.profit_factor.toFixed(2);
+        document.getElementById('kpi-drawdown').textContent = `${m.max_drawdown_r.toFixed(1)} R`;
+        document.getElementById('kpi-trades').textContent = m.total_trades;
+        document.getElementById('kpi-candles').textContent = `${data.total_candles.toLocaleString()} candles M1`;
+
+        const lastEq = data.equity_curve[data.equity_curve.length - 1];
+        document.getElementById('kpi-cum-r').textContent = `${lastEq.cum_r >= 0 ? '+' : ''}${lastEq.cum_r.toFixed(1)} R`;
+        document.getElementById('kpi-pnl').textContent = `$ ${lastEq.pnl.toLocaleString()}`;
+
+        // Renderizar Curva de Equity
+        renderEquityCurve(data.equity_curve);
+
+        // Preencher Tabela de Trades
+        currentTrades = data.trades;
+        renderTradesTable(data.trades);
+
+        // Mudar para a aba de equity
+        switchTab('equity');
+      } catch (err) {
+        hideLoading();
+        alert("Erro na requisição de backtest: " + err);
+      }
+    }
+
+    function renderEquityCurve(curve) {
+      const times = curve.map(c => c.time);
+      const values = curve.map(c => c.cum_r);
+
+      const trace = {
+        x: times,
+        y: values,
+        type: 'scatter',
+        mode: 'lines',
+        name: 'Equity (R)',
+        line: { color: '#6366f1', width: 2.5 },
+        fill: 'tozeroy',
+        fillcolor: 'rgba(99, 102, 241, 0.1)'
+      };
+
+      const layout = {
+        title: { text: 'Curva de Patrimônio Acumulada em Múltiplos de R', font: { color: '#e5e7eb', size: 14 } },
+        paper_bgcolor: '#111827',
+        plot_bgcolor: '#111827',
+        margin: { l: 50, r: 30, t: 50, b: 40 },
+        xaxis: { gridcolor: '#1f2937', color: '#9ca3af' },
+        yaxis: { title: 'R Acumulado', gridcolor: '#1f2937', color: '#9ca3af' }
+      };
+
+      Plotly.newPlot('plotly-equity', [trace], layout, { responsive: true });
+    }
+
+    function renderTradesTable(trades) {
+      const tbody = document.getElementById('trades-tbody');
+      tbody.innerHTML = '';
+
+      if (!trades.length) {
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center py-8 text-gray-500">Nenhum trade realizado no período.</td></tr>';
+        return;
+      }
+
+      trades.forEach((t, i) => {
+        const tr = document.createElement('tr');
+        const isWin = t.r_multiple > 0;
+        const colorClass = isWin ? 'text-emerald-400' : 'text-rose-400';
+        const badgeBg = isWin ? 'bg-emerald-950/60 border-emerald-800 text-emerald-400' : 'bg-rose-950/60 border-rose-800 text-rose-400';
+
+        tr.innerHTML = `
+          <td class="p-3 text-gray-400 font-sans">${t.id}</td>
+          <td class="p-3">${t.entry_time.replace('T', ' ').slice(0, 16)}</td>
+          <td class="p-3"><span class="px-1.5 py-0.5 rounded text-[10px] uppercase font-bold ${t.direction === 'long' ? 'bg-emerald-900/60 text-emerald-300' : 'bg-rose-900/60 text-rose-300'}">${t.direction}</span></td>
+          <td class="p-3 text-gray-300">${t.zone_kind}</td>
+          <td class="p-3 text-gray-400 font-sans">${t.entry_mode}</td>
+          <td class="p-3">${t.entry_price}</td>
+          <td class="p-3 text-rose-400/90">${t.stop_loss}</td>
+          <td class="p-3 text-emerald-400/90">${t.take_profit || '--'}</td>
+          <td class="p-3 font-sans">${t.exit_price} <span class="text-[10px] text-gray-400">(${t.exit_reason})</span></td>
+          <td class="p-3 text-right font-bold ${colorClass}">${t.r_multiple >= 0 ? '+' : ''}${t.r_multiple.toFixed(2)}R</td>
+          <td class="p-3 text-right"><span class="px-2 py-0.5 rounded text-[11px] font-bold border ${badgeBg}">$ ${t.pnl.toFixed(2)}</span></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Carregar Gráfico SMC
+    async function loadChart() {
+      showLoading("Renderizando velas e zonas SMC no Plotly...");
+      const payload = getPayload();
+      payload.tf = document.getElementById('chart-tf').value;
+
+      try {
+        const resp = await fetch('/api/chart', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        hideLoading();
+
+        if (data.error) {
+          alert(data.error);
+          return;
+        }
+
+        switchTab('chart');
+        Plotly.newPlot('plotly-smc', data.chart.data, data.chart.layout, { responsive: true });
+      } catch (err) {
+        hideLoading();
+        alert("Erro ao renderizar gráfico: " + err);
+      }
+    }
+
+    // Executar Grade Completa
+    async function runGridExploration() {
+      showLoading("Executando exploração exaustiva da grade SMC com divisão IS / OOS...");
+      const payload = getPayload();
+      payload.min_trades = 5;
+
+      try {
+        const resp = await fetch('/api/grid', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        hideLoading();
+
+        if (data.error) {
+          alert(data.error);
+          return;
+        }
+
+        // Renderizar Ranking
+        const tbody = document.getElementById('grid-ranking-tbody');
+        tbody.innerHTML = '';
+        data.ranking.forEach((s, idx) => {
+          const tr = document.createElement('tr');
+          const dropStr = s.performance_drop_pct !== null ? `${s.performance_drop_pct >= 0 ? '+' : ''}${s.performance_drop_pct.toFixed(1)}%` : '--';
+          tr.innerHTML = `
+            <td class="p-2.5 font-sans font-bold text-gray-400">${idx + 1}</td>
+            <td class="p-2.5 text-indigo-400 font-bold">${s.config_hash}</td>
+            <td class="p-2.5 text-white">${s.blocks_filter}</td>
+            <td class="p-2.5 text-gray-300 font-sans">${s.entry_mode}</td>
+            <td class="p-2.5 text-gray-300 font-sans">${s.stop_mode}</td>
+            <td class="p-2.5 text-gray-300 font-sans">${s.trailing_mode}</td>
+            <td class="p-2.5 text-gray-400 font-sans">${s.confluence_profile}</td>
+            <td class="p-2.5 font-bold ${s.is_metrics.expectancy >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${s.is_metrics.expectancy.toFixed(2)}R</td>
+            <td class="p-2.5 font-bold ${s.oos_metrics.expectancy >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${s.oos_metrics.expectancy.toFixed(2)}R</td>
+            <td class="p-2.5 text-cyan-300">${s.oos_metrics.win_rate.toFixed(1)}%</td>
+            <td class="p-2.5 text-gray-200">${s.oos_metrics.profit_factor.toFixed(2)}</td>
+            <td class="p-2.5 text-right ${s.performance_drop_pct >= 0 ? 'text-emerald-400' : 'text-amber-400'}">${dropStr}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+        // Renderizar Atribuição por Fator
+        const container = document.getElementById('grid-attribution-container');
+        container.innerHTML = '';
+        const attr = data.attribution_by_factor;
+
+        const factorNames = {
+          'blocks_filter': 'Bloco (POI)',
+          'entry_mode': 'Modo de Entrada',
+          'stop_mode': 'Modo de Stop',
+          'trailing_mode': 'Trailing Stop'
+        };
+
+        for (const [fKey, fTitle] of Object.entries(factorNames)) {
+          if (!attr[fKey]) continue;
+          const card = document.createElement('div');
+          card.className = 'bg-gray-900 border border-gray-800 rounded-lg p-3';
+          
+          let rows = '';
+          for (const [val, st] of Object.entries(attr[fKey])) {
+            rows += `
+              <tr class="border-b border-gray-800/60">
+                <td class="py-1.5 text-white">${val}</td>
+                <td class="py-1.5 text-right font-mono ${st.oos_expectancy >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${st.oos_expectancy >= 0 ? '+' : ''}${st.oos_expectancy.toFixed(2)}R</td>
+                <td class="py-1.5 text-right font-mono text-cyan-400">${st.oos_win_rate.toFixed(1)}%</td>
+                <td class="py-1.5 text-right text-gray-500 font-sans">${st.count}</td>
+              </tr>
+            `;
+          }
+
+          card.innerHTML = `
+            <h4 class="text-xs font-bold uppercase text-gray-400 mb-2">${fTitle}</h4>
+            <table class="w-full text-xs">
+              <thead>
+                <tr class="text-[10px] text-gray-500 uppercase border-b border-gray-800">
+                  <th class="py-1 text-left">Variante</th>
+                  <th class="py-1 text-right">OOS Exp</th>
+                  <th class="py-1 text-right">Acerto</th>
+                  <th class="py-1 text-right">Amostra</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          `;
+          container.appendChild(card);
+        }
+
+        switchTab('grid');
+      } catch (err) {
+        hideLoading();
+        alert("Erro na exploração da grade: " + err);
+      }
+    }
+
+    // Inicialização ao carregar
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

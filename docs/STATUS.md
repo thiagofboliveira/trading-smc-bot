@@ -65,7 +65,8 @@ Em 30k candles M1: `analyze` caiu de 82,6 s para 2,698 s.
 - [x] Análise de atribuição marginal por fator (bloco, entrada, stop, trailing, confluências) e gerador de relatórios Markdown e JSON (`src/smc_trader/backtest/attribution.py`).
 - [x] CLI `smc grid <symbol>` integrada e validada em dados reais de XAUUSD (relatório em `out/grid_report_xauusd.md`).
 - [x] Estratégia campeã em robustez fora da amostra (OOS): Hash `2e697e30e86b1d24` (OB + Confirmação CHoCH M1 + Stop Swing + Alvo 3R), alcançando **Expectativa +1.55R**, **Taxa de Acerto 60.0%**, **Profit Factor 7.36** e **Max Drawdown 0.9R**.
-- [x] 493 testes passando na suíte completa (`uv run pytest -q`) em 56 segundos.
+- [x] Frontend Web Interativo e API REST (`src/smc_trader/ui/server.py` e `index.html`): CLI `smc ui` com seletor de ativo, período, estratégias, gráficos SMC interativos via Plotly, curvas de patrimônio e exploração de grade.
+- [x] 497 testes passando na suíte completa (`uv run pytest -q`) em 59 segundos.
 
 ## O que falta
 

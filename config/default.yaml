@@ -1,0 +1,22 @@
+data:
+  root: data
+  server_ny_offset_hours: 7
+  server_timezone: null
+symbols: [XAUUSD, EURUSD, GBPUSD, US30, NAS100, BRENT]
+dukascopy:
+  offer_side: bid
+  instruments:
+    XAUUSD: "XAU/USD"
+    EURUSD: "EUR/USD"
+    GBPUSD: "GBP/USD"
+    US30: "E_D&J-Ind"
+    NAS100: "E_NQ-100"
+    BRENT: "E_Brent"
+structure:
+  pivot_k_htf: 3
+  pivot_k_ltf: 2
+zones:
+  require_discount: true
+  require_imbalance: false
+  use_body: false
+  fvg_min_size: 0.0

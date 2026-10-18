@@ -1,0 +1,56 @@
+# ===================================================================
+# SMC TRADER — CONFIGURAÇÃO OFICIAL DE PRODUÇÃO (LIVE MT5)
+# Baseada nas estratégias campeãs com maior robustez estatística
+# ===================================================================
+
+trading:
+  risk_pct_per_trade: 1.0       # 1.0% de risco por operação (Recomendado)
+  max_open_trades_total: 2      # Máximo de 2 operações simultâneas
+  magic_base: 888100
+
+bridge:
+  host: "127.0.0.1"
+  port: 8089
+  poll_interval_ms: 500
+
+symbols:
+  XAUUSD:
+    description: "Ouro — Setup com confirmação de microestrutura M1"
+    entry_mode: "confirmation"
+    stop_mode: "swing"
+    target_r: 3.0
+    zone:
+      blocks_filter: ["OB"]
+    trailing:
+      mode: "none"
+    confluence:
+      min_rules: 0
+
+  NAS100:
+    description: "Nasdaq — Setup no toque com Trailing Estrutural BOS M1"
+    entry_mode: "touch"
+    stop_mode: "swing"
+    target_r: 3.0
+    zone:
+      blocks_filter: ["OB"]
+    trailing:
+      mode: "bos"
+      activation: "either"
+    confluence:
+      min_rules: 0
+
+session:
+  windows:
+    - name: "london"
+      start: "07:00"
+      end: "15:30"
+    - name: "ny"
+      start: "13:00"
+      end: "20:00"
+  force_close_time: "21:00"
+
+limits:
+  enabled: true
+  max_trades_per_day: 3
+  max_stops_per_day: 2          # Pausa se tomar 2 stops no mesmo dia
+  max_gains_per_day: 1          # Pausa ao bater 1 take profit de 3R

@@ -77,6 +77,13 @@ def _build_parser() -> argparse.ArgumentParser:
     ui.add_argument("--port", type=int, default=8080, help="porta do servidor (padrão: 8080)")
     ui.add_argument("--config", type=Path, default=Path("config/default.yaml"))
     ui.add_argument("--data-root", type=Path, default=None)
+
+    live = sub.add_parser("live", help="inicia motor de execução autônoma para MetaTrader 5")
+    live.add_argument("--config", type=Path, default=Path("config/production.yaml"))
+    live.add_argument("--mode", choices=["bridge", "mock"], default="bridge", help="modo de conexão (bridge EA ou mock para teste)")
+    live.add_argument("--symbols", default=None, help="símbolos separados por vírgula (ex: XAUUSD,NAS100)")
+    live.add_argument("--risk", type=float, default=None, help="risco percentual por trade (ex: 1.0)")
+    live.add_argument("--dry-run", action="store_true", default=False, help="simula ciclo sem loop infinito")
     return parser
 
 
@@ -282,6 +289,89 @@ def _cmd_ui(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def _cmd_live(args: argparse.Namespace, cfg: Config) -> int:
+    import time
+    import yaml
+    from smc_trader.config import BacktestConfig
+    from smc_trader.execution.live_engine import LiveTradingEngine
+    from smc_trader.execution.mt5_interface import MockMT5Client, BridgeEAServer
+
+    prod_cfg_path = args.config if args.config.exists() else Path("config/production.yaml")
+    with open(prod_cfg_path, "r", encoding="utf-8") as f:
+        prod_data = yaml.safe_load(f)
+
+    symbols_list = args.symbols.split(",") if args.symbols else list(prod_data.get("symbols", {}).keys())
+    risk_pct = args.risk if args.risk is not None else float(prod_data.get("trading", {}).get("risk_pct_per_trade", 1.0))
+
+    print("=" * 65)
+    print("🚀 SMC AUTO-TRADER — MOTOR DE PRODUÇÃO METATRADER 5")
+    print(f"Modo: {args.mode.upper()} | Ativos: {', '.join(symbols_list)} | Risco: {risk_pct}% por trade")
+    print("=" * 65)
+
+    symbol_configs: dict[str, BacktestConfig] = {}
+    symbol_blocks: dict[str, list[str]] = {}
+    for sym in symbols_list:
+        sym_raw = prod_data.get("symbols", {}).get(sym, {})
+        sym_bt = BacktestConfig(
+            entry_mode=sym_raw.get("entry_mode", "confirmation"),
+            stop_mode=sym_raw.get("stop_mode", "swing"),
+            target_r=sym_raw.get("target_r", 3.0),
+        )
+        if "zone" in sym_raw and "blocks_filter" in sym_raw["zone"]:
+            symbol_blocks[sym] = sym_raw["zone"]["blocks_filter"]
+        else:
+            symbol_blocks[sym] = ["OB"]
+        if "trailing" in sym_raw and "mode" in sym_raw["trailing"]:
+            sym_bt.trailing.mode = sym_raw["trailing"]["mode"]
+        symbol_configs[sym] = sym_bt
+
+    bridge_server = None
+    if args.mode == "mock":
+        client = MockMT5Client(initial_balance=1000.0)
+        client.connect()
+        print("✅ Cliente Mock MT5 conectado com saldo inicial de $1000.00 USD")
+    else:
+        bridge_cfg = prod_data.get("bridge", {})
+        host = bridge_cfg.get("host", "127.0.0.1")
+        port = bridge_cfg.get("port", 8089)
+        bridge_server = BridgeEAServer(host=host, port=port)
+        bridge_server.start()
+        print(f"✅ Ponte MetaTrader 5 iniciada em http://{host}:{port}")
+        print("👉 Anexe o Expert Advisor 'mql5/SMC_Bridge_EA.mq5' no gráfico do seu MetaTrader 5!")
+        client = MockMT5Client()
+        client.connect()
+
+    engine = LiveTradingEngine(
+        client=client,
+        symbol_configs=symbol_configs,
+        symbol_blocks=symbol_blocks,
+        risk_pct=risk_pct,
+        notification_callback=lambda msg: print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}"),
+    )
+
+    print("\n🟢 Motor em execução autônoma. Pressione Ctrl+C para encerrar.\n")
+    if args.dry_run:
+        print("🔍 Modo Dry-Run ativo: executando ciclo de teste...")
+        for sym in symbols_list:
+            engine.process_symbol_tick(sym)
+        print("✅ Ciclo de teste concluído com sucesso.")
+        if bridge_server:
+            bridge_server.stop()
+        return 0
+
+    try:
+        while True:
+            for sym in symbols_list:
+                engine.process_symbol_tick(sym)
+            time.sleep(1.0)
+    except KeyboardInterrupt:
+        print("\n🛑 Encerrando motor autônomo com segurança...")
+    finally:
+        if bridge_server:
+            bridge_server.stop()
+    return 0
+
+
 _COMMANDS = {
     "fetch": _cmd_fetch,
     "chart": _cmd_chart,
@@ -289,10 +379,14 @@ _COMMANDS = {
     "backtest": _cmd_backtest,
     "grid": _cmd_grid,
     "ui": _cmd_ui,
+    "live": _cmd_live,
 }
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    cfg = load_config(args.config)
+    if args.command == "live":
+        cfg = load_config(Path("config/default.yaml"))
+    else:
+        cfg = load_config(args.config)
     return _COMMANDS[args.command](args, cfg)

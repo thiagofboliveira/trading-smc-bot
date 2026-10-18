@@ -55,3 +55,17 @@ backtest:
     max_trades_per_day: 3
     max_stops_per_day: 2
     max_gains_per_day: 1
+  confluence:
+    use_ema80: false
+    use_sma200: false
+    use_fib618: false
+    use_fib790: false
+    ma_timeframe: M1
+    tolerance: 0.0
+    min_rules: 1
+  trailing:
+    mode: none
+    ema_period: 20
+    timeframe: M1
+    activation: either
+    r_threshold: 1.0

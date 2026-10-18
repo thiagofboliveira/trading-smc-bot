@@ -94,6 +94,28 @@ class LimitsConfig(BaseModel):
     max_gains_per_day: int = Field(1, ge=1)
 
 
+class ConfluenceConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    use_ema80: bool = False
+    use_sma200: bool = False
+    use_fib618: bool = False
+    use_fib790: bool = False
+    ma_timeframe: Literal["M1", "M5", "M15"] = "M1"
+    tolerance: float = Field(0.0, ge=0.0)
+    min_rules: int = Field(1, ge=1)
+
+
+class TrailingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["none", "ema", "bos"] = "none"
+    ema_period: int = Field(20, ge=1)
+    timeframe: Literal["M1", "M5", "M15"] = "M1"
+    activation: Literal["either", "r_multiple", "on_new_bos"] = "either"
+    r_threshold: float = Field(1.0, gt=0.0)
+
+
 class BacktestConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -106,6 +128,8 @@ class BacktestConfig(BaseModel):
     costs: CostsConfig = Field(default_factory=CostsConfig)
     session: SessionConfig = Field(default_factory=SessionConfig)
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
+    confluence: ConfluenceConfig = Field(default_factory=ConfluenceConfig)
+    trailing: TrailingConfig = Field(default_factory=TrailingConfig)
 
 
 class Config(BaseModel):

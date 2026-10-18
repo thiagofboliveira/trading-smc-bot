@@ -49,13 +49,15 @@ Em 30k candles M1: `analyze` caiu de 82,6 s para 2,698 s.
 - [x] CLI `smc backtest <symbol>` funcional com saída no terminal e exportação JSON
 - [x] 480 testes passando na suíte completa (`uv run pytest -q`)
 
-## O que falta
+### Plano 2c — Condução e confluências (concluído)
+- [x] Indicadores técnicos: EMA e SMA configuráveis sem look-ahead (`src/smc_trader/confluence/indicators.py`)
+- [x] Retração de Fibonacci 61,8% e 79,0% para pernas BOS e breakers (`src/smc_trader/confluence/fibonacci.py`)
+- [x] Avaliador de confluências no momento do primeiro toque (`src/smc_trader/confluence/evaluator.py`)
+- [x] Modo híbrido (`entry_mode: "hybrid"`): entra no primeiro toque se houver confluência ativa suficiente; caso contrário aguarda confirmação CHoCH no M1
+- [x] Trailing stop (`src/smc_trader/backtest/trailing.py`): modos `none`, `ema` e `bos`; ativação por `1r`, `new_bos` ou `either`; trailing dinâmico intrabar
+- [x] 487 testes passando na suíte completa (`uv run pytest -q`)
 
-### Plano 2c — Condução e confluências
-- [ ] Trailing `none` / `ema` (período configurável) / `bos`; ativação por novo BOS, 1R ou o que vier primeiro; timeframe configurável
-- [ ] Indicadores EMA80 e SMA200
-- [ ] Confluência de Fibonacci 61,8 / 79 com o POI
-- [ ] Modo híbrido: confirmação, exceto com confluência (aí entra no toque)
+## O que falta
 
 ### Plano 2d — Grade e refinamento
 - [ ] Runner da grade: `blocks_filter` × `entry_mode` × stop × alvo × trailing × confluências, por símbolo e por mês
@@ -63,7 +65,7 @@ Em 30k candles M1: `analyze` caiu de 82,6 s para 2,698 s.
 - [ ] Hash reprodutível da configuração
 - [ ] Relatório de atribuição (com e sem cada fator); reportar à parte os breakers que terminam no 1º candle M15 após a criação (~1/3)
 
-### Plano 3 — Depois
+### Plano 3 — Backlog Futuro (deixado anotado para depois)
 - [ ] Confluência RSI (divergência), Wyckoff e Elliott
 - [ ] Scanner ao vivo e alertas no Telegram (execução manual na v1)
 - [ ] Pontos menores adiados nos ledgers do SDD

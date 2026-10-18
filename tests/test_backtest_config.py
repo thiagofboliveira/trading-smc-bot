@@ -27,6 +27,11 @@ def test_backtest_config_defaults():
     assert cfg.limits.enabled is False
     assert cfg.limits.max_trades_per_day == 3
     assert cfg.session.force_close_time == "21:00"
+    assert cfg.confluence.use_ema80 is False
+    assert cfg.confluence.min_rules == 1
+    assert cfg.trailing.mode == "none"
+    assert cfg.trailing.ema_period == 20
+    assert cfg.trailing.activation == "either"
 
 
 def test_backtest_config_extra_forbid():

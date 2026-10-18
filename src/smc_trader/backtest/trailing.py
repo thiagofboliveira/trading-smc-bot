@@ -25,6 +25,7 @@ class TrailingManager:
         t: pd.Timestamp,
         trailing_ema_val: float | None = None,
         bos_events: list[StructureEvent] | None = None,
+        current_bos: StructureEvent | None = None,
     ) -> tuple[bool, float, Literal["trailing", "sl"] | None]:
         """Avalia se a condução foi ativada e se houve disparo de saída por trailing.
 
@@ -34,6 +35,7 @@ class TrailingManager:
             return False, 0.0, None
 
         long = pos.direction == "long"
+        needed_dir = "up" if long else "down"
 
         # 1. Checa condição de ativação se ainda não ativado
         if not self.activated:
@@ -43,10 +45,12 @@ class TrailingManager:
                 else (pos.entry_price - c_low) / pos.initial_risk
             )
             has_new_bos = False
-            if bos_events:
-                needed_dir = "up" if long else "down"
+            if current_bos is not None:
+                if current_bos.kind == "BOS" and current_bos.direction == needed_dir and pos.entry_time < current_bos.time <= t:
+                    has_new_bos = True
+            elif bos_events:
                 for e in bos_events:
-                    if e.kind == "BOS" and e.direction == needed_dir and e.time > pos.entry_time:
+                    if e.kind == "BOS" and e.direction == needed_dir and pos.entry_time < e.time <= t:
                         has_new_bos = True
                         break
 
@@ -72,13 +76,22 @@ class TrailingManager:
                         return True, c_close, "trailing"
 
             elif self.config.mode == "bos":
-                if bos_events:
-                    needed_dir = "up" if long else "down"
+                if current_bos is not None:
+                    if (
+                        current_bos.kind == "BOS"
+                        and current_bos.direction == needed_dir
+                        and pos.entry_time < current_bos.time <= t
+                    ):
+                        if long and current_bos.range_low > self.current_stop:
+                            self.current_stop = current_bos.range_low
+                        elif not long and current_bos.range_high < self.current_stop:
+                            self.current_stop = current_bos.range_high
+                elif bos_events:
                     for e in bos_events:
                         if (
                             e.kind == "BOS"
                             and e.direction == needed_dir
-                            and e.time > pos.entry_time
+                            and pos.entry_time < e.time <= t
                         ):
                             if long and e.range_low > self.current_stop:
                                 self.current_stop = e.range_low

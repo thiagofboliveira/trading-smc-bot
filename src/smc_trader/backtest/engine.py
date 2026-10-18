@@ -45,30 +45,43 @@ class BacktestEngine:
         zones: list[Zone],
         symbol: str = "XAUUSD",
         confluence_fn: Callable[[Zone, pd.Timestamp, pd.Series], bool] | None = None,
+        precomputed_m1: dict[str, Any] | None = None,
     ) -> BacktestResult:
         """Executa a simulação cronológica sobre candles M1."""
         if candles_m1.empty:
             return BacktestResult(trades=[], metrics=calculate_metrics([]), config=self.config)
 
         # 1. Estrutura M1 (para confirmação e trailing BOS)
-        pivots_m1 = find_pivots(candles_m1, k=2)
-        events_m1 = detect_structure(candles_m1, pivots_m1)
-        m1_chochs: dict[tuple[str, pd.Timestamp], Any] = {
-            (e.direction, e.time): e for e in events_m1 if e.kind == "CHoCH"
-        }
+        if precomputed_m1 is not None and "events" in precomputed_m1:
+            events_m1 = precomputed_m1["events"]
+            m1_chochs = precomputed_m1["chochs"]
+            m1_bos = precomputed_m1.get("bos", {(e.direction, e.time): e for e in events_m1 if e.kind == "BOS"})
+        else:
+            pivots_m1 = find_pivots(candles_m1, k=2)
+            events_m1 = detect_structure(candles_m1, pivots_m1)
+            m1_chochs = {
+                (e.direction, e.time): e for e in events_m1 if e.kind == "CHoCH"
+            }
+            m1_bos = {
+                (e.direction, e.time): e for e in events_m1 if e.kind == "BOS"
+            }
 
         # 2. Indicadores de confluência
         c_cfg = self.config.confluence
-        ema80_vals = (
-            self._prepare_ma_series(candles_m1, c_cfg.ma_timeframe, "ema", 80)
-            if c_cfg.use_ema80
-            else None
-        )
-        sma200_vals = (
-            self._prepare_ma_series(candles_m1, c_cfg.ma_timeframe, "sma", 200)
-            if c_cfg.use_sma200
-            else None
-        )
+        if precomputed_m1 is not None and "ema80" in precomputed_m1:
+            ema80_vals = precomputed_m1["ema80"] if c_cfg.use_ema80 else None
+            sma200_vals = precomputed_m1["sma200"] if c_cfg.use_sma200 else None
+        else:
+            ema80_vals = (
+                self._prepare_ma_series(candles_m1, c_cfg.ma_timeframe, "ema", 80)
+                if c_cfg.use_ema80
+                else None
+            )
+            sma200_vals = (
+                self._prepare_ma_series(candles_m1, c_cfg.ma_timeframe, "sma", 200)
+                if c_cfg.use_sma200
+                else None
+            )
 
         # 3. Indicadores de trailing stop
         t_cfg = self.config.trailing
@@ -84,11 +97,13 @@ class BacktestEngine:
         trade_counter = 0
 
         # Estado de rastreamento de cada zona
-        # key: (zone.candle_time, zone.created_at) -> dict com state, touch_time
         zone_states: dict[tuple[pd.Timestamp, pd.Timestamp], dict[str, Any]] = {
             (z.candle_time, z.created_at): {"state": "UNTOUCHED", "touch_time": None}
             for z in zones
         }
+        zones_sorted = sorted(zones, key=lambda z: z.created_at)
+        zone_cursor = 0
+        active_zones: list[Zone] = []
 
         # Arrays numpy para iteração rápida
         index = candles_m1.index
@@ -104,6 +119,11 @@ class BacktestEngine:
             c_high = float(high[i])
             c_low = float(low[i])
             c_close = float(close[i])
+
+            # Adiciona zonas que nasceram até o momento t
+            while zone_cursor < len(zones_sorted) and zones_sorted[zone_cursor].created_at <= t:
+                active_zones.append(zones_sorted[zone_cursor])
+                zone_cursor += 1
 
             # 1. Gerenciamento de posição aberta
             if current_pos is not None:
@@ -125,8 +145,9 @@ class BacktestEngine:
                     trailing_exit = False
                     if trailing_mgr is not None:
                         tr_ema = trailing_ema_vals[i] if trailing_ema_vals is not None else None
+                        curr_bos = m1_bos.get(("up" if current_pos.direction == "long" else "down", t))
                         should_tr_exit, tr_price, tr_reason = trailing_mgr.check_and_update(
-                            current_pos, c_open, c_high, c_low, c_close, t, tr_ema, events_m1
+                            current_pos, c_open, c_high, c_low, c_close, t, tr_ema, current_bos=curr_bos
                         )
                         if should_tr_exit:
                             trailing_exit = True
@@ -204,8 +225,12 @@ class BacktestEngine:
                 allowed_session = self.session_mgr.is_trade_allowed(t)
                 allowed_limits = self.limits_tracker.can_trade(t)
 
-                for zone in zones:
-                    if zone.created_at > t:
+                remaining_active: list[Zone] = []
+                entered = False
+
+                for zone in active_zones:
+                    if entered:
+                        remaining_active.append(zone)
                         continue
 
                     z_key = (zone.candle_time, zone.created_at)
@@ -242,7 +267,7 @@ class BacktestEngine:
                                     trailing_mgr = TrailingManager(
                                         self.config.trailing, current_pos.stop_loss
                                     )
-                                    break
+                                    entered = True
                             elif self.config.entry_mode == "hybrid":
                                 # Confluência técnica no momento do toque
                                 touch_p = min(c_open, zone.high) if long else max(c_open, zone.low)
@@ -267,12 +292,16 @@ class BacktestEngine:
                                         trailing_mgr = TrailingManager(
                                             self.config.trailing, current_pos.stop_loss
                                         )
-                                        break
+                                        entered = True
                                 else:
                                     z_info["state"] = "ARMED"
+                                    remaining_active.append(zone)
                             else:
                                 # Modo confirmation
                                 z_info["state"] = "ARMED"
+                                remaining_active.append(zone)
+                        else:
+                            remaining_active.append(zone)
 
                     # Confirmação após o toque
                     elif z_info["state"] == "ARMED":
@@ -305,7 +334,13 @@ class BacktestEngine:
                                     trailing_mgr = TrailingManager(
                                         self.config.trailing, current_pos.stop_loss
                                     )
-                                    break
+                                    entered = True
+                            else:
+                                remaining_active.append(zone)
+                        else:
+                            remaining_active.append(zone)
+
+                active_zones = remaining_active
 
         # Ao final do loop, fecha posição residual se houver
         if current_pos is not None:

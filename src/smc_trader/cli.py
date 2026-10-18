@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from smc_trader.analysis import analyze
 from smc_trader.backtest.engine import BacktestEngine
+from smc_trader.backtest.runner import run_grid
 from smc_trader.config import Config, ZoneConfig, load_config
 from smc_trader.data.dukascopy_source import fetch_m1
 from smc_trader.data.mt5_bridge import import_mt5_csv
@@ -60,6 +61,16 @@ def _build_parser() -> argparse.ArgumentParser:
     bt.add_argument("--out", type=Path, default=None)
     bt.add_argument("--config", type=Path, default=Path("config/default.yaml"))
     bt.add_argument("--data-root", type=Path, default=None)
+
+    grid = sub.add_parser("grid", help="executa grade de parâmetros SMC com divisão IS/OOS e atribuição")
+    grid.add_argument("symbol")
+    grid.add_argument("--from", dest="start", type=_utc, default=None)
+    grid.add_argument("--to", dest="end", type=_utc, default=None)
+    grid.add_argument("--min-trades", type=int, default=30, help="piso de trades no IS para qualificação")
+    grid.add_argument("--walk-forward", action="store_true", default=False, help="ativa janelas de walk-forward rolante")
+    grid.add_argument("--out", type=Path, default=Path("out/grid_report.md"), help="caminho do relatório Markdown de saída")
+    grid.add_argument("--config", type=Path, default=Path("config/default.yaml"))
+    grid.add_argument("--data-root", type=Path, default=None)
     return parser
 
 
@@ -179,11 +190,92 @@ def _cmd_backtest(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def _cmd_grid(args: argparse.Namespace, cfg: Config) -> int:
+    root = args.data_root if args.data_root is not None else cfg.data.root
+    try:
+        c_m1 = load_candles(root, args.symbol, "M1", args.start, args.end)
+    except FileNotFoundError:
+        print(f"Dados M1 não encontrados para {args.symbol} em {root}", file=sys.stderr)
+        return 2
+
+    if c_m1.empty:
+        print("Nenhum candle encontrado para o período especificado.", file=sys.stderr)
+        return 1
+
+    print(f"=== Executando Grade SMC ({args.symbol}): {len(c_m1)} candles M1 ===")
+    res = run_grid(
+        candles_m1=c_m1,
+        symbol=args.symbol,
+        base_config=cfg.backtest,
+        pivot_k_htf=cfg.structure.pivot_k_htf,
+        min_trades=args.min_trades,
+        run_walk_forward=args.walk_forward,
+    )
+
+    # Imprime sumário no terminal
+    data = res.attribution_analysis
+    print(f"Total de variantes: {data['total_variants']}")
+    print(f"Qualificadas (IS trades >= {args.min_trades}): {data['qualified_variants']}")
+    print(f"Robustas (OOS Exp > 0): {data['robust_variants']}")
+
+    ranking = data.get("ranking", [])
+    if ranking:
+        best = ranking[0]
+        print(f"\n--- MELHOR COMBINAÇÃO OOS [{best.config_hash}] ---")
+        print(f"Blocos:       {best.blocks_filter}")
+        print(f"Entrada:      {best.entry_mode}")
+        print(f"Stop:         {best.stop_mode}")
+        print(f"Trailing:     {best.trailing_mode}")
+        print(f"Confluência:  {best.confluence_profile}")
+        print(f"Expectativa:  {best.oos_metrics.get('expectancy', 0.0):+.2f}R (IS: {best.is_metrics.get('expectancy', 0.0):+.2f}R)")
+        print(f"Taxa Acerto:  {best.oos_metrics.get('win_rate', 0.0):.1f}%")
+        print(f"Profit Factor:{best.oos_metrics.get('profit_factor', 0.0):.2f}")
+        print(f"Max Drawdown: {best.oos_metrics.get('max_drawdown_r', 0.0):.1f}R")
+
+    # Salva relatório Markdown
+    if args.out is not None:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        with open(args.out, "w", encoding="utf-8") as f:
+            f.write(res.markdown_report)
+        print(f"\nRelatório completo de atribuição gravado em: {args.out}")
+
+        # Grava JSON estruturado
+        json_out = args.out.with_suffix(".json")
+        json_payload = {
+            "symbol": args.symbol,
+            "breaker_stats": res.breaker_stats,
+            "total_variants": data["total_variants"],
+            "qualified_variants": data["qualified_variants"],
+            "robust_variants": data["robust_variants"],
+            "ranking": [
+                {
+                    "config_hash": s.config_hash,
+                    "blocks_filter": s.blocks_filter,
+                    "entry_mode": s.entry_mode,
+                    "stop_mode": s.stop_mode,
+                    "trailing_mode": s.trailing_mode,
+                    "confluence_profile": s.confluence_profile,
+                    "is_metrics": s.is_metrics,
+                    "oos_metrics": s.oos_metrics,
+                    "performance_drop_pct": s.performance_drop_pct,
+                }
+                for s in ranking
+            ],
+            "attribution_by_factor": data.get("attribution_by_factor", {}),
+        }
+        with open(json_out, "w", encoding="utf-8") as f:
+            json.dump(json_payload, f, indent=2, ensure_ascii=False)
+        print(f"Dados estruturados JSON gravados em: {json_out}")
+
+    return 0
+
+
 _COMMANDS = {
     "fetch": _cmd_fetch,
     "chart": _cmd_chart,
     "import-csv": _cmd_import_csv,
     "backtest": _cmd_backtest,
+    "grid": _cmd_grid,
 }
 
 

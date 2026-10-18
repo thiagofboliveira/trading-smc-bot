@@ -57,13 +57,17 @@ Em 30k candles M1: `analyze` caiu de 82,6 s para 2,698 s.
 - [x] Trailing stop (`src/smc_trader/backtest/trailing.py`): modos `none`, `ema` e `bos`; ativação por `1r`, `new_bos` ou `either`; trailing dinâmico intrabar
 - [x] 487 testes passando na suíte completa (`uv run pytest -q`)
 
-## O que falta
+### Plano 2d — Grade e refinamento (concluído)
+- [x] Modelos e gerador de combinações válidas da grade (`src/smc_trader/backtest/grid.py`) com 234 variantes canônicas e hash SHA-256 reprodutível.
+- [x] Divisão temporal estrita In-Sample (70%) e Out-of-Sample (30%) e walk-forward rolante sem look-ahead (`src/smc_trader/backtest/split.py`).
+- [x] Motor de execução da grade (`src/smc_trader/backtest/runner.py`) com pré-computação M1 e gestão O(1) de zonas ativas e trailing stop.
+- [x] Cálculo e reporte de Breakers precoces (36,2% tocam no 1º candle M15 após criação, confirmando a spec).
+- [x] Análise de atribuição marginal por fator (bloco, entrada, stop, trailing, confluências) e gerador de relatórios Markdown e JSON (`src/smc_trader/backtest/attribution.py`).
+- [x] CLI `smc grid <symbol>` integrada e validada em dados reais de XAUUSD (relatório em `out/grid_report_xauusd.md`).
+- [x] Estratégia campeã em robustez fora da amostra (OOS): Hash `2e697e30e86b1d24` (OB + Confirmação CHoCH M1 + Stop Swing + Alvo 3R), alcançando **Expectativa +1.55R**, **Taxa de Acerto 60.0%**, **Profit Factor 7.36** e **Max Drawdown 0.9R**.
+- [x] 493 testes passando na suíte completa (`uv run pytest -q`) em 56 segundos.
 
-### Plano 2d — Grade e refinamento
-- [ ] Runner da grade: `blocks_filter` × `entry_mode` × stop × alvo × trailing × confluências, por símbolo e por mês
-- [ ] Divisão IS/OOS 70/30 e walk-forward (2 meses de treino, 1 de teste); mínimo de 30 trades; ≥ 6 meses de M1
-- [ ] Hash reprodutível da configuração
-- [ ] Relatório de atribuição (com e sem cada fator); reportar à parte os breakers que terminam no 1º candle M15 após a criação (~1/3)
+## O que falta
 
 ### Plano 3 — Backlog Futuro (deixado anotado para depois)
 - [ ] Confluência RSI (divergência), Wyckoff e Elliott

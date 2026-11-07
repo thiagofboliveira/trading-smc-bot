@@ -166,6 +166,9 @@ class LiveTradingEngine:
                     trend_ma=(
                         model_def.trend_ma if model_def else None
                     ),
+                    trend_ma_slope=(
+                        model_def.trend_ma_slope if model_def else False
+                    ),
                     confluence_ma=(
                         model_def.confluence_ma if model_def else None
                     ),

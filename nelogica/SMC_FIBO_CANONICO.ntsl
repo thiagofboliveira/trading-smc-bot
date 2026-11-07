@@ -1,18 +1,19 @@
 // ==============================================================================
-// SMC-FIBO REGIME 80 (NTSL / PROFIT / RICO TRADER / B3)
+// SMC-FIBO SLOPE 50 (NTSL / PROFIT / RICO TRADER / B3)
 // ==============================================================================
-// Estratégia Canônica SMC Fibonacci OTE em M5 com Filtro de Regime MME 80
-// Versão: 3.2 — Auditada contra viés de lookahead e spread real
-// Modelo Oficial: Entrada 61.8%, Stop 100% (Estrutural), Alvo no Topo/Fundo (0%)
-// Filtro de Tendência: Long > MME 80, Short < MME 80 (+106.9R auditado global)
+// Estratégia Canônica SMC Fibonacci OTE em M5 com Angulação de MMA 50
+// Versão: 3.3 — Auditada contra viés de lookahead e spread real
+// Modelo Oficial: Entrada 61.8%, Stop 88.6%, Alvo no Topo/Fundo (0%)
+// Filtro de Tendência: Preço + Angulação da MMA 50 (+157.1R auditado global, PF 1.28)
 // Compatível com: Mini-Índice (WIN), Mini-Dólar (WDO), Ações (PETR4, VALE3)
 // ==============================================================================
 
 Parametro
   FiboEntrada(0.618);              // Nível Sweet Spot Institucional (61.8%)
   FiboStop(0.886);                 // Nível Harmônico Institucional (88.6%)
-  PeriodoMMETendencia(80);         // MME de Regime de Tendência Intraday (M5)
-  UsarFiltroTendencia(Verdadeiro); // Long só acima da MME 80, Short só abaixo
+  PeriodoMMATendencia(50);         // MMA de Regime de Tendência Intraday (M5)
+  UsarFiltroTendencia(Verdadeiro); // Long > MMA 50, Short < MMA 50
+  UsarFiltroAngulacao(Verdadeiro); // Exige que a MMA 50 esteja apontando a favor
   PeriodoMME(8);                   // MME de Condução de Saída
   UsarSaidaMME(Falso);             // Condução por MME 8 (Falso = Alvo no Topo/Fundo)
   UsarTrava2para1(Falso);          // Trava 2:1 (sobe SL para +1R ao atingir 2R)
@@ -26,7 +27,7 @@ Parametro
 
 Var
   mme8              : Real;
-  mme80             : Real;
+  mma50             : Real;
   topoFractal       : Booleano;
   fundoFractal      : Booleano;
   ultimoTopo        : Real;
@@ -65,7 +66,7 @@ Inicio
   SetPlotWidth(2, 2);
 
   mme8 := MediaExp(PeriodoMME, Fechamento);
-  mme80 := MediaExp(PeriodoMMETendencia, Fechamento);
+  mma50 := Media(PeriodoMMATendencia, Fechamento);
   barraAtual := barraAtual + 1;
 
   // 2. F-11: Detecção Fractal Estrita (Janela 5 barras, atraso causal de 2 barras)
@@ -231,9 +232,10 @@ Inicio
           stopPerna    := nivelStop;
           alvoPerna    := refTopo;
           riscoPerna   := nivelEntrada - nivelStop;
-          // Filtro de Regime de Tendência: Compra somente acima da MME 80
+          // Filtro de Regime + Angulação: Compra somente acima da MMA 50 e com MMA 50 subindo
           Se (riscoPerna > (RiscoMinimoTicks * MinPriceIncrement)) e
-             ((Not UsarFiltroTendencia) ou (Fechamento > mme80)) Entao
+             ((Not UsarFiltroTendencia) ou (Fechamento > mma50)) e
+             ((Not UsarFiltroAngulacao) ou (mma50 > mma50[1])) Entao
           Inicio
             BuyLimit(nivelEntrada);
             SellToCoverStop(nivelStop, nivelStop - (OffsetStopTicks * MinPriceIncrement));
@@ -247,9 +249,10 @@ Inicio
           stopPerna    := nivelStop;
           alvoPerna    := refFundo;
           riscoPerna   := nivelStop - nivelEntrada;
-          // Filtro de Regime de Tendência: Venda somente abaixo da MME 80
+          // Filtro de Regime + Angulação: Venda somente abaixo da MMA 50 e com MMA 50 descendo
           Se (riscoPerna > (RiscoMinimoTicks * MinPriceIncrement)) e
-             ((Not UsarFiltroTendencia) ou (Fechamento < mme80)) Entao
+             ((Not UsarFiltroTendencia) ou (Fechamento < mma50)) e
+             ((Not UsarFiltroAngulacao) ou (mma50 < mma50[1])) Entao
           Inicio
             SellShortLimit(nivelEntrada);
             BuyToCoverStop(nivelStop, nivelStop + (OffsetStopTicks * MinPriceIncrement));

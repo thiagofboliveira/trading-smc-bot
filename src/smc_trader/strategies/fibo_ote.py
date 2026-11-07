@@ -76,6 +76,12 @@ class FiboOTEConfig:
     trend_ma: str | None = (
         None  # Filtro de regime de tendência por média móvel ('sma20', 'sma50', 'sma200', 'ema80', 'ema20')
     )
+    trend_ma_slope: bool = (
+        False  # Exige que a média móvel esteja inclinada a favor do trade (subindo p/ Long, descendo p/ Short)
+    )
+    trend_ma_min_slope: float = (
+        0.0  # Inclinação mínima exigida da média móvel por barra
+    )
     confluence_ma: str | None = (
         None  # Exige toque na média móvel na entrada ('ema8', 'ema20', 'sma20', 'sma50', 'ema80', 'sma200')
     )
@@ -665,6 +671,12 @@ class FiboOTEStrategy:
                         continue
                     if d == -1 and closes[i] >= t_ma:
                         continue
+                    if cfg.trend_ma_slope and i > 0:
+                        slope = trend_mas[i] - trend_mas[i - 1]
+                        if d == 1 and slope <= cfg.trend_ma_min_slope:
+                            continue
+                        if d == -1 and slope >= -cfg.trend_ma_min_slope:
+                            continue
                 if cfg.confluence_ma and conf_mas is not None:
                     c_ma = conf_mas[i]
                     if not (lows[i] <= c_ma <= highs[i]):
@@ -715,6 +727,12 @@ class FiboOTEStrategy:
                     return None
                 if leg.d == -1 and closes[n - 1] >= t_ma:
                     return None
+                if cfg.trend_ma_slope and n > 1:
+                    slope = trend_mas[n - 1] - trend_mas[n - 2]
+                    if leg.d == 1 and slope <= cfg.trend_ma_min_slope:
+                        return None
+                    if leg.d == -1 and slope >= -cfg.trend_ma_min_slope:
+                        return None
             # a próxima barra incrementa `candles` antes de testar a validade
             if leg.candles + 1 > cfg.max_holding_candles:
                 return None

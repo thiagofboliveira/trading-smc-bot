@@ -195,6 +195,7 @@ class FiboModelConfig(BaseModel):
     pivot_k: int = Field(3, ge=1)
     trailing_exit_ma: str | None = "ema8"
     trend_ma: str | None = None
+    trend_ma_slope: bool = False
     confluence_ma: str | None = None
     profit_lock: ProfitLockConfig | None = None
     blocks_filter: list[str] | None = None

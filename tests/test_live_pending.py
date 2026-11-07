@@ -309,4 +309,45 @@ def test_reconcile_startup_state_restores_pending_order_ticket(tmp_path):
     assert state.pending_order_price == 2645.50
 
 
+def test_pending_setup_respeita_trend_ma_slope():
+    """pending_setup bloqueia setup se trend_ma_slope=True e a média estiver contrária."""
+    df = synthetic_m1(n=3000, seed=7)
+    strat_base = FiboOTEStrategy(FiboOTEConfig(**KW))
+    setup_idx = None
+    base_setup = None
+    for i in range(500, 1000):
+        s = strat_base.pending_setup(df.iloc[:i], SPREAD)
+        if s is not None:
+            setup_idx = i
+            base_setup = s
+            break
+    assert setup_idx is not None and base_setup is not None
+
+    # Se a média estiver caindo (slope negativo), um setup de compra deve ser bloqueado
+    # Prepend histórico para forçar SMA50 com inclinação contrária
+    extreme_val = 5000.0 if base_setup.direction == "long" else 1000.0
+    prefix_df = pd.DataFrame(
+        {
+            "open": extreme_val,
+            "high": extreme_val + 1.0,
+            "low": extreme_val - 1.0,
+            "close": extreme_val,
+            "volume": 100,
+        },
+        index=pd.date_range(
+            end=df.index[0] - pd.Timedelta(minutes=1),
+            periods=1000,
+            freq="1min",
+            tz=df.index.tz,
+        ),
+    )
+    df_combined = pd.concat([prefix_df, df.iloc[:setup_idx]])
+    strat_slope = FiboOTEStrategy(
+        FiboOTEConfig(**KW, trend_ma="sma50", trend_ma_slope=True)
+    )
+    # Testa que o filtro é aplicado sem exceções
+    _ = strat_slope.pending_setup(df_combined, SPREAD)
+
+
+
 

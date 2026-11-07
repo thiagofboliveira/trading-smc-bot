@@ -181,15 +181,27 @@ def test_fibo_live_session_close_action():
         {"open": 2000.0, "high": 2005.0, "low": 1995.0, "close": 2002.0, "volume": 100},
         index=times,
     )
-    # 17:00 é times[12] (16:00 + 12*5m = 17:00)
-    actions = evaluator.process_closed_m5(
-        df_m5=df_m5.iloc[:13],  # último candle tem timestamp 17:00
+    # 16:50 fecha às 16:55 (< 17:00): não deve zerar por sessão
+    actions_before = evaluator.process_closed_m5(
+        df_m5=df_m5.iloc[:11],  # último candle abre 16:50 e fecha 16:55
         is_positioned=True,
         current_pos_direction="long",
         current_pos_open_price=2000.0,
         current_pos_stop_loss=1990.0,
         current_pos_ticket=999,
         current_pos_open_time=times[0],
+    )
+    assert actions_before == []
+
+    # 16:55 fecha às 17:00 (== force_close_time), mesmo que aberta na própria barra 16:55
+    actions = evaluator.process_closed_m5(
+        df_m5=df_m5.iloc[:12],  # último candle abre 16:55 e fecha 17:00
+        is_positioned=True,
+        current_pos_direction="long",
+        current_pos_open_price=2000.0,
+        current_pos_stop_loss=1990.0,
+        current_pos_ticket=999,
+        current_pos_open_time=times[11],
     )
     assert len(actions) == 1
     assert actions[0].action_type == "CLOSE_POSITION"

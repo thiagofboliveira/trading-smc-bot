@@ -111,15 +111,20 @@ class FiboLiveEvaluator:
     ) -> list[FiboLiveAction]:
         cfg = self.config
         last = df_m5.iloc[-1]
-        # a barra que contém a entrada só pode estopar (tratado pela corretora)
-        if open_time is not None and df_m5.index[-1] <= open_time:
-            return []
 
-        # F-08: controle de sessão / fim de semana (zeragem compulsória)
+        # F-08: controle de sessão / fim de semana (zeragem compulsória no fechamento da barra)
         if cfg.session_filter:
-            cur_ts = df_m5.index[-1]
-            is_friday = cur_ts.weekday() == 4
-            t_str = cur_ts.strftime("%H:%M")
+            if "close_time" in df_m5.columns:
+                close_ts = df_m5["close_time"].iloc[-1]
+            else:
+                bar_mins = (
+                    15
+                    if cfg.timeframe in ("M15", "15min", "15m")
+                    else (60 if cfg.timeframe in ("H1", "1h", "60min") else 5)
+                )
+                close_ts = df_m5.index[-1] + pd.Timedelta(minutes=bar_mins)
+            is_friday = close_ts.weekday() == 4
+            t_str = close_ts.strftime("%H:%M")
             force_close = False
             if (
                 is_friday
@@ -135,6 +140,10 @@ class FiboLiveEvaluator:
                         reason="SESSION_CLOSE",
                     )
                 ]
+
+        # a barra que contém a entrada só pode estopar (tratado pela corretora)
+        if open_time is not None and df_m5.index[-1] <= open_time:
+            return []
 
         d = 1 if direction == "long" else -1
         risk = abs(open_price - stop_loss)

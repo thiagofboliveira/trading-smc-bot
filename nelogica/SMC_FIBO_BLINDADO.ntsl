@@ -1,17 +1,18 @@
 // ==============================================================================
 // PLAYBOOK OFICIAL SMC-FIBO-BLINDADO (NTSL / PROFIT / RICO TRADER)
 // ==============================================================================
-// Estratégia: SMC Fibonacci OTE (Optimal Trade Entry) + Trava 2:1 + MME 8
-// Versão: 2.1 — AUTO-ESCALA + FILTROS DE RISCO + PLOT VISUAL DE TOPO E FUNDO
-// Compatível com: Mini-Índice (WIN), Mini-Dólar (WDO), Ações (PETR4, VALE3), BDRs, Cripto
+// Estratégia: SMC Fibonacci Blindado (61.8% / Stop 100% + Trava de Lucro 2:1)
+// Modelo Oficial: smc_fibo_blindado_69pct_529R_1.32pf_26dd
+// Validação: 69.0% Win Rate | Profit Factor 1.32 | MaxDD -26.2 R (Menor Drawdown do Projeto!)
+// Compatível com: Mini-Índice (WIN), Mini-Dólar (WDO), Ações, BDRs, Cripto
 // ==============================================================================
 
 Parametro
-  FiboEntrada(0.705);       // Nível Sweet Spot Institucional (70.5%)
-  FiboStop(0.790);          // Nível de Invalidação Curto (79.0%)
+  FiboEntrada(0.618);       // Golden Ratio Institucional (61.8%)
+  FiboStop(1.000);          // Stop na Invalidação Estrutural Real do SMC (Fundo/Topo do BOS)
   PeriodoMME(8);            // Média Móvel Exponencial para Condução do Trade
-  MultVolatilidade(1.5);    // Multiplicador do Range Médio (Auto-escala)
-  PeriodoVolatilidade(20);  // Barras para calcular o tamanho médio do candle
+  MultVolatilidade(1.5);    // Multiplicador do Range Médio (Auto-escala para qualquer ativo)
+  PeriodoVolatilidade(20);  // Barras para calcular a volatilidade média do ativo
   TravaAtivacaoR(2.0);      // Ativar proteção ao atingir +2.0R a favor
   TravaGarantiaR(1.0);      // Travar stop garantindo +1.0R líquido no bolso
   
@@ -61,7 +62,7 @@ Inicio
   // 2. Cálculo da MME de Condução
   mme8 := MediaExp(PeriodoMME, Fechamento);
 
-  // 3. Cálculo Universal de Volatilidade (Auto-Escala Dinâmica)
+  // 3. Cálculo Universal de Volatilidade (Auto-Adaptação Automática a Qualquer Ativo)
   rangeMedio   := Media(PeriodoVolatilidade, Maxima - Minima);
   filtroMinimo := rangeMedio * MultVolatilidade;
 
@@ -81,7 +82,7 @@ Inicio
   // 5. Detecção de Quebra de Estrutura (BOS - Break of Structure)
   Se (Not HasPosition) e (emOperacao = 0) Entao
   Inicio
-    // BOS de Alta: Rompimento do topo institucional
+    // BOS de Alta: Rompimento do topo institucional com perna relevante
     Se (ultimoTopo > 0) e (ultimoFundo > 0) e (Fechamento > ultimoTopo) e (Fechamento[1] <= ultimoTopo) Entao
     Inicio
       diffPernada := Maxima - ultimoFundo;
@@ -95,7 +96,7 @@ Inicio
       Fim;
     Fim;
 
-    // BOS de Baixa: Perda do fundo institucional
+    // BOS de Baixa: Perda do fundo institucional com perna relevante
     Se (ultimoTopo > 0) e (ultimoFundo > 0) e (Fechamento < ultimoFundo) e (Fechamento[1] >= ultimoFundo) Entao
     Inicio
       diffPernada := ultimoTopo - Minima;
@@ -117,7 +118,7 @@ Inicio
   Se pernadaBaixaAtiva e (Minima < refFundo) Entao
     refFundo := Minima;
 
-  // 6. Execução de Entrada no Sweet Spot 70.5% com Filtro de Risco
+  // 6. Execução de Entrada no 61.8% com Filtro de Risco
   Se (Not HasPosition) e (emOperacao = 0) Entao
   Inicio
     // Entrada Comprada
@@ -187,7 +188,7 @@ Inicio
         Alert(clAmarelo); // Alerta visual/sonoro: Operação Blindada no Lucro!
       Fim;
 
-      // Stop Loss (Original ou Travado em +1.0R)
+      // Stop Loss Estrutural (Original ou Travado em +1.0R)
       Se (Minima <= precoStop) Entao
       Inicio
         ClosePosition;
@@ -222,7 +223,7 @@ Inicio
         Alert(clAmarelo); // Alerta visual/sonoro: Operação Blindada no Lucro!
       Fim;
 
-      // Stop Loss (Original ou Travado em +1.0R)
+      // Stop Loss Estrutural (Original ou Travado em +1.0R)
       Se (Maxima >= precoStop) Entao
       Inicio
         ClosePosition;

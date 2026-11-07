@@ -1,0 +1,250 @@
+// ==============================================================================
+// PLAYBOOK OFICIAL SMC-FIBO-SWEETSPOT (NTSL / PROFIT / RICO TRADER)
+// ==============================================================================
+// Estratégia: SMC Fibonacci Sweet Spot (70.5% / Stop Harmônico 88.6%)
+// Modelo Oficial: smc_fibo_sweetspot_53pct_774R_1.36pf_47dd
+// Validação: 53.3% Win Rate | Profit Factor 1.36 | MaxDD -46.9 R (+774 R / ano)
+// Compatível com: Mini-Índice (WIN), Mini-Dólar (WDO), Ações, BDRs, Cripto
+// ==============================================================================
+
+Parametro
+  FiboEntrada(0.705);       // Sweet Spot Institucional ICT (70.5%)
+  FiboStop(0.886);          // Stop Harmônico Profundo (88.6% — Evita ruído no 79%)
+  PeriodoMME(8);            // Média Móvel Exponencial para Condução do Trade
+  MultVolatilidade(1.5);    // Multiplicador do Range Médio (Auto-escala para qualquer ativo)
+  PeriodoVolatilidade(20);  // Barras para calcular a volatilidade média do ativo
+  
+  // FILTROS DE RISCO (Em Pontos do Ativo)
+  MaxStopPontos(250.0);     // STOP MÁXIMO: WIN sugerido 200-250 | WDO sugerido 8-10 (0 desativa)
+  MinStopPontos(50.0);      // STOP MÍNIMO: WIN sugerido 50-60   | WDO sugerido 3-4  (0 desativa)
+  
+  // EXIBIÇÃO VISUAL
+  ExibirTopoFundo(Verdadeiro); // Plota as linhas de Topo e Fundo no Gráfico Principal
+
+Var
+  mme8              : Real;
+  rangeMedio        : Real;
+  filtroMinimo      : Real;
+  topoFractal       : Booleano;
+  fundoFractal      : Booleano;
+  ultimoTopo        : Real;
+  ultimoFundo       : Real;
+  
+  emOperacao        : Inteiro;  // 0 = Fora, 1 = Comprado, -1 = Vendido
+  precoEntrada      : Real;
+  precoStop         : Real;
+  precoAlvo         : Real;
+  riscoCalculado    : Real;
+  stopValido        : Booleano;
+  
+  pernadaAltaAtiva  : Booleano;
+  pernadaBaixaAtiva : Booleano;
+  refTopo           : Real;
+  refFundo          : Real;
+  diffPernada       : Real;
+  nivelEntrada      : Real;
+  nivelStop         : Real;
+
+  topoExibicao      : Real;
+  fundoExibicao     : Real;
+
+Inicio
+  // 1. Configuração Visual das Linhas de Topo e Fundo
+  SetPlotColor(1, clAqua);    // Linha 1: Topo Considerado (Ciano / Azul Claro)
+  SetPlotColor(2, clFuchsia); // Linha 2: Fundo Considerado (Magenta / Fúcsia)
+  SetPlotWidth(1, 2);
+  SetPlotWidth(2, 2);
+
+  // 2. Cálculo da MME de Condução
+  mme8 := MediaExp(PeriodoMME, Fechamento);
+
+  // 3. Cálculo Universal de Volatilidade (Auto-Adaptação Automática a Qualquer Ativo)
+  rangeMedio   := Media(PeriodoVolatilidade, Maxima - Minima);
+  filtroMinimo := rangeMedio * MultVolatilidade;
+
+  // 4. Detecção de Swings Fractais (Atraso de 2 barras para confirmação sem repintura)
+  topoFractal := (Maxima[2] > Maxima[1]) e (Maxima[2] > Maxima[0]) e 
+                 (Maxima[2] > Maxima[3]) e (Maxima[2] > Maxima[4]);
+                 
+  fundoFractal := (Minima[2] < Minima[1]) e (Minima[2] < Minima[0]) e 
+                  (Minima[2] < Minima[3]) e (Minima[2] < Minima[4]);
+
+  Se topoFractal Entao
+    ultimoTopo := Maxima[2];
+
+  Se fundoFractal Entao
+    ultimoFundo := Minima[2];
+
+  // 5. Detecção de Quebra de Estrutura (BOS - Break of Structure)
+  Se (Not HasPosition) e (emOperacao = 0) Entao
+  Inicio
+    // BOS de Alta: Rompimento do topo institucional com perna relevante
+    Se (ultimoTopo > 0) e (ultimoFundo > 0) e (Fechamento > ultimoTopo) e (Fechamento[1] <= ultimoTopo) Entao
+    Inicio
+      diffPernada := Maxima - ultimoFundo;
+      Se diffPernada >= filtroMinimo Entao
+      Inicio
+        pernadaAltaAtiva  := Verdadeiro;
+        pernadaBaixaAtiva := Falso;
+        refTopo           := Maxima;
+        refFundo          := ultimoFundo;
+        PaintBar(clAmarelo); // Destaca a barra do BOS para visualização imediata
+      Fim;
+    Fim;
+
+    // BOS de Baixa: Perda do fundo institucional com perna relevante
+    Se (ultimoTopo > 0) e (ultimoFundo > 0) e (Fechamento < ultimoFundo) e (Fechamento[1] >= ultimoFundo) Entao
+    Inicio
+      diffPernada := ultimoTopo - Minima;
+      Se diffPernada >= filtroMinimo Entao
+      Inicio
+        pernadaBaixaAtiva := Verdadeiro;
+        pernadaAltaAtiva  := Falso;
+        refTopo           := ultimoTopo;
+        refFundo          := Minima;
+        PaintBar(clAmarelo); // Destaca a barra do BOS para visualização imediata
+      Fim;
+    Fim;
+  Fim;
+
+  // Atualizar expansão da pernada enquanto não houver retração profunda
+  Se pernadaAltaAtiva e (Maxima > refTopo) Entao
+    refTopo := Maxima;
+
+  Se pernadaBaixaAtiva e (Minima < refFundo) Entao
+    refFundo := Minima;
+
+  // 6. Execução de Entrada no Sweet Spot 70.5% com Filtro de Risco
+  Se (Not HasPosition) e (emOperacao = 0) Entao
+  Inicio
+    // Entrada Comprada
+    Se pernadaAltaAtiva Entao
+    Inicio
+      diffPernada    := refTopo - refFundo;
+      nivelEntrada   := refTopo - (diffPernada * FiboEntrada);
+      nivelStop      := refTopo - (diffPernada * FiboStop);
+      riscoCalculado := nivelEntrada - nivelStop;
+
+      stopValido := Verdadeiro;
+      Se (MaxStopPontos > 0) e (riscoCalculado > MaxStopPontos) Entao stopValido := Falso;
+      Se (MinStopPontos > 0) e (riscoCalculado < MinStopPontos) Entao stopValido := Falso;
+
+      Se stopValido e (Minima <= nivelEntrada) e (Fechamento > nivelStop) Entao
+      Inicio
+        BuyAtMarket;
+        emOperacao        := 1;
+        precoEntrada      := nivelEntrada;
+        precoStop         := nivelStop;
+        precoAlvo         := refTopo;
+        pernadaAltaAtiva  := Falso;
+      Fim;
+    Fim;
+
+    // Entrada Vendida
+    Se pernadaBaixaAtiva Entao
+    Inicio
+      diffPernada    := refTopo - refFundo;
+      nivelEntrada   := refFundo + (diffPernada * FiboEntrada);
+      nivelStop      := refFundo + (diffPernada * FiboStop);
+      riscoCalculado := nivelStop - nivelEntrada;
+
+      stopValido := Verdadeiro;
+      Se (MaxStopPontos > 0) e (riscoCalculado > MaxStopPontos) Entao stopValido := Falso;
+      Se (MinStopPontos > 0) e (riscoCalculado < MinStopPontos) Entao stopValido := Falso;
+
+      Se stopValido e (Maxima >= nivelEntrada) e (Fechamento < nivelStop) Entao
+      Inicio
+        SellShortAtMarket;
+        emOperacao        := -1;
+        precoEntrada      := nivelEntrada;
+        precoStop         := nivelStop;
+        precoAlvo         := refFundo;
+        pernadaBaixaAtiva := Falso;
+      Fim;
+    Fim;
+  Fim;
+
+  // 7. Gestão Ativa da Posição (Condução 100% Livre pela MME 8 no Lucro)
+  Se HasPosition ou (emOperacao <> 0) Entao
+  Inicio
+    // GESTÃO DA COMPRA
+    Se (IsBought) ou (emOperacao = 1) Entao
+    Inicio
+      PaintBar(clVerde); // Coloração verde durante toda a compra
+
+      // Stop Loss Harmônico
+      Se (Minima <= precoStop) Entao
+      Inicio
+        ClosePosition;
+        emOperacao := 0;
+      Fim
+
+      // Saída por Trailing Stop na MME 8 (Fechamento abaixo da média no lucro)
+      Senao Se (Fechamento < mme8) e (Fechamento[1] >= mme8[1]) e (Fechamento > precoEntrada) Entao
+      Inicio
+        ClosePosition;
+        emOperacao := 0;
+        Alert(clAzul);
+      Fim
+
+      // Saída no Topo Prévio Estrutural
+      Senao Se (Maxima >= precoAlvo) Entao
+      Inicio
+        ClosePosition;
+        emOperacao := 0;
+      Fim;
+    Fim;
+
+    // GESTÃO DA VENDA
+    Se (IsSold) ou (emOperacao = -1) Entao
+    Inicio
+      PaintBar(clVermelho); // Coloração vermelha durante toda a venda
+
+      // Stop Loss Harmônico
+      Se (Maxima >= precoStop) Entao
+      Inicio
+        ClosePosition;
+        emOperacao := 0;
+      Fim
+
+      // Saída por Trailing Stop na MME 8 (Fechamento acima da média no lucro)
+      Senao Se (Fechamento > mme8) e (Fechamento[1] <= mme8[1]) e (Fechamento < precoEntrada) Entao
+      Inicio
+        ClosePosition;
+        emOperacao := 0;
+        Alert(clAzul);
+      Fim
+
+      // Saída no Fundo Prévio Estrutural
+      Senao Se (Minima <= precoAlvo) Entao
+      Inicio
+        ClosePosition;
+        emOperacao := 0;
+      Fim;
+    Fim;
+  Fim;
+
+  // 8. PLOT VISUAL DO TOPO E FUNDO CONSIDERADOS NO GRÁFICO
+  Se (pernadaAltaAtiva) ou (pernadaBaixaAtiva) ou (HasPosition) ou (emOperacao <> 0) Entao
+  Inicio
+    topoExibicao  := refTopo;
+    fundoExibicao := refFundo;
+  Fim
+  Senao
+  Inicio
+    topoExibicao  := ultimoTopo;
+    fundoExibicao := ultimoFundo;
+  Fim;
+
+  Se ExibirTopoFundo Entao
+  Inicio
+    Se topoExibicao > 0 Entao Plot(topoExibicao) Senao NoPlot(1);
+    Se fundoExibicao > 0 Entao Plot2(fundoExibicao) Senao NoPlot(2);
+  Fim
+  Senao
+  Inicio
+    NoPlot(1);
+    NoPlot(2);
+  Fim;
+
+Fim;

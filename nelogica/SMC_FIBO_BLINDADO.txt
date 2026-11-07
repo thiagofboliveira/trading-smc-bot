@@ -1,0 +1,219 @@
+// ==============================================================================
+// PLAYBOOK OFICIAL SMC-FIBO-BLINDADO (NTSL / PROFIT / RICO TRADER)
+// ==============================================================================
+// Estratégia: SMC Fibonacci OTE (Optimal Trade Entry) + Trava de Lucro 2:1 + MME 8
+// Modelo: smc_fibo_blindado_50pct_2278R_2.24pf_30dd
+// Plataforma: Nelogica ProfitChart / Rico Trader / Clear Trader / XP Trader
+// Timeframes Recomendados B3: 2 Minutos (M2) ou 5 Minutos (M5)
+// Ativos Recomendados: Mini-Índice (WIN) e Mini-Dólar (WDO)
+// ==============================================================================
+
+Parametro
+  FiboEntrada(0.705);       // Nível Sweet Spot Institucional (70.5%)
+  FiboStop(0.790);          // Nível de Invalidação Curto (79.0%)
+  PeriodoMME(8);            // Média Móvel Exponencial para Condução do Trade
+  MinPernadaPontos(150.0);   // Amplitude mínima do BOS (WIN: 150 pts | WDO: 5 pts)
+  TravaAtivacaoR(2.0);      // Ativar proteção ao atingir +2.0R a favor
+  TravaGarantiaR(1.0);      // Travar stop garantindo +1.0R líquido no bolso
+
+Var
+  mme8              : Real;
+  topoFractal       : Booleano;
+  fundoFractal      : Booleano;
+  ultimoTopo        : Real;
+  ultimoFundo       : Real;
+  bosAlta           : Booleano;
+  bosBaixa          : Booleano;
+  
+  emOperacao        : Inteiro;  // 0 = Fora, 1 = Comprado, -1 = Vendido
+  precoEntrada      : Real;
+  precoStop         : Real;
+  precoAlvo         : Real;
+  riscoInicial      : Real;
+  travaAtivada      : Booleano;
+  
+  pernadaAltaAtiva  : Booleano;
+  pernadaBaixaAtiva : Booleano;
+  refTopo           : Real;
+  refFundo          : Real;
+  diffPernada       : Real;
+  nivelEntrada      : Real;
+  nivelStop         : Real;
+
+Inicio
+  // 1. Cálculo da MME de Condução
+  mme8 := MediaExp(PeriodoMME, Fechamento);
+
+  // 2. Detecção de Swings Fractais (Atraso de 2 barras para confirmação sem repintura)
+  topoFractal := (Maxima[2] > Maxima[1]) e (Maxima[2] > Maxima[0]) e 
+                 (Maxima[2] > Maxima[3]) e (Maxima[2] > Maxima[4]);
+                 
+  fundoFractal := (Minima[2] < Minima[1]) e (Minima[2] < Minima[0]) e 
+                  (Minima[2] < Minima[3]) e (Minima[2] < Minima[4]);
+
+  Se topoFractal Entao
+    ultimoTopo := Maxima[2];
+
+  Se fundoFractal Entao
+    ultimoFundo := Minima[2];
+
+  // 3. Detecção de Quebra de Estrutura (BOS - Break of Structure)
+  Se (Not HasPosition) e (emOperacao = 0) Entao
+  Inicio
+    // BOS de Alta: Fechamento rompe o último topo institucional
+    Se (ultimoTopo > 0) e (ultimoFundo > 0) e (Fechamento > ultimoTopo) e (Fechamento[1] <= ultimoTopo) Entao
+    Inicio
+      diffPernada := Maxima - ultimoFundo;
+      Se diffPernada >= MinPernadaPontos Entao
+      Inicio
+        pernadaAltaAtiva  := Verdadeiro;
+        pernadaBaixaAtiva := Falso;
+        refTopo           := Maxima;
+        refFundo          := ultimoFundo;
+      Fim;
+    Fim;
+
+    // BOS de Baixa: Fechamento perde o último fundo institucional
+    Se (ultimoTopo > 0) e (ultimoFundo > 0) e (Fechamento < ultimoFundo) e (Fechamento[1] >= ultimoFundo) Entao
+    Inicio
+      diffPernada := ultimoTopo - Minima;
+      Se diffPernada >= MinPernadaPontos Entao
+      Inicio
+        pernadaBaixaAtiva := Verdadeiro;
+        pernadaAltaAtiva  := Falso;
+        refTopo           := ultimoTopo;
+        refFundo          := Minima;
+      Fim;
+    Fim;
+  Fim;
+
+  // Atualizar expansão da pernada enquanto não houver retração profunda
+  Se pernadaAltaAtiva e (Maxima > refTopo) Entao
+    refTopo := Maxima;
+
+  Se pernadaBaixaAtiva e (Minima < refFundo) Entao
+    refFundo := Minima;
+
+  // 4. Execução de Entrada no Sweet Spot 70.5% (Se não estiver posicionado)
+  Se (Not HasPosition) e (emOperacao = 0) Entao
+  Inicio
+    // Entrada Comprada
+    Se pernadaAltaAtiva Entao
+    Inicio
+      diffPernada  := refTopo - refFundo;
+      nivelEntrada := refTopo - (diffPernada * FiboEntrada);
+      nivelStop    := refTopo - (diffPernada * FiboStop);
+
+      Se (Minima <= nivelEntrada) e (Fechamento > nivelStop) Entao
+      Inicio
+        BuyAtMarket;
+        emOperacao        := 1;
+        precoEntrada      := nivelEntrada;
+        precoStop         := nivelStop;
+        precoAlvo         := refTopo;
+        riscoInicial      := precoEntrada - precoStop;
+        travaAtivada      := Falso;
+        pernadaAltaAtiva  := Falso;
+      Fim;
+    Fim;
+
+    // Entrada Vendida
+    Se pernadaBaixaAtiva Entao
+    Inicio
+      diffPernada  := refTopo - refFundo;
+      nivelEntrada := refFundo + (diffPernada * FiboEntrada);
+      nivelStop    := refFundo + (diffPernada * FiboStop);
+
+      Se (Maxima >= nivelEntrada) e (Fechamento < nivelStop) Entao
+      Inicio
+        SellShortAtMarket;
+        emOperacao        := -1;
+        precoEntrada      := nivelEntrada;
+        precoStop         := nivelStop;
+        precoAlvo         := refFundo;
+        riscoInicial      := precoStop - precoEntrada;
+        travaAtivada      := Falso;
+        pernadaBaixaAtiva := Falso;
+      Fim;
+    Fim;
+  Fim;
+
+  // 5. Gestão Ativa da Posição (Trava 2:1 + Condução MME 8 + Alvo)
+  Se HasPosition ou (emOperacao <> 0) Entao
+  Inicio
+    // -------------------------------------------------------------
+    // GESTÃO DA COMPRA
+    // -------------------------------------------------------------
+    Se (IsBought) ou (emOperacao = 1) Entao
+    Inicio
+      PaintBar(clVerde); // Coloração de compra ativa
+
+      // A) TRAVA DE LUCRO NO 2:1 (Blindagem de Capital)
+      Se (Not travaAtivada) e (Maxima >= (precoEntrada + (riscoInicial * TravaAtivacaoR))) Entao
+      Inicio
+        precoStop    := precoEntrada + (riscoInicial * TravaGarantiaR); // Stop sobe para +1.0R garantido
+        travaAtivada := Verdadeiro;
+        Alert(clAmarelo); // Alerta visual/sonoro: Operação Blindada no Lucro!
+      Fim;
+
+      // B) SAÍDA POR STOP LOSS (Original ou Travado em +1R)
+      Se (Minima <= precoStop) Entao
+      Inicio
+        ClosePosition;
+        emOperacao := 0;
+      Fim
+
+      // C) SAÍDA POR CONDUÇÃO DA MME 8 (Fechamento abaixo da média)
+      Senao Se (Fechamento < mme8) e (Fechamento[1] >= mme8[1]) e (Fechamento > precoEntrada) Entao
+      Inicio
+        ClosePosition;
+        emOperacao := 0;
+      Fim
+
+      // D) SAÍDA NO ALVO ESTRUTURAL MÁXIMO (Topo Prévio)
+      Senao Se (Maxima >= precoAlvo) Entao
+      Inicio
+        ClosePosition;
+        emOperacao := 0;
+      Fim;
+    Fim;
+
+    // -------------------------------------------------------------
+    // GESTÃO DA VENDA
+    // -------------------------------------------------------------
+    Se (IsSold) ou (emOperacao = -1) Entao
+    Inicio
+      PaintBar(clVermelho); // Coloração de venda ativa
+
+      // A) TRAVA DE LUCRO NO 2:1 (Blindagem de Capital)
+      Se (Not travaAtivada) e (Minima <= (precoEntrada - (riscoInicial * TravaAtivacaoR))) Entao
+      Inicio
+        precoStop    := precoEntrada - (riscoInicial * TravaGarantiaR); // Stop desce para +1.0R garantido
+        travaAtivada := Verdadeiro;
+        Alert(clAmarelo); // Alerta visual/sonoro: Operação Blindada no Lucro!
+      Fim;
+
+      // B) SAÍDA POR STOP LOSS (Original ou Travado em +1R)
+      Se (Maxima >= precoStop) Entao
+      Inicio
+        ClosePosition;
+        emOperacao := 0;
+      Fim
+
+      // C) SAÍDA POR CONDUÇÃO DA MME 8 (Fechamento acima da média)
+      Senao Se (Fechamento > mme8) e (Fechamento[1] <= mme8[1]) e (Fechamento < precoEntrada) Entao
+      Inicio
+        ClosePosition;
+        emOperacao := 0;
+      Fim
+
+      // D) SAÍDA NO ALVO ESTRUTURAL MÁXIMO (Fundo Prévio)
+      Senao Se (Minima <= precoAlvo) Entao
+      Inicio
+        ClosePosition;
+        emOperacao := 0;
+      Fim;
+    Fim;
+  Fim;
+
+Fim;

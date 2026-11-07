@@ -13,23 +13,25 @@ Este documento estabelece as **convenções, padrões arquiteturais, regras mate
 
 ## 🏷️ 1. Padrões de Nomenclatura (Naming Conventions)
 
-### 1.1 Nomenclatura Oficial de Estratégias e Modelos
-Toda estratégia validada que passar a compor o portfólio oficial DEVE seguir a taxonomia padrão:
+### 1.1 Nomenclatura Oficial de Estratégias e Modelos (Auditoria M-03)
+Toda estratégia e modelo DEVE seguir uma taxonomia puramente semântica e versionada:
 
-$$\mathbf{<\!nome\_base\!>\_<\!taxaacerto\!>\_<\!retornoanual\!>\_<\!profitfactor\!>\_<\!maxdrawdown\!>}$$
+$$\mathbf{smc\_<\!estrategia\!>\_<\!variante\!>[\_v<\!versao\!>]}$$
 
-* **Campos Obrigatórios:**
-  1. `<nome_base>`: Identificador funcional e conceitual do modelo (ex: `smc_fibo_estrutural`, `smc_fibo_sweetspot`, `smc_fibo_blindado`).
-  2. `<taxaacerto>`: Taxa de acerto percentual inteira com sufixo `pct` (ex: `68pct`, `53pct`, `51pct`).
-  3. `<retornoanual>`: Retorno líquido consolidado anualizado em R-múltiplos com sufixo `R` (ex: `809R`, `929R`, `529R`).
-  4. `<profitfactor>`: Profit Factor formatado com 2 casas decimais e sufixo `pf` (ex: `1.48pf`, `1.36pf`, `1.32pf`).
-  5. `<maxdrawdown>`: Rebaixamento máximo histórico em R-múltiplos com sufixo `dd` (ex: `30dd`, `47dd`, `26dd`).
+* **Regra Anti-Viés de Apego (M-03):** NUNCA inclua métricas de backtest (taxa de acerto, R-múltiplos, profit factor, drawdown) no nome de arquivos de modelos. Métricas mudam a cada recalibração, teste out-of-sample ou ajuste de custos. Métricas de performance pertencem aos relatórios quantitativos (`reports/`) ou aos metadados internos do YAML.
+* **Campos:**
+  1. `smc`: Prefixo do ecossistema.
+  2. `<estrategia>`: Família estrutural (ex: `fibo`, `zones`, `breaker`).
+  3. `<variante>`: Conceito da mecânica de saída/risco (ex: `estrutural`, `sweetspot`, `trailing`, `blindado`).
+  4. `_v<versao>` (opcional): Versão semântica quando houver evolução de parâmetros (ex: `v1`, `v2`).
 
 * **Exemplos Canônicos:**
-  * `smc_fibo_estrutural_68pct_809R_1.48pf_30dd`
-  * `smc_fibo_trailing_51pct_929R_1.35pf_46dd`
-  * `smc_fibo_sweetspot_53pct_774R_1.36pf_47dd`
-  * `smc_fibo_blindado_69pct_529R_1.32pf_26dd`
+  * `smc_fibo_estrutural.yaml`
+  * `smc_fibo_trailing.yaml`
+  * `smc_fibo_sweetspot.yaml`
+  * `smc_fibo_blindado.yaml`
+
+*(Arquivos legados que continham métricas embutidas foram arquivados em `config/models/legacy_biased/` para rastreabilidade histórica).*
 
 ### 1.2 Nomenclatura de Arquivos e Pastas
 * **Modelos YAML:** `config/models/<nome_oficial_da_estrategia>.yaml`

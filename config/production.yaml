@@ -44,36 +44,36 @@ models:
 
 symbols:
   XAUUSD:
-    model: "smc_fibo_trailing_44pct_2500R_2.23pf_32dd"
-    description: "Ouro — SMC-Fibo-Trailing M5 (+877.0R no ano, WR 48.1%)"
+    model: "smc_fibo_trailing"
+    description: "Ouro — SMC-Fibo-Trailing M5"
     macro_tf: "M5"
 
   NAS100:
-    model: "smc_fibo_trailing_44pct_2500R_2.23pf_32dd"
-    description: "Nasdaq 100 — SMC-Fibo-Trailing M5 (+716.9R no ano, WR 42.1%)"
+    model: "smc_fibo_trailing"
+    description: "Nasdaq 100 — SMC-Fibo-Trailing M5"
     macro_tf: "M5"
 
   DAX40:
-    model: "smc_fibo_trailing_44pct_2500R_2.23pf_32dd"
-    description: "DAX 40 — SMC-Fibo-Trailing M5 (+463.5R no ano, WR 42.7%)"
+    model: "smc_fibo_trailing"
+    description: "DAX 40 — SMC-Fibo-Trailing M5"
     macro_tf: "M5"
 
   BRENT:
-    model: "smc_fibo_trailing_44pct_2500R_2.23pf_32dd"
-    description: "Petróleo Brent — SMC-Fibo-Trailing M5 (+228.4R no ano, WR 45.5%)"
+    model: "smc_fibo_trailing"
+    description: "Petróleo Brent — SMC-Fibo-Trailing M5"
     macro_tf: "M5"
 
   USDJPY:
-    model: "smc_fibo_trailing_44pct_2500R_2.23pf_32dd"
-    description: "USD/JPY — SMC-Fibo-Trailing M5 (+106.1R no ano, WR 41.7%)"
+    model: "smc_fibo_trailing"
+    description: "USD/JPY — SMC-Fibo-Trailing M5"
     macro_tf: "M5"
 
   EURUSD:
-    model: "smc_fibo_trailing_44pct_2500R_2.23pf_32dd"
-    description: "EUR/USD — SMC-Fibo-Trailing M5 (+79.0R no ano, WR 47.7%)"
+    model: "smc_fibo_trailing"
+    description: "EUR/USD — SMC-Fibo-Trailing M5"
     macro_tf: "M5"
 
   GBPUSD:
-    model: "smc_fibo_trailing_44pct_2500R_2.23pf_32dd"
-    description: "GBP/USD — SMC-Fibo-Trailing M5 (+28.4R no ano, WR 37.7%)"
+    model: "smc_fibo_trailing"
+    description: "GBP/USD — SMC-Fibo-Trailing M5"
     macro_tf: "M5"

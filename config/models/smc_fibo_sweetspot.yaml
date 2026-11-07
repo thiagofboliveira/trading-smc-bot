@@ -1,0 +1,43 @@
+# ===================================================================
+# SMC TRADER — MODELO CONCEITUAL: SMC FIBO SWEETSPOT
+# ===================================================================
+# Nomenclatura Padrão: <estrategia>_<conceito> (sem métricas embutidas no nome - M-03)
+# ===================================================================
+# Conceito: Sweet Spot Institucional ICT (70.5%) com Stop na Invalidação 79.0%
+# Condução: Trailing Stop dinâmico na MME 8 (apenas no lucro)
+# Status de Validação: Recalibrado após remoção de vieses F-01 a F-10.
+# ===================================================================
+
+model:
+  id: "smc_fibo_sweetspot"
+  name: "SMC-Fibo-Sweetspot"
+  version: "3.0.0"
+  description: "Modelo Fibo SMC Sweet Spot Institucional 70.5% com Stop 79%"
+
+timeframes:
+  operational: "M5"
+
+fibonacci:
+  entry_level: 0.705            # Sweet Spot Institucional ICT (70.5%)
+  stop_level: 0.790             # Nível de invalidação OTE (79.0%)
+  origin_level: 1.000
+  target_mode: "0_percent"
+  pivot_k: 2
+  max_holding_candles: 60
+  enable_reentry_79: false
+
+trailing:
+  mode: "moving_average"
+  ma_type: "ema8"
+  exit_on_close_cross: true
+  profit_only: true
+
+risk_management:
+  risk_pct_per_trade: 1.0
+  max_open_trades_total: 4
+  max_trades_per_day: 5
+  max_stops_per_day: 2
+
+session:
+  mode: "24h"
+  force_close_time: "21:30"

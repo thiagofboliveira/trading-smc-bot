@@ -63,14 +63,21 @@ def analyze_attribution(
 
         attribution_by_factor[factor] = factor_stats
 
-    # Ranking final: qualificadas em IS e lucrativas em OOS, ordenadas por expectativa OOS
-    rankable = [s for s in qualified if s.oos_profitable]
-    rankable.sort(key=lambda x: (x.oos_metrics.get("expectancy", 0.0), x.oos_metrics.get("profit_factor", 0.0)), reverse=True)
+    # M-01: Ranquear e escolher estritamente pelo In-Sample (IS) para evitar data snooping no OOS
+    rankable = list(qualified)
+    rankable.sort(
+        key=lambda x: (
+            x.is_metrics.get("expectancy", 0.0),
+            x.is_metrics.get("profit_factor", 0.0),
+        ),
+        reverse=True,
+    )
+    robust_count = sum(1 for s in qualified if s.oos_profitable)
 
     return {
         "total_variants": len(summaries),
         "qualified_variants": len(qualified),
-        "robust_variants": len(rankable),
+        "robust_variants": robust_count,
         "attribution_by_factor": attribution_by_factor,
         "ranking": rankable,
     }
@@ -129,9 +136,9 @@ def format_attribution_markdown(
             )
         lines.append("")
 
-    lines.append("## 4. Ranking das Melhores Estratégias Robustas (Top 10)")
-    lines.append("| # | Hash | Blocos | Entrada | Stop | Trailing | Confluência | IS Exp | OOS Exp | OOS Acerto | OOS PF | OOS DD | Queda IS→OOS |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("## 4. Ranking das Melhores Estratégias (Seleção Estrita por In-Sample)")
+    lines.append("| # | Hash | Blocos | Entrada | Stop | Trailing | Confluência | IS Exp | IS PF | OOS Exp | OOS Acerto | OOS PF | OOS DD | Queda IS→OOS |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
 
     ranking: list[VariantExecutionSummary] = analysis_data.get("ranking", [])
     for idx, s in enumerate(ranking[:10], start=1):
@@ -139,25 +146,25 @@ def format_attribution_markdown(
         lines.append(
             f"| {idx} | `{s.config_hash}` | `{s.blocks_filter}` | `{s.entry_mode}` | "
             f"`{s.stop_mode}` | `{s.trailing_mode}` | `{s.confluence_profile}` | "
-            f"{s.is_metrics.get('expectancy', 0.0):+.2f}R | {s.oos_metrics.get('expectancy', 0.0):+.2f}R | "
-            f"{s.oos_metrics.get('win_rate', 0.0):.1f}% | {s.oos_metrics.get('profit_factor', 0.0):.2f} | "
-            f"{s.oos_metrics.get('max_drawdown_r', 0.0):.1f}R | {drop_str} |"
+            f"{s.is_metrics.get('expectancy', 0.0):+.2f}R | {s.is_metrics.get('profit_factor', 0.0):.2f} | "
+            f"{s.oos_metrics.get('expectancy', 0.0):+.2f}R | {s.oos_metrics.get('win_rate', 0.0):.1f}% | "
+            f"{s.oos_metrics.get('profit_factor', 0.0):.2f} | {s.oos_metrics.get('max_drawdown_r', 0.0):.1f}R | "
+            f"{drop_str} |"
         )
     lines.append("")
 
     if not ranking:
-        lines.append("> [!WARNING]\n> Nenhuma variante atingiu simultaneamente o piso de 30 trades no IS e expectativa positiva no OOS.")
+        lines.append("> [!WARNING]\n> Nenhuma variante atingiu o piso de trades no In-Sample.")
     else:
         best = ranking[0]
-        lines.append("## 5. Recomendação e Síntese")
-        lines.append(f"A configuração campeã em robustez fora da amostra foi o hash **`{best.config_hash}`**:")
+        lines.append("## 5. Recomendação e Validação Fora da Amostra (OOS)")
+        lines.append(f"A configuração campeã selecionada pelo In-Sample foi o hash **`{best.config_hash}`**:")
         lines.append(f"- **Blocos:** `{best.blocks_filter}`")
         lines.append(f"- **Entrada:** `{best.entry_mode}`")
         lines.append(f"- **Stop Loss:** `{best.stop_mode}`")
         lines.append(f"- **Trailing Stop:** `{best.trailing_mode}`")
         lines.append(f"- **Confluências:** `{best.confluence_profile}`")
-        lines.append(f"- **Expectativa OOS:** `{best.oos_metrics.get('expectancy', 0.0):+.2f}R` por operação")
-        lines.append(f"- **Taxa de Acerto OOS:** `{best.oos_metrics.get('win_rate', 0.0):.1f}%`")
-        lines.append(f"- **Profit Factor OOS:** `{best.oos_metrics.get('profit_factor', 0.0):.2f}`")
+        lines.append(f"- **Desempenho no Treino (IS):** `{best.is_metrics.get('expectancy', 0.0):+.2f}R` ({best.is_metrics.get('total_trades', 0)} trades, PF `{best.is_metrics.get('profit_factor', 0.0):.2f}`)")
+        lines.append(f"- **Desempenho no Teste (OOS):** `{best.oos_metrics.get('expectancy', 0.0):+.2f}R` ({best.oos_metrics.get('total_trades', 0)} trades, PF `{best.oos_metrics.get('profit_factor', 0.0):.2f}`, Acerto `{best.oos_metrics.get('win_rate', 0.0):.1f}%`)")
 
     return "\n".join(lines)

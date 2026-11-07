@@ -1,0 +1,56 @@
+# ===================================================================
+# SMC TRADER — MODELO: SMC FIBO REJEIÇÃO EMA80 ZONA (FREQUENTE)
+# ===================================================================
+# Nomenclatura Padrão: <estrategia>_<conceito> (M-03)
+# ===================================================================
+# Conceito: Zona de retração [50% a 79%] com toque na EMA 80 no M5,
+# exigindo fechamento da barra de gatilho a favor da EMA 80 e acima/abaixo
+# de 79% (sem filtro de tamanho mínimo de pavio).
+# Execução: Causal na abertura da barra seguinte (i + 1), alvo fixo de 2R
+# e stop de invalidação em 88,6% da perna.
+# Status: Candidato preliminar para validação em paper trading (amostra:
+# backtest Dukascopy M1 -> M5, 01/03/2026 a 16/10/2026, com spreads de
+# config/default.yaml; 414 trades, WR 36,5%, +40,3R, +0,097R ± 0,071R/trade).
+# ===================================================================
+
+model:
+  id: "smc_fibo_rejeicao_ema80_zona"
+  name: "SMC-Fibo-Rejeicao-EMA80-Zona"
+  version: "1.0.0"
+  description: "Zona Fibo [50%-79%] com toque e rejeição na EMA 80 no fechamento M5, entrada no open de i+1 e alvo 2R"
+
+timeframes:
+  operational: "M5"
+
+fibonacci:
+  entry_level: 0.500            # Início da zona de retração (50.0%)
+  rejection_max_level: 0.790    # Limite máximo da zona para o fechamento de rejeição (79.0%)
+  stop_level: 0.886             # Nível de invalidação da perna (88.6%)
+  origin_level: 1.000
+  entry_mode: "m5_close_rejection"
+  stop_mode: "fibo"
+  rejection_min_wick_ratio: 0.0
+  target_mode: "3R"
+  target_r: 2.0
+  pivot_k: 2
+  max_holding_candles: 60
+  enable_reentry_79: false
+
+filters:
+  trend_ma: "ema80"
+  confluence_ma: "ema80"
+
+trailing:
+  mode: "none"
+  ma_type: null
+
+risk_management:
+  risk_pct_per_trade: 1.0
+  max_open_trades_total: 4
+  max_trades_per_day: 5
+  max_stops_per_day: 2
+
+session:
+  session_filter: true
+  session_windows:
+    - ["07:00", "18:00"]

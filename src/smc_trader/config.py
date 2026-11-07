@@ -190,6 +190,8 @@ class FiboModelConfig(BaseModel):
     timeframe: str = "M5"
     fibo_entry: float = Field(0.705, ge=0.0, le=1.0)
     fibo_stop: float = Field(0.790, ge=0.0, le=2.0)
+    fibo_rejection_max: float | None = Field(None, ge=0.0, le=1.0)
+    rejection_min_wick_ratio: float = Field(0.0, ge=0.0, le=1.0)
     target_mode: Literal["3R", "0_percent", "proj_618", "trailing_only"] = "0_percent"
     target_r: float = Field(3.0, gt=0.0)
     pivot_k: int = Field(3, ge=1)

@@ -136,6 +136,22 @@ class LiveTradingEngine:
                     timeframe=sym_cfg.macro_tf,
                     fibo_entry=model_def.fibo_entry if model_def else 0.705,
                     fibo_stop=model_def.fibo_stop if model_def else 0.790,
+                    fibo_rejection_max=(
+                        model_def.fibo_rejection_max if model_def else None
+                    ),
+                    entry_mode=(
+                        model_def.entry_mode
+                        if (model_def and model_def.entry_mode in ("limit", "m5_close_rejection"))
+                        else "limit"
+                    ),
+                    stop_mode=(
+                        model_def.stop_mode
+                        if (model_def and model_def.stop_mode in ("fibo", "rejection_candle"))
+                        else "fibo"
+                    ),
+                    rejection_min_wick_ratio=(
+                        model_def.rejection_min_wick_ratio if model_def else 0.0
+                    ),
                     target_mode=model_def.target_mode if model_def else "0_percent",
                     target_r=model_def.target_r if model_def else 3.0,
                     pivot_k=model_def.pivot_k if model_def else 3,

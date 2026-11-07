@@ -201,6 +201,8 @@ class FiboModelConfig(BaseModel):
     stop_mode: str | None = None
     status: Literal["approved", "paper_only", "reproved", "candidate"] = "candidate"
     session_filter: bool = False
+    session_windows: list[tuple[str, str]] | None = None
+    force_close_time: str | None = None
 
 
 class TradingProductionConfig(BaseModel):

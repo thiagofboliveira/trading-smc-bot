@@ -654,6 +654,14 @@ class FiboOTEStrategy:
         if live:
             if pos is not None or leg is None or leg.touched or n < 1:
                 return None
+            # F-08: filtro de sessão para novas ordens limite pendentes
+            if cfg.session_filter and cfg.session_windows:
+                cur_ts = ts[-1]
+                t_str = cur_ts.strftime("%H:%M")
+                if not any(
+                    w_start <= t_str < w_end for w_start, w_end in cfg.session_windows
+                ):
+                    return None
             # a próxima barra incrementa `candles` antes de testar a validade
             if leg.candles + 1 > cfg.max_holding_candles:
                 return None

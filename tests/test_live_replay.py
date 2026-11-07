@@ -81,7 +81,9 @@ def test_live_replay_matches_backtest_signals(tmp_path):
         trailing_exit_ma=None,
     )
     strat = FiboOTEStrategy(fibo_cfg)
-    backtest_trades = strat.run_backtest(df_m1, symbol="XAUUSD", spread=0.0)
+    from smc_trader.config import load_config
+    spread = load_config().contracts["XAUUSD"].spread
+    backtest_trades = strat.run_backtest(df_m1, symbol="XAUUSD", spread=spread)
     assert len(backtest_trades) > 0, "Backtest deve encontrar o trade sintético"
     expected_trade = backtest_trades[0]
 

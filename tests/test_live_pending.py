@@ -9,6 +9,7 @@ from test_prefix_invariance import synthetic_m1
 
 from smc_trader.config import (
     BridgeConfig,
+    ContractSpec,
     FiboModelConfig,
     KillSwitchConfig,
     ProductionConfig,
@@ -37,6 +38,7 @@ def _engine(tmp_path, client):
         notification_callback=lambda m: None,
         state_file=tmp_path / "s.json",
         journal_file=tmp_path / "j.jsonl",
+        contracts={"XAUUSD": ContractSpec(spread=SPREAD)},
     )
 
 
@@ -118,3 +120,33 @@ def test_ordem_pendente_e_cancelada_quando_o_setup_deixa_de_valer(tmp_path):
         assert len(client.orders) <= 1
     assert armed == 1
     assert cancelled > 0, "setups expirados ou alterados devem cancelar a pendente"
+
+
+def test_pending_setup_respeita_filtro_de_sessao():
+    """F-08: pending_setup não arma ordens se o horário atual estiver fora das janelas permitidas."""
+    df = synthetic_m1(n=3000, seed=7)
+    strat_no_session = FiboOTEStrategy(FiboOTEConfig(**KW))
+    # Encontra um candle onde há setup pendente ativo
+    setup_idx = None
+    for i in range(500, 1000):
+        s = strat_no_session.pending_setup(df.iloc[:i], SPREAD)
+        if s is not None:
+            setup_idx = i
+            break
+    assert setup_idx is not None, "cenário sintético deve produzir ao menos 1 setup pendente"
+
+    # Janela que NÃO inclui o horário atual
+    strat_blocked = FiboOTEStrategy(
+        FiboOTEConfig(**KW, session_filter=True, session_windows=[("02:00", "03:00")])
+    )
+    assert strat_blocked.pending_setup(df.iloc[:setup_idx], SPREAD) is None
+
+    # Janela que INCLUI o horário atual
+    # Cria janela ampla cobrindo o dia todo
+    strat_allowed = FiboOTEStrategy(
+        FiboOTEConfig(**KW, session_filter=True, session_windows=[("00:00", "23:59")])
+    )
+    s_allowed = strat_allowed.pending_setup(df.iloc[:setup_idx], SPREAD)
+    assert s_allowed is not None
+    assert s_allowed.direction in ("long", "short")
+

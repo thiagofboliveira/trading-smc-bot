@@ -182,21 +182,25 @@ class BacktestEngine:
                 tp = current_pos.take_profit
 
                 sp = self.costs_calc.get_spread(symbol)
+                slip = self.config.costs.slippage_points
                 if long:
                     hit_sl = c_low <= sl
                     hit_tp = (tp is not None) and (c_high >= tp)
                 else:
                     # F-02/Z-04: Short compra para encerrar (Ask = c_high + spread)
                     hit_sl = (c_high + sp) >= sl
-                    hit_tp = (tp is not None) and (c_low <= tp)
+                    hit_tp = (tp is not None) and ((c_low + sp) <= tp)
 
                 # Z-04: Stop loss tem prioridade absoluta sobre trailing e sessão
                 # Z-03: Gap além do stop sai no c_open
                 if hit_sl:
-                    nominal_sl = min(c_open, sl) if long else max(c_open, sl)
-                    exit_price, exit_cost = self.costs_calc.get_exit_price(
-                        current_pos.direction, nominal_sl, symbol
-                    )
+                    if long:
+                        exit_price = min(c_open, sl) - slip
+                        exit_cost = slip
+                    else:
+                        open_ask = c_open + sp
+                        exit_price = max(open_ask, sl) + slip
+                        exit_cost = sp + slip
                     trade = self._create_closed_trade(
                         current_pos, t, exit_price, "sl", exit_cost, trade_counter
                     )
@@ -208,10 +212,13 @@ class BacktestEngine:
                     just_closed = True
                 elif hit_tp:
                     assert tp is not None
-                    nominal_tp = max(c_open, tp) if long else min(c_open, tp)
-                    exit_price, exit_cost = self.costs_calc.get_exit_price(
-                        current_pos.direction, nominal_tp, symbol
-                    )
+                    if long:
+                        exit_price = max(c_open, tp) - slip
+                        exit_cost = slip
+                    else:
+                        open_ask = c_open + sp
+                        exit_price = min(open_ask, tp) + slip
+                        exit_cost = sp + slip
                     trade = self._create_closed_trade(
                         current_pos, t, exit_price, "tp", exit_cost, trade_counter
                     )
@@ -340,13 +347,13 @@ class BacktestEngine:
                                         else ((c_high + sp_entry) >= current_pos.stop_loss)
                                     )
                                     if hit_sl_entry:
-                                        exit_price, exit_cost = (
-                                            self.costs_calc.get_exit_price(
-                                                current_pos.direction,
-                                                current_pos.stop_loss,
-                                                symbol,
-                                            )
+                                        slip = self.config.costs.slippage_points
+                                        exit_price = (
+                                            (current_pos.stop_loss - slip)
+                                            if long
+                                            else (current_pos.stop_loss + slip)
                                         )
+                                        exit_cost = slip if long else (sp_entry + slip)
                                         trade = self._create_closed_trade(
                                             current_pos,
                                             t,
@@ -408,13 +415,13 @@ class BacktestEngine:
                                             else ((c_high + sp_entry) >= current_pos.stop_loss)
                                         )
                                         if hit_sl_entry:
-                                            exit_price, exit_cost = (
-                                                self.costs_calc.get_exit_price(
-                                                    current_pos.direction,
-                                                    current_pos.stop_loss,
-                                                    symbol,
-                                                )
+                                            slip = self.config.costs.slippage_points
+                                            exit_price = (
+                                                (current_pos.stop_loss - slip)
+                                                if long
+                                                else (current_pos.stop_loss + slip)
                                             )
+                                            exit_cost = slip if long else (sp_entry + slip)
                                             trade = self._create_closed_trade(
                                                 current_pos,
                                                 t,

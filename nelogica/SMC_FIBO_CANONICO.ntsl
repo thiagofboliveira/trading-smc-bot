@@ -48,6 +48,7 @@ Var
   nivelEntrada      : Real;
   nivelStop         : Real;
   barraAtual        : Inteiro;
+  barraEntrada      : Inteiro;
   posInicializada   : Booleano;
   stopPerna         : Real;
   alvoPerna         : Real;
@@ -103,6 +104,7 @@ Inicio
     Se (Not posInicializada) Entao
     Inicio
       posInicializada := Verdadeiro;
+      barraEntrada := barraAtual;
       travaAtivada := Falso;
       precoStop := stopPerna;
       precoAlvo := alvoPerna;
@@ -112,22 +114,6 @@ Inicio
         riscoInicial := stopPerna - precoEntrada;
       pernadaAltaAtiva := Falso;
       pernadaBaixaAtiva := Falso;
-    Fim;
-
-    // F-03: a trava vale a partir da barra seguinte à que atingiu o gatilho
-    // (o stop só muda no fim desta barra; o reenvio abaixo usa o stop vigente)
-    Se (Time < HorarioZeragem) Entao
-    Inicio
-      Se IsBought Entao
-      Inicio
-        SellToCoverStop(precoStop, precoStop - (OffsetStopTicks * MinPriceIncrement));
-        SellToCoverLimit(precoAlvo);
-      Fim
-      Senao Se IsSold Entao
-      Inicio
-        BuyToCoverStop(precoStop, precoStop + (OffsetStopTicks * MinPriceIncrement));
-        BuyToCoverLimit(precoAlvo);
-      Fim;
     Fim;
 
     Se UsarTrava2para1 e (Not travaAtivada) e (riscoInicial > 0) Entao
@@ -144,11 +130,24 @@ Inicio
       Fim;
     Fim;
 
-    // L-09: saída por MME 8, só no lucro
-    Se IsBought e (Fechamento < mme8) e (Fechamento > precoEntrada) Entao
+    // L-09: saída por MME 8, só a partir da barra seguinte à entrada e no lucro
+    Se (barraAtual > barraEntrada) e IsBought e (Fechamento < mme8) e (Fechamento > precoEntrada) Entao
       ClosePosition
-    Senao Se IsSold e (Fechamento > mme8) e (Fechamento < precoEntrada) Entao
-      ClosePosition;
+    Senao Se (barraAtual > barraEntrada) e IsSold e (Fechamento > mme8) e (Fechamento < precoEntrada) Entao
+      ClosePosition
+    Senao Se (Time < HorarioZeragem) Entao
+    Inicio
+      Se IsBought Entao
+      Inicio
+        SellToCoverStop(precoStop, precoStop - (OffsetStopTicks * MinPriceIncrement));
+        SellToCoverLimit(precoAlvo);
+      Fim
+      Senao Se IsSold Entao
+      Inicio
+        BuyToCoverStop(precoStop, precoStop + (OffsetStopTicks * MinPriceIncrement));
+        BuyToCoverLimit(precoAlvo);
+      Fim;
+    Fim;
   Fim
   Senao
   Inicio
@@ -232,7 +231,11 @@ Inicio
           alvoPerna    := refTopo;
           riscoPerna   := nivelEntrada - nivelStop;
           Se riscoPerna > (RiscoMinimoTicks * MinPriceIncrement) Entao
+          Inicio
             BuyLimit(nivelEntrada);
+            SellToCoverStop(nivelStop, nivelStop - (OffsetStopTicks * MinPriceIncrement));
+            SellToCoverLimit(alvoPerna);
+          Fim;
         Fim
         Senao
         Inicio
@@ -242,7 +245,11 @@ Inicio
           alvoPerna    := refFundo;
           riscoPerna   := nivelStop - nivelEntrada;
           Se riscoPerna > (RiscoMinimoTicks * MinPriceIncrement) Entao
+          Inicio
             SellShortLimit(nivelEntrada);
+            BuyToCoverStop(nivelStop, nivelStop + (OffsetStopTicks * MinPriceIncrement));
+            BuyToCoverLimit(alvoPerna);
+          Fim;
         Fim;
       Fim;
     Fim;

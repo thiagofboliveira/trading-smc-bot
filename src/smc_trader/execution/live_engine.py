@@ -87,6 +87,7 @@ class LiveTradingEngine:
         notification_callback: Callable[[str], None] | None = None,
         state_file: Path = Path("data/live_state.json"),
         journal_file: Path = Path("logs/live_trade_journal.jsonl"),
+        contracts: dict[str, Any] | None = None,
     ) -> None:
         self.client = client
         self.notify = notification_callback or (lambda msg: logger.info(msg))
@@ -102,11 +103,14 @@ class LiveTradingEngine:
         self.fibo_evaluators: dict[str, FiboLiveEvaluator] = {}
 
         self.production_config = production_config
-        try:
-            from smc_trader.config import load_config
-            self.contracts = load_config().contracts
-        except Exception:
-            self.contracts = {}
+        if contracts is not None:
+            self.contracts = contracts
+        else:
+            try:
+                from smc_trader.config import load_config
+                self.contracts = load_config().contracts
+            except Exception:
+                self.contracts = {}
 
         if production_config is not None:
             self.risk_pct = production_config.trading.risk_pct_per_trade
@@ -147,6 +151,17 @@ class LiveTradingEngine:
                         model_def.profit_lock.lock_r
                         if (model_def and model_def.profit_lock)
                         else 0.0
+                    ),
+                    session_filter=(
+                        model_def.session_filter if model_def else False
+                    ),
+                    session_windows=(
+                        list(model_def.session_windows)
+                        if (model_def and model_def.session_windows)
+                        else None
+                    ),
+                    force_close_time=(
+                        model_def.force_close_time if model_def else None
                     ),
                 )
                 self.fibo_evaluators[sym] = FiboLiveEvaluator(fibo_cfg)
@@ -345,7 +360,15 @@ class LiveTradingEngine:
         if evaluator is None:
             return
 
-        evaluator.spread = sym_info.ask - sym_info.bid
+        # Estabiliza o spread com o spread contratual/típico para evitar cancelamento e rearme
+        # desnecessário de ordens limites por ruído de sub-pips nos ticks
+        contract_spec = self.contracts.get(symbol) if hasattr(self, "contracts") else None
+        if contract_spec is not None and contract_spec.spread > 0:
+            evaluator.spread = contract_spec.spread
+        elif sym_info.spread > 0:
+            evaluator.spread = sym_info.spread
+        else:
+            evaluator.spread = sym_info.point * 10 if sym_info.point > 0 else 0.0001
         df_m5 = resample_ohlc(candles_m1, state.macro_tf)
         if len(df_m5) < 5:
             return

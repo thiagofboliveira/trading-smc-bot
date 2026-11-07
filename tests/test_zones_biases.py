@@ -80,6 +80,28 @@ def test_z02_candle_de_entrada_toca_stop_sai_no_mesmo_candle():
     assert t.entry_time == t.exit_time == now
 
 
+def test_z02_short_stop_no_candle_de_entrada_com_spread():
+    """Short que bate stop no candle de entrada considera Ask e sai a stop_loss sem spread duplo."""
+    now = pd.Timestamp("2026-10-18 10:00:00", tz="UTC")
+    zone = make_zone(direction="short", high=110.0, low=100.0, t=now)
+    # Candle 0: toca 100.0 e entra vendido. SL = 110.0. No mesmo candle high = 109.8 + spread 0.5 = 110.3 (>= 110.0)
+    c_m1 = candles_from_ohlc(
+        [
+            (99.0, 109.8, 98.0, 102.0),
+        ],
+        tf="M1",
+        start=now,
+    )
+    cfg = BacktestConfig(entry_mode="touch", stop_mode="ob", costs=CostsConfig(spread_pips={"XAUUSD": 0.5}))
+    result = BacktestEngine(cfg).run(c_m1, [zone], symbol="XAUUSD")
+    assert len(result.trades) == 1
+    t = result.trades[0]
+    assert t.exit_reason == "sl"
+    assert t.exit_price == pytest.approx(110.0)
+    assert t.r_multiple == pytest.approx(-1.0)
+
+
+
 # --- Z-03: Gap além do stop sai no open -----------------------------------------------------
 def test_z03_gap_alem_do_stop_sai_no_open():
     """Se o candle seguinte abrir em gap além do stop, a execução ocorre no open (pior que o SL)."""
@@ -309,5 +331,7 @@ def test_z04_short_stop_considers_spread():
     cfg_spread = BacktestConfig(entry_mode="touch", stop_mode="ob", costs=CostsConfig(spread_pips={"XAUUSD": 0.5}))
     res_spread = BacktestEngine(cfg_spread).run(c_m1, [zone], symbol="XAUUSD")
     assert res_spread.trades[0].exit_reason == "sl"
+    assert res_spread.trades[0].exit_price == pytest.approx(110.0)
+    assert res_spread.trades[0].r_multiple == pytest.approx(-1.0)
 
 

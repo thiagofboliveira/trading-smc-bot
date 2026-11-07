@@ -67,15 +67,33 @@ class BacktestEngine:
             events_m1 = precomputed_m1["events"]
             m1_chochs = precomputed_m1["chochs"]
             m1_bos = precomputed_m1.get(
-                "bos", {(e.direction, e.time): e for e in events_m1 if e.kind == "BOS"}
+                "bos",
+                {
+                    (
+                        e.direction,
+                        e.break_time
+                        if getattr(e, "break_time", None) is not None
+                        else e.time,
+                    ): e
+                    for e in events_m1
+                    if e.kind == "BOS"
+                },
             )
         else:
             pivots_m1 = find_pivots(candles_m1, k=2)
             events_m1 = detect_structure(candles_m1, pivots_m1)
-            m1_chochs = {
-                (e.direction, e.time): e for e in events_m1 if e.kind == "CHoCH"
-            }
-            m1_bos = {(e.direction, e.time): e for e in events_m1 if e.kind == "BOS"}
+            # Z-09: Indexa pelo candle que confirma o CHoCH/BOS para não adicionar 1 candle de atraso
+            m1_chochs = {}
+            m1_bos = {}
+            for e in events_m1:
+                if e.kind == "CHoCH":
+                    if getattr(e, "break_time", None) is not None:
+                        m1_chochs[(e.direction, e.break_time)] = e
+                    m1_chochs[(e.direction, e.time)] = e
+                elif e.kind == "BOS":
+                    if getattr(e, "break_time", None) is not None:
+                        m1_bos[(e.direction, e.break_time)] = e
+                    m1_bos[(e.direction, e.time)] = e
 
         # 2. Indicadores de confluência
         c_cfg = self.config.confluence
@@ -266,54 +284,119 @@ class BacktestEngine:
                             trailing_mgr = None
                             just_closed = True
 
-            # 2. Avaliação de novas entradas (se não houver posição aberta e NÃO acabou de fechar uma no mesmo candle - Z-05)
-            if current_pos is None and not just_closed:
-                allowed_session = self.session_mgr.is_trade_allowed(t)
-                allowed_limits = self.limits_tracker.can_trade(t)
+            # 2. Avaliação e atualização de estado das zonas
+            # Z-08: Atualiza toques e invalidação a cada candle mesmo com posição aberta
+            can_enter = (current_pos is None and not just_closed)
+            allowed_session = self.session_mgr.is_trade_allowed(t) if can_enter else False
+            allowed_limits = self.limits_tracker.can_trade(t) if can_enter else False
 
-                remaining_active: list[Zone] = []
-                entered = False
+            remaining_active: list[Zone] = []
+            entered = False
 
-                for zone in active_zones:
-                    if entered:
-                        remaining_active.append(zone)
+            for zone in active_zones:
+                z_key = (zone.candle_time, zone.created_at)
+                z_info = zone_states[z_key]
+                if z_info["state"] == "CONSUMED":
+                    continue
+
+                # Verifica invalidação no M15
+                if zone.end_reason == "invalidated" and zone.end_time is not None:
+                    if t >= zone.end_time:
+                        z_info["state"] = "CONSUMED"
                         continue
 
-                    z_key = (zone.candle_time, zone.created_at)
-                    z_info = zone_states[z_key]
-                    if z_info["state"] == "CONSUMED":
-                        continue
+                long = zone.direction == "long"
 
-                    # Verifica invalidação no M15
-                    if zone.end_reason == "invalidated" and zone.end_time is not None:
-                        if t >= zone.end_time:
-                            z_info["state"] = "CONSUMED"
-                            continue
-
-                    long = zone.direction == "long"
-
-                    # Toque inicial
-                    if z_info["state"] == "UNTOUCHED":
-                        touched = (c_low <= zone.high) if long else (c_high >= zone.low)
-                        if touched:
-                            z_info["touch_time"] = t
-                            if self.config.entry_mode == "touch":
-                                # Breaker não aceita toque puro
-                                if zone.kind == "BREAKER":
-                                    z_info["state"] = "CONSUMED"
-                                    continue
+                # Toque inicial
+                if z_info["state"] == "UNTOUCHED":
+                    touched = (c_low <= zone.high) if long else (c_high >= zone.low)
+                    if touched:
+                        z_info["touch_time"] = t
+                        if self.config.entry_mode == "touch":
+                            # Breaker não aceita toque puro
+                            if zone.kind == "BREAKER":
                                 z_info["state"] = "CONSUMED"
-                                if allowed_session and allowed_limits:
-                                    nominal_entry = (
-                                        min(c_open, zone.high)
+                                continue
+                            z_info["state"] = "CONSUMED"
+                            if can_enter and not entered and allowed_session and allowed_limits:
+                                nominal_entry = (
+                                    min(c_open, zone.high)
+                                    if long
+                                    else max(c_open, zone.low)
+                                )
+                                current_pos = self._open_position(
+                                    zone, nominal_entry, t, symbol, "touch"
+                                )
+                                if current_pos is not None:
+                                    entered = True
+                                    can_enter = False
+                                    # Z-02: checar stop no candle de entrada
+                                    hit_sl_entry = (
+                                        (c_low <= current_pos.stop_loss)
                                         if long
-                                        else max(c_open, zone.low)
+                                        else (c_high >= current_pos.stop_loss)
                                     )
+                                    if hit_sl_entry:
+                                        exit_price, exit_cost = (
+                                            self.costs_calc.get_exit_price(
+                                                current_pos.direction,
+                                                current_pos.stop_loss,
+                                                symbol,
+                                            )
+                                        )
+                                        trade = self._create_closed_trade(
+                                            current_pos,
+                                            t,
+                                            exit_price,
+                                            "sl",
+                                            exit_cost,
+                                            trade_counter,
+                                        )
+                                        trade_counter += 1
+                                        closed_trades.append(trade)
+                                        self.limits_tracker.record_trade(
+                                            t, trade.r_multiple
+                                        )
+                                        current_pos = None
+                                        trailing_mgr = None
+                                        just_closed = True
+                                    else:
+                                        trailing_mgr = TrailingManager(
+                                            self.config.trailing,
+                                            current_pos.stop_loss,
+                                        )
+                        elif self.config.entry_mode == "hybrid":
+                            # Confluência técnica no momento do toque
+                            touch_p = (
+                                min(c_open, zone.high)
+                                if long
+                                else max(c_open, zone.low)
+                            )
+                            ema80_v = (
+                                ema80_vals[i] if ema80_vals is not None else None
+                            )
+                            sma200_v = (
+                                sma200_vals[i] if sma200_vals is not None else None
+                            )
+                            has_confluence = self.confluence_eval.has_confluence(
+                                zone,
+                                touch_price=touch_p,
+                                last_closed_ema80=ema80_v,
+                                last_closed_sma200=sma200_v,
+                            )
+                            if confluence_fn is not None:
+                                has_confluence = has_confluence or confluence_fn(
+                                    zone, t, candles_m1.iloc[i]
+                                )
+                            if has_confluence:
+                                z_info["state"] = "CONSUMED"
+                                if can_enter and not entered and allowed_session and allowed_limits:
                                     current_pos = self._open_position(
-                                        zone, nominal_entry, t, symbol, "touch"
+                                        zone, touch_p, t, symbol, "hybrid"
                                     )
                                     if current_pos is not None:
                                         entered = True
+                                        can_enter = False
                                         # Z-02: checar stop no candle de entrada
                                         hit_sl_entry = (
                                             (c_low <= current_pos.stop_loss)
@@ -349,123 +432,58 @@ class BacktestEngine:
                                                 self.config.trailing,
                                                 current_pos.stop_loss,
                                             )
-                            elif self.config.entry_mode == "hybrid":
-                                # Confluência técnica no momento do toque
-                                touch_p = (
-                                    min(c_open, zone.high)
-                                    if long
-                                    else max(c_open, zone.low)
-                                )
-                                ema80_v = (
-                                    ema80_vals[i] if ema80_vals is not None else None
-                                )
-                                sma200_v = (
-                                    sma200_vals[i] if sma200_vals is not None else None
-                                )
-                                has_confluence = self.confluence_eval.has_confluence(
-                                    zone,
-                                    touch_price=touch_p,
-                                    last_closed_ema80=ema80_v,
-                                    last_closed_sma200=sma200_v,
-                                )
-                                if confluence_fn is not None:
-                                    has_confluence = has_confluence or confluence_fn(
-                                        zone, t, candles_m1.iloc[i]
-                                    )
-                                if has_confluence:
-                                    z_info["state"] = "CONSUMED"
-                                    if allowed_session and allowed_limits:
-                                        current_pos = self._open_position(
-                                            zone, touch_p, t, symbol, "hybrid"
-                                        )
-                                        if current_pos is not None:
-                                            entered = True
-                                            # Z-02: checar stop no candle de entrada
-                                            hit_sl_entry = (
-                                                (c_low <= current_pos.stop_loss)
-                                                if long
-                                                else (c_high >= current_pos.stop_loss)
-                                            )
-                                            if hit_sl_entry:
-                                                exit_price, exit_cost = (
-                                                    self.costs_calc.get_exit_price(
-                                                        current_pos.direction,
-                                                        current_pos.stop_loss,
-                                                        symbol,
-                                                    )
-                                                )
-                                                trade = self._create_closed_trade(
-                                                    current_pos,
-                                                    t,
-                                                    exit_price,
-                                                    "sl",
-                                                    exit_cost,
-                                                    trade_counter,
-                                                )
-                                                trade_counter += 1
-                                                closed_trades.append(trade)
-                                                self.limits_tracker.record_trade(
-                                                    t, trade.r_multiple
-                                                )
-                                                current_pos = None
-                                                trailing_mgr = None
-                                                just_closed = True
-                                            else:
-                                                trailing_mgr = TrailingManager(
-                                                    self.config.trailing,
-                                                    current_pos.stop_loss,
-                                                )
-                                else:
-                                    z_info["state"] = "ARMED"
-                                    remaining_active.append(zone)
                             else:
-                                # Modo confirmation
                                 z_info["state"] = "ARMED"
                                 remaining_active.append(zone)
                         else:
+                            # Modo confirmation
+                            z_info["state"] = "ARMED"
                             remaining_active.append(zone)
+                    else:
+                        remaining_active.append(zone)
 
-                    # Confirmação após o toque
-                    elif z_info["state"] == "ARMED":
-                        # Timeout
-                        if self.config.confirmation_timeout_minutes is not None:
-                            elapsed = (t - z_info["touch_time"]).total_seconds() / 60.0
-                            if elapsed > self.config.confirmation_timeout_minutes:
-                                z_info["state"] = "CONSUMED"
-                                continue
+                # Confirmação após o toque
+                elif z_info["state"] == "ARMED":
+                    # Timeout
+                    if self.config.confirmation_timeout_minutes is not None:
+                        elapsed = (t - z_info["touch_time"]).total_seconds() / 60.0
+                        if elapsed > self.config.confirmation_timeout_minutes:
+                            z_info["state"] = "CONSUMED"
+                            continue
 
-                        # Checa CHoCH M1
-                        needed_dir = "up" if long else "down"
-                        choch_event = m1_chochs.get((needed_dir, t))
-                        if choch_event is not None:
-                            # Fechamento do candle do CHoCH deve estar dentro de [zone.low, zone.high]
-                            if zone.low <= c_close <= zone.high:
-                                z_info["state"] = "CONSUMED"
-                                if allowed_session and allowed_limits:
-                                    m1_swing = (
-                                        choch_event.range_low
-                                        if long
-                                        else choch_event.range_high
+                    # Checa CHoCH M1 (Z-09: indexado pelo candle que confirma)
+                    needed_dir = "up" if long else "down"
+                    choch_event = m1_chochs.get((needed_dir, t))
+                    if choch_event is not None:
+                        # Fechamento do candle do CHoCH deve estar dentro de [zone.low, zone.high]
+                        if zone.low <= c_close <= zone.high:
+                            z_info["state"] = "CONSUMED"
+                            if can_enter and not entered and allowed_session and allowed_limits:
+                                m1_swing = (
+                                    choch_event.range_low
+                                    if long
+                                    else choch_event.range_high
+                                )
+                                current_pos = self._open_position(
+                                    zone,
+                                    c_close,
+                                    t,
+                                    symbol,
+                                    "confirmation",
+                                    m1_swing=m1_swing,
+                                )
+                                if current_pos is not None:
+                                    trailing_mgr = TrailingManager(
+                                        self.config.trailing, current_pos.stop_loss
                                     )
-                                    current_pos = self._open_position(
-                                        zone,
-                                        c_close,
-                                        t,
-                                        symbol,
-                                        "confirmation",
-                                        m1_swing=m1_swing,
-                                    )
-                                    if current_pos is not None:
-                                        trailing_mgr = TrailingManager(
-                                            self.config.trailing, current_pos.stop_loss
-                                        )
-                                        entered = True
-                            else:
-                                remaining_active.append(zone)
+                                    entered = True
+                                    can_enter = False
                         else:
                             remaining_active.append(zone)
+                    else:
+                        remaining_active.append(zone)
 
-                active_zones = remaining_active
+            active_zones = remaining_active
 
         # Ao final do loop, fecha posição residual se houver
         if current_pos is not None:

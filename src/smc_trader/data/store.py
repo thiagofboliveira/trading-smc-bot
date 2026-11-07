@@ -6,7 +6,7 @@ import pandas as pd
 from smc_trader.data.candles import tf_minutes, with_close_time
 from smc_trader.data.resample import resample_ohlc
 
-SOURCES = ("dukascopy", "mt5", "profit")
+SOURCES = ("dukascopy", "mt5", "profit", "generic")
 
 
 def _path(root: Path, symbol: str, source: str) -> Path:

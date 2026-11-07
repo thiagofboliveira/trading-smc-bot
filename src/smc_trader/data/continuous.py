@@ -7,7 +7,6 @@ Adiciona a coluna booleana 'roll' na barra de transição de contrato.
 
 from typing import Literal
 
-import numpy as np
 import pandas as pd
 
 
@@ -32,7 +31,7 @@ def stitch_contracts_series(
         return single_df
 
     stitched_chunks: list[pd.DataFrame] = []
-    
+
     for idx in range(len(sorted_keys)):
         curr_key = sorted_keys[idx]
         curr_df = contracts[curr_key].sort_index().copy()

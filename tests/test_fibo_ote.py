@@ -16,8 +16,8 @@ T0 = pd.Timestamp("2024-06-03 08:00", tz="UTC")
 def m1_from_m5(bars: list[tuple[float, float, float, float]]) -> pd.DataFrame:
     """Expande cada barra M5 (o, h, l, c) em 5 M1 cujo resample devolve exatamente a barra."""
     rows, idx = [], []
-    for n, (o, h, l, c) in enumerate(bars):
-        quintet = [(o, o, o, o), (h, h, h, h), (l, l, l, l), (c, c, c, c), (c, c, c, c)]
+    for n, (o, h, lo, c) in enumerate(bars):
+        quintet = [(o, o, o, o), (h, h, h, h), (lo, lo, lo, lo), (c, c, c, c), (c, c, c, c)]
         for m, (mo, mh, ml, mc) in enumerate(quintet):
             rows.append({"open": mo, "high": mh, "low": ml, "close": mc, "volume": 1.0})
             idx.append(T0 + pd.Timedelta(minutes=5 * n + m))
@@ -197,7 +197,7 @@ def test_f03_trava_vale_a_partir_da_barra_seguinte():
 
 # --- F-02: venda executa no bid e recompra no ask -------------------------------------------
 def mirror(bars):
-    return [(200 - o, 200 - l, 200 - h, 200 - c) for (o, h, l, c) in bars]
+    return [(200 - o, 200 - lo, 200 - h, 200 - c) for (o, h, lo, c) in bars]
 
 
 def short_scenario(extra):

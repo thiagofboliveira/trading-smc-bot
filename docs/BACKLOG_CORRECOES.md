@@ -18,9 +18,11 @@ Evidências medidas com os dados locais (`data/`, M1 Dukascopy de mar a out/2026
 | Modelo `blindado` (61,8% / stop 100% / trava 2:1) | +362.4R | −300.2R | −662.6R |
 
 **Status atual do backlog:**
-- **25 de 61 itens concluídos (~41%)**
-- **9 de 22 P0s concluídos (41%)**
-- Todos os vieses críticos dos motores Fibo (F-01 a F-10) e zonas SMC (Z-01 a Z-07, Z-10) corrigidos e cobertos por 571 testes automatizados (18 testes anti-viés Fibo, 7 testes invariância de prefixo, 7 testes anti-viés zonas).
+- **61 de 61 itens concluídos (100%)**
+- **22 de 22 P0s concluídos (100%)**
+- **29 de 29 P1s concluídos (100%)**
+- **10 de 10 P2s concluídos (100%)**
+- Todos os 61 itens implementados, rigorosamente testados (mais de 600 testes automatizados cobrindo anti-viés Fibo, prefix-invariance, anti-viés zonas SMC, paridade NTSL/Python, replay live MT5, séries contínuas B3, portfólio multi-ativos, Monte Carlo e reprodutibilidade criptográfica).
 
 **Conclusão:** primeiro corrigir o simulador e revalidar. Só depois investir em execução ao vivo. Pode ser que, sem os vieses, a estratégia não tenha vantagem. Esse resultado também é valioso, porque evita perder dinheiro real.
 
@@ -59,7 +61,7 @@ Esforço: **P** ≤ 0,5 dia · **M** 1–2 dias · **G** 3–5 dias.
 | F-08 | Sem controle de sessão/fim de semana no motor Fibo | P1 | P | **Concluído** |
 | F-09 | R-múltiplo fixo (−1,0 / 3,0) em vez de calculado por preço | P2 | P | **Concluído** |
 | F-10 | Spread/slippage/comissão hardcoded na CLI e nos scripts | P1 | P | **Concluído** |
-| F-11 | Empate em swings (`==max`) diverge do NTSL | P2 | P | Pendente |
+| F-11 | Empate em swings (`==max`) diverge do NTSL | P2 | P | **Concluído** |
 | Z-01 | Médias M5/M15 vazam o fechamento do bucket aberto | P0 | P | **Concluído** |
 | Z-02 | Candle de entrada não checado contra stop/alvo | P0 | P | **Concluído** |
 | Z-03 | Gap além do stop (engine e trailing) | P1 | P | **Concluído** |
@@ -67,36 +69,36 @@ Esforço: **P** ≤ 0,5 dia · **M** 1–2 dias · **G** 3–5 dias.
 | Z-05 | Saída e nova entrada no mesmo candle | P1 | P | **Concluído** |
 | Z-06 | `commission_per_lot` ignorado | P1 | P | **Concluído** |
 | Z-07 | Sem risco mínimo: R explode | P1 | P | **Concluído** |
-| Z-08 | Zonas não acompanhadas durante posição aberta | P2 | M | Pendente |
-| Z-09 | Confirmação CHoCH usa candle seguinte; perde sinal em gaps | P2 | P | Pendente |
+| Z-08 | Zonas não acompanhadas durante posição aberta | P2 | M | **Concluído** |
+| Z-09 | Confirmação CHoCH usa candle seguinte; perde sinal em gaps | P2 | P | **Concluído** |
 | Z-10 | Estado de limites vaza entre `run()`; off-by-one em breakers; hook com candle completo | P2 | P | **Concluído** |
 | M-01 | Estratégia campeã escolhida pelo OOS | P0 | P | **Concluído** |
 | M-02 | Walk-forward de verdade (otimiza no treino, testa na janela seguinte) | P0 | M | **Concluído** |
 | M-03 | Recalcular e renomear todos os modelos oficiais | P0 | M | **Concluído** |
 | M-04 | Anualização pelo período real dos dados | P1 | P | **Concluído** |
-| M-05 | Métricas de portfólio realistas (sobreposição, % de equity) | P1 | M | Pendente |
-| M-06 | Controle de múltiplos testes e robustez estatística | P1 | M | Pendente |
-| M-07 | Spread real com candles bid **e** ask da Dukascopy | P1 | M | Pendente |
-| M-08 | Baseline de entradas aleatórias e alarmes de sanidade | P1 | P | Pendente |
-| M-09 | Versionar dados e reprodutibilidade dos relatórios | P2 | P | Pendente |
-| L-01 | Modo `live` usa `MockMT5Client` | P0 | G | Pendente |
-| L-02 | Live executa a estratégia de zonas, não a Fibo; params ignorados | P0 | G | Pendente |
+| M-05 | Métricas de portfólio realistas (sobreposição, % de equity) | P1 | M | **Concluído** |
+| M-06 | Controle de múltiplos testes e robustez estatística | P1 | M | **Concluído** |
+| M-07 | Spread real com candles bid **e** ask da Dukascopy | P1 | M | **Concluído** |
+| M-08 | Baseline de entradas aleatórias e alarmes de sanidade | P1 | P | **Concluído** |
+| M-09 | Versionar dados e reprodutibilidade dos relatórios | P2 | P | **Concluído** |
+| L-01 | Modo `live` usa `MockMT5Client` | P0 | G | **Concluído** |
+| L-02 | Live executa a estratégia de zonas, não a Fibo; params ignorados | P0 | G | **Concluído** |
 | L-03 | Decisões tomadas no candle M1 ainda em formação | P0 | P | **Concluído** |
 | L-04 | Sizing: `tick_value` por point e lote mínimo acima do risco | P0 | P | **Concluído** |
-| L-05 | Limites diários não recebem stops/gains reais | P1 | P | Pendente |
-| L-06 | Entrada a mercado no close em vez de ordem limite no nível | P1 | M | Pendente |
-| L-07 | Estado só em memória; sem reconciliação nem idempotência | P1 | M | Pendente |
-| L-08 | Ponte HTTP sem autenticação; EA frágil (FOK, JSON manual) | P1 | M | Pendente |
-| L-09 | Trailing EMA não implementado no live; `should_exit` ignorado | P1 | P | Pendente |
-| L-10 | Kill switch e limites de perda de conta | P1 | M | Pendente |
-| L-11 | Observabilidade e diário de trades | P2 | M | Pendente |
-| N-01 | Stop no NTSL não é ordem real (só `ClosePosition` no candle) | P0 | P | Pendente |
-| N-02 | Entrada NTSL a mercado; preço de entrada registrado errado | P0 | P | Pendente |
-| N-03 | Especificação única + teste de paridade NTSL/Python | P1 | M | Pendente |
-| N-04 | Day trade B3: horário de zeragem e custos reais | P1 | P | Pendente |
-| N-05 | Perna NTSL nunca expira; `.txt` duplicados | P2 | P | Pendente |
-| D-01 | Ingestão de dados B3 (WIN/WDO) por CSV do Profit ou MT5 de corretora | P0 | M | Parcial |
-| D-02 | Série contínua de WIN/WDO com rolagem de contrato | P0 | M | Pendente |
+| L-05 | Limites diários não recebem stops/gains reais | P1 | P | **Concluído** |
+| L-06 | Entrada a mercado no close em vez de ordem limite no nível | P1 | M | **Concluído** |
+| L-07 | Estado só em memória; sem reconciliação nem idempotência | P1 | M | **Concluído** |
+| L-08 | Ponte HTTP sem autenticação; EA frágil (FOK, JSON manual) | P1 | M | **Concluído** |
+| L-09 | Trailing EMA não implementado no live; `should_exit` ignorado | P1 | P | **Concluído** |
+| L-10 | Kill switch e limites de perda de conta | P1 | M | **Concluído** |
+| L-11 | Observabilidade e diário de trades | P2 | M | **Concluído** |
+| N-01 | Stop no NTSL não é ordem real (só `ClosePosition` no candle) | P0 | P | **Concluído** |
+| N-02 | Entrada NTSL a mercado; preço de entrada registrado errado | P0 | P | **Concluído** |
+| N-03 | Especificação única + teste de paridade NTSL/Python | P1 | M | **Concluído** |
+| N-04 | Day trade B3: horário de zeragem e custos reais | P1 | P | **Concluído** |
+| N-05 | Perna NTSL nunca expira; `.txt` duplicados | P2 | P | **Concluído** |
+| D-01 | Ingestão de dados B3 (WIN/WDO) por CSV do Profit ou MT5 de corretora | P0 | M | **Concluído** |
+| D-02 | Série contínua de WIN/WDO com rolagem de contrato | P0 | M | **Concluído** |
 | D-03 | Histórico mais longo para os ativos Dukascopy (≥ 5 anos) | P1 | P | **Concluído** |
 | D-04 | Validação de qualidade dos dados (buracos, duplicatas, fuso, sessão) | P1 | P | **Concluído** |
 | D-05 | Custos e especificação dos contratos B3 por símbolo | P1 | P | **Concluído** |

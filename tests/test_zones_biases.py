@@ -206,3 +206,78 @@ def test_z07_risco_minimo_rejeita_trade_degenerado():
     cfg = BacktestConfig(entry_mode="touch", stop_mode="ob", costs=CostsConfig(spread_pips={"XAUUSD": 0.20}))
     result = BacktestEngine(cfg).run(c_m1, [zone], symbol="XAUUSD")
     assert len(result.trades) == 0
+
+
+# --- Z-08: Zonas tocadas durante posição aberta são mitigadas (CONSUMED) -------------------
+def test_z08_zona_tocada_durante_posicao_aberta_e_mitigada():
+    """Zonas tocadas enquanto há uma posição aberta são mitigadas e não podem gerar reentrada posterior."""
+    now = pd.Timestamp("2026-10-18 10:00:00", tz="UTC")
+    zone1 = make_zone(direction="long", high=110.0, low=100.0, t=now)
+    zone2 = make_zone(direction="long", high=105.0, low=95.0, t=now)
+
+    c_m1 = candles_from_ohlc(
+        [
+            (112.0, 112.0, 108.0, 109.0),  # Candle 0: toca zone1 (high 110), entra pos 1
+            (109.0, 110.0, 104.0, 108.0),  # Candle 1: toca zone2 (high 105) enquanto pos 1 está aberta!
+            (108.0, 145.0, 107.0, 142.0),  # Candle 2: atinge TP da pos 1 e fecha
+            (108.0, 109.0, 103.0, 106.0),  # Candle 3: toca zone2 novamente (103 < 105)
+        ],
+        tf="M1",
+        start=now,
+    )
+
+    cfg = BacktestConfig(entry_mode="touch", stop_mode="ob")
+    result = BacktestEngine(cfg).run(c_m1, [zone1, zone2], symbol="XAUUSD")
+
+    # Apenas a zone1 deve gerar trade; zone2 foi mitigada durante candle 1 e não deve abrir no candle 3
+    assert len(result.trades) == 1
+    assert result.trades[0].entry_time == now
+
+
+# --- Z-09: Confirmação CHoCH indexada pelo candle que o confirma ---------------------------
+def test_z09_confirmacao_choch_indexado_pelo_candle_de_confirmacao():
+    """CHoCH confirma no candle de rompimento e permite entrada imediata sem atraso de 1 minuto."""
+    now = pd.Timestamp("2026-10-18 10:00:00", tz="UTC")
+    zone = make_zone(direction="long", high=105.0, low=95.0, t=now)
+
+    # Cria candles com toque inicial e formação de CHoCH
+    from smc_trader.structure.market_structure import StructureEvent
+
+    c_m1 = candles_from_ohlc(
+        [
+            (106.0, 106.0, 104.0, 104.5),  # Candle 0: toca a zona (entra em ARMED)
+            (104.5, 104.8, 101.0, 102.0),  # Candle 1: oscilação
+            (102.0, 105.0, 101.5, 103.5),  # Candle 2: rompe topo e confirma CHoCH de alta
+        ],
+        tf="M1",
+        start=now,
+    )
+
+    t_choch = c_m1.index[2]
+    mock_choch = StructureEvent(
+        kind="CHoCH",
+        direction="up",
+        time=t_choch + pd.Timedelta(minutes=1),  # close_time
+        break_time=t_choch,                      # candle que confirmou
+        level=103.0,
+        level_time=c_m1.index[0],
+        leg_time=c_m1.index[1],
+        range_low=101.0,
+        range_high=105.0,
+    )
+
+    precomputed = {
+        "events": [mock_choch],
+        "chochs": {("up", mock_choch.break_time): mock_choch},
+        "bos": {},
+    }
+
+    cfg = BacktestConfig(entry_mode="confirmation", stop_mode="ob")
+    result = BacktestEngine(cfg).run(
+        c_m1, [zone], symbol="XAUUSD", precomputed_m1=precomputed
+    )
+
+    assert len(result.trades) == 1
+    # Entrada deve ocorrer exatamente no candle 2 (t_choch)
+    assert result.trades[0].entry_time == t_choch
+

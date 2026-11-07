@@ -9,8 +9,10 @@ Gera:
    - Aba 2: 'Análise Estatística & ROI' (taxa de acerto, expectativa, profit factor, drawdown, ROI)
 """
 
+import hashlib
 import json
 import re
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -353,6 +355,80 @@ def generate_trade_charts(
         f.write("=" * 60 + "\n")
 
 
+def compute_reproducibility_metadata(
+    symbol: str,
+    c_m1: pd.DataFrame,
+    config: Any,
+    parquet_path: Path | None = None,
+) -> dict[str, Any]:
+    """Calcula hashes criptográficos e metadados de ambiente para garantir 100% de reprodutibilidade (M-09)."""
+    git_commit = "unknown"
+    git_dirty = False
+    try:
+        res = subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False
+        )
+        if res.returncode == 0:
+            git_commit = res.stdout.strip()
+        status_res = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if status_res.returncode == 0 and status_res.stdout.strip():
+            git_dirty = True
+    except Exception:
+        pass
+
+    file_sha256 = None
+    target_parquet = parquet_path
+    if target_parquet is None:
+        cand_p = Path(f"data/{symbol}_M1.parquet")
+        if cand_p.exists():
+            target_parquet = cand_p
+
+    if target_parquet is not None and target_parquet.exists():
+        try:
+            h = hashlib.sha256()
+            with open(target_parquet, "rb") as f:
+                while chunk := f.read(65536):
+                    h.update(chunk)
+            file_sha256 = h.hexdigest()
+        except Exception:
+            pass
+
+    if file_sha256 is None and not c_m1.empty:
+        try:
+            buf = c_m1.to_parquet()
+            file_sha256 = hashlib.sha256(buf).hexdigest()
+        except Exception:
+            file_sha256 = hashlib.sha256(str(c_m1.values.tobytes()).encode()).hexdigest()
+
+    cfg_repr: dict[str, Any] = {}
+    if hasattr(config, "model_dump"):
+        cfg_repr = config.model_dump()
+    elif hasattr(config, "__dict__"):
+        cfg_repr = {k: v for k, v in config.__dict__.items() if not k.startswith("_")}
+    elif isinstance(config, dict):
+        cfg_repr = config
+
+    cfg_str = json.dumps(cfg_repr, sort_keys=True, default=str)
+    config_sha256 = hashlib.sha256(cfg_str.encode()).hexdigest()
+
+    return {
+        "symbol": symbol,
+        "git_commit": git_commit,
+        "git_dirty": git_dirty,
+        "parquet_sha256": file_sha256,
+        "config_sha256": config_sha256,
+        "period_start": str(c_m1.index[0]) if len(c_m1) > 0 else None,
+        "period_end": str(c_m1.index[-1]) if len(c_m1) > 0 else None,
+        "candle_count": len(c_m1),
+        "exported_at": datetime.now().isoformat(),
+    }
+
+
 def export_backtest_package(
     symbol: str,
     result: BacktestResult,
@@ -361,6 +437,7 @@ def export_backtest_package(
     analysis: Analysis,
     base_dir: Path = Path("out/backtests"),
     initial_capital: float = 10000.0,
+    parquet_path: Path | None = None,
 ) -> Path:
     """Exporta o pacote completo com imagens macro/micro por trade, TXT geral e XLSX com 2 abas."""
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -454,6 +531,16 @@ def export_backtest_package(
             }
         )
 
+    # M-09: Metadados de reprodutibilidade auditáveis
+    repro = compute_reproducibility_metadata(
+        symbol=symbol,
+        c_m1=c_m1,
+        config=result.config,
+        parquet_path=parquet_path,
+    )
+    with open(target_dir / "reproducibility.json", "w", encoding="utf-8") as f:
+        json.dump(repro, f, indent=2, ensure_ascii=False)
+
     manifest = {
         "id": folder_name,
         "symbol": symbol,
@@ -465,6 +552,7 @@ def export_backtest_package(
         "excel_url": f"/api/files/{folder_name}/backtest_resultado_{symbol}.xlsx",
         "txt_file": f"resumo_backtest_{symbol}.txt",
         "txt_url": f"/api/files/{folder_name}/resumo_backtest_{symbol}.txt",
+        "reproducibility": repro,
         "equity_curve": equity_curve,
         "trades": trades_data,
     }
@@ -474,6 +562,7 @@ def export_backtest_package(
     print(f"📊 Planilha Excel gerada: {excel_path}")
     print(f"📝 Resumo TXT gerado: {txt_geral}")
     print(f"📑 Manifesto JSON gerado: {target_dir / 'audit_manifest.json'}")
+    print(f"🔒 Metadados de reprodutibilidade: {target_dir / 'reproducibility.json'}")
     print("✅ Pacote de validação concluído com sucesso!")
     return target_dir
 

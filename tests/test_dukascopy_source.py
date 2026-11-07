@@ -63,7 +63,10 @@ def _run(offer_side):
 
 def test_fetch_m1_monthly_chunks():
     calls, out = _run("bid")
-    d = lambda m, day: datetime(2024, m, day, tzinfo=timezone.utc)
+
+    def d(m, day):
+        return datetime(2024, m, day, tzinfo=timezone.utc)
+
     assert [(c["start"], c["end"]) for c in calls] == [
         (d(1, 15), d(2, 1)),
         (d(2, 1), d(3, 1)),

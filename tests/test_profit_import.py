@@ -76,3 +76,12 @@ def test_cli_import_csv_formato_profit(tmp_path):
     df = load_candles(tmp_path, "WIN", source="profit")
     assert len(df) == 2
     assert (tmp_path / "WIN_M1_profit.parquet").exists()
+
+
+def test_cli_import_csv_formato_generic(tmp_path):
+    csv = _write(tmp_path / "GENERIC.csv", ROWS)
+    code = main(["import-csv", str(csv), "--symbol", "GENERIC", "--format", "generic", "--data-root", str(tmp_path)])
+    assert code == 0
+    df = load_candles(tmp_path, "GENERIC", source="generic")
+    assert len(df) == 2
+    assert (tmp_path / "GENERIC_M1_generic.parquet").exists()

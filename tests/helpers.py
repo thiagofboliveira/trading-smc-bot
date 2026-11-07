@@ -25,10 +25,10 @@ EXTRA_ROWS: list[tuple[float, float, float, float]] = [
 ]
 
 
-def _frame(o, h, l, c, tf: str, start: str) -> pd.DataFrame:
+def _frame(o, h, lo, c, tf: str, start: str) -> pd.DataFrame:
     idx = pd.date_range(start, periods=len(o), freq=f"{TF_MINUTES[tf]}min", tz="UTC", name="time")
     df = pd.DataFrame(
-        {"open": o, "high": h, "low": l, "close": c, "volume": 1.0}, index=idx
+        {"open": o, "high": h, "low": lo, "close": c, "volume": 1.0}, index=idx
     ).astype(float)
     return with_close_time(df, tf)
 
@@ -38,8 +38,8 @@ def candles_from_ohlc(
     tf: str = "M15",
     start: str = "2024-01-02 00:00",
 ) -> pd.DataFrame:
-    o, h, l, c = (list(col) for col in zip(*rows))
-    return _frame(o, h, l, c, tf, start)
+    o, h, lo, c = (list(col) for col in zip(*rows))
+    return _frame(o, h, lo, c, tf, start)
 
 
 def mirror(df: pd.DataFrame) -> pd.DataFrame:

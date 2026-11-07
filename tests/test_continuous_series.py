@@ -6,7 +6,6 @@ Valida:
 """
 
 import pandas as pd
-import pytest
 
 from smc_trader.data.continuous import stitch_contracts_series
 from smc_trader.strategies.fibo_ote import FiboOTEConfig, FiboOTEStrategy
@@ -43,10 +42,10 @@ def test_stitch_contracts_marks_roll_bar():
 
     assert "roll" in stitched.columns
     # A última barra do WINV26 deve ter roll = True
-    assert stitched.loc[times_v[-1], "roll"] == True
+    assert bool(stitched.loc[times_v[-1], "roll"]) is True
     # As outras barras devem ter roll = False
-    assert stitched.loc[times_v[0], "roll"] == False
-    assert stitched.loc[times_z[-1], "roll"] == False
+    assert bool(stitched.loc[times_v[0], "roll"]) is False
+    assert bool(stitched.loc[times_z[-1], "roll"]) is False
 
 
 def test_rollover_gap_does_not_trigger_fake_bos():

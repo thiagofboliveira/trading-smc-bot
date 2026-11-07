@@ -60,8 +60,18 @@ def _precompute_m1_structures(
         return {}
     pivots_m1 = find_pivots(candles_m1, k=2)
     events_m1 = detect_structure(candles_m1, pivots_m1)
-    m1_chochs = {(e.direction, e.time): e for e in events_m1 if e.kind == "CHoCH"}
-    m1_bos = {(e.direction, e.time): e for e in events_m1 if e.kind == "BOS"}
+    # Z-09: Indexa pelo candle que confirma o CHoCH/BOS para não adicionar 1 candle de atraso
+    m1_chochs = {}
+    m1_bos = {}
+    for e in events_m1:
+        if e.kind == "CHoCH":
+            if getattr(e, "break_time", None) is not None:
+                m1_chochs[(e.direction, e.break_time)] = e
+            m1_chochs[(e.direction, e.time)] = e
+        elif e.kind == "BOS":
+            if getattr(e, "break_time", None) is not None:
+                m1_bos[(e.direction, e.break_time)] = e
+            m1_bos[(e.direction, e.time)] = e
     eng_temp = BacktestEngine(base_config)
     ema80 = eng_temp._prepare_ma_series(
         candles_m1, base_config.confluence.ma_timeframe, "ema", 80

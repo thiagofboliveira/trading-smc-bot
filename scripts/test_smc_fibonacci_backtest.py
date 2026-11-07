@@ -12,6 +12,8 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
+from smc_trader.strategies.fibo_ote import FiboOTEConfig, FiboOTEStrategy
+
 SPREADS = {
     "BRENT": 0.04,     # 4 cents
     "XAUUSD": 0.30,    # 30 cents ($0.30)
@@ -43,296 +45,36 @@ def load_and_resample_m5(symbol: str) -> pd.DataFrame:
     return df_m5
 
 def simulate_fibo_ote(symbol: str, target_mode: str = "3R", timeframe: str = "5min"):
-    """
-    target_mode: '3R', '0_percent', 'proj_618'
-    """
     df = load_and_resample_m5(symbol)
     spread = SPREADS[symbol]
-    
-    # Detecção de Swings via fractais (janela de 5 candles: 2 antes, 1 centro, 2 depois)
-    n = len(df)
-    highs = df["high"].values
-    lows = df["low"].values
-    closes = df["close"].values
-    opens = df["open"].values
-    timestamps = df.index
-    
-    # Identificar picos e vales
-    swing_highs = np.zeros(n, dtype=bool)
-    swing_lows = np.zeros(n, dtype=bool)
-    
-    k = 3 # raio do swing fractal
-    for i in range(k, n - k):
-        if highs[i] == max(highs[i-k:i+k+1]):
-            swing_highs[i] = True
-        if lows[i] == min(lows[i-k:i+k+1]):
-            swing_lows[i] = True
-            
-    trades = []
-    
-    # Estado da simulação
-    # Vamos rastrear pernas de BOS (Break of Structure)
-    last_sh_price = None
-    last_sh_idx = None
-    last_sl_price = None
-    last_sl_idx = None
-    
-    # Posição ativa
-    in_pos = False
-    pos_type = 0 # 1 long, -1 short
-    entry_price = 0.0
-    sl_price = 0.0
-    tp_price = 0.0
-    entry_idx = 0
-    risk = 0.0
-    trade_stage = 1 # 1: entrada 61.8, 2: reentrada no 79
-    
-    # Estrutura ativa aguardando retração
-    active_leg = None # dict com dados da perna
-    
-    for i in range(k + 1, n - 1):
-        # 1. Atualizar swings conhecidos (com delay k para evitar lookahead)
-        idx_to_check = i - k
-        if swing_highs[idx_to_check]:
-            last_sh_price = highs[idx_to_check]
-            last_sh_idx = idx_to_check
-        if swing_lows[idx_to_check]:
-            last_sl_price = lows[idx_to_check]
-            last_sl_idx = idx_to_check
-            
-        # 2. Gerenciar posição aberta se houver
-        if in_pos:
-            c_high = highs[i]
-            c_low = lows[i]
-            
-            if pos_type == 1: # LONG
-                hit_sl = c_low <= sl_price
-                hit_tp = c_high >= tp_price
-                
-                if hit_sl and hit_tp:
-                    # Conservador: stop
-                    trades.append({"symbol": symbol, "stage": trade_stage, "type": "LONG", "r": -1.0, "win": False, "entry_time": timestamps[entry_idx], "exit_time": timestamps[i]})
-                    in_pos = False
-                    if trade_stage == 1:
-                        # Habilita monitoramento de rejeição no 79%
-                        active_leg["awaiting_79_rejection"] = True
-                elif hit_sl:
-                    trades.append({"symbol": symbol, "stage": trade_stage, "type": "LONG", "r": -1.0, "win": False, "entry_time": timestamps[entry_idx], "exit_time": timestamps[i]})
-                    in_pos = False
-                    if trade_stage == 1:
-                        # Foi stopado no 79%: agora monitora se haverá rejeição no 79%
-                        active_leg["awaiting_79_rejection"] = True
-                elif hit_tp:
-                    r_mult = 3.0 if target_mode == "3R" else (tp_price - entry_price) / risk
-                    trades.append({"symbol": symbol, "stage": trade_stage, "type": "LONG", "r": r_mult, "win": True, "entry_time": timestamps[entry_idx], "exit_time": timestamps[i]})
-                    in_pos = False
-                    active_leg = None # pernada concluída com sucesso
-            else: # SHORT
-                hit_sl = c_high >= sl_price
-                hit_tp = c_low <= tp_price
-                
-                if hit_sl and hit_tp:
-                    trades.append({"symbol": symbol, "stage": trade_stage, "type": "SHORT", "r": -1.0, "win": False, "entry_time": timestamps[entry_idx], "exit_time": timestamps[i]})
-                    in_pos = False
-                    if trade_stage == 1:
-                        active_leg["awaiting_79_rejection"] = True
-                elif hit_sl:
-                    trades.append({"symbol": symbol, "stage": trade_stage, "type": "SHORT", "r": -1.0, "win": False, "entry_time": timestamps[entry_idx], "exit_time": timestamps[i]})
-                    in_pos = False
-                    if trade_stage == 1:
-                        active_leg["awaiting_79_rejection"] = True
-                elif hit_tp:
-                    r_mult = 3.0 if target_mode == "3R" else (entry_price - tp_price) / risk
-                    trades.append({"symbol": symbol, "stage": trade_stage, "type": "SHORT", "r": r_mult, "win": True, "entry_time": timestamps[entry_idx], "exit_time": timestamps[i]})
-                    in_pos = False
-                    active_leg = None
-            continue
-            
-        # 3. Detectar nova perna de BOS se não temos posição e nem perna ativa válida
-        # Bullish BOS: Preço rompe acima de last_sh_price
-        if active_leg is None and last_sh_price is not None and last_sl_price is not None:
-            if last_sh_idx > last_sl_idx: # perna de alta válida do fundo ao topo
-                # Rompeu o topo anterior?
-                if closes[i] > last_sh_price:
-                    # Registra a perna de impulso: Low em last_sl_price, High em closes[i]
-                    leg_low = last_sl_price
-                    leg_high = highs[i]
-                    leg_range = leg_high - leg_low
-                    
-                    if leg_range > spread * 10: # filtro de perna mínima
-                        active_leg = {
-                            "dir": 1, # Bullish
-                            "low": leg_low,
-                            "high": leg_high,
-                            "range": leg_range,
-                            "fibo_618": leg_high - 0.618 * leg_range,
-                            "fibo_790": leg_high - 0.790 * leg_range,
-                            "origin_100": leg_low,
-                            "touched_618": False,
-                            "awaiting_79_rejection": False,
-                            "expired": False,
-                            "candles_alive": 0
-                        }
-            elif last_sl_idx > last_sh_idx: # perna de baixa do topo ao fundo
-                if closes[i] < last_sl_price:
-                    leg_high = last_sh_price
-                    leg_low = lows[i]
-                    leg_range = leg_high - leg_low
-                    if leg_range > spread * 10:
-                        active_leg = {
-                            "dir": -1, # Bearish
-                            "high": leg_high,
-                            "low": leg_low,
-                            "range": leg_range,
-                            "fibo_618": leg_low + 0.618 * leg_range,
-                            "fibo_790": leg_low + 0.790 * leg_range,
-                            "origin_100": leg_high,
-                            "touched_618": False,
-                            "awaiting_79_rejection": False,
-                            "expired": False,
-                            "candles_alive": 0
-                        }
-                        
-        # 4. Avaliar gatilhos na active_leg
-        if active_leg is not None:
-            active_leg["candles_alive"] += 1
-            # Expira perna se demorar mais de 60 candles sem ativar
-            if active_leg["candles_alive"] > 60:
-                active_leg = None
-                continue
-                
-            # Se romper ainda mais o topo/fundo antes de retrair, expande a perna
-            if not active_leg["touched_618"] and not active_leg["awaiting_79_rejection"]:
-                if active_leg["dir"] == 1 and highs[i] > active_leg["high"]:
-                    active_leg["high"] = highs[i]
-                    active_leg["range"] = active_leg["high"] - active_leg["low"]
-                    active_leg["fibo_618"] = active_leg["high"] - 0.618 * active_leg["range"]
-                    active_leg["fibo_790"] = active_leg["high"] - 0.790 * active_leg["range"]
-                elif active_leg["dir"] == -1 and lows[i] < active_leg["low"]:
-                    active_leg["low"] = lows[i]
-                    active_leg["range"] = active_leg["high"] - active_leg["low"]
-                    active_leg["fibo_618"] = active_leg["low"] + 0.618 * active_leg["range"]
-                    active_leg["fibo_790"] = active_leg["low"] + 0.790 * active_leg["range"]
-                    
-            # A) ENTRADA 1: Toque na retração 61.8%
-            if not active_leg["touched_618"] and not active_leg["awaiting_79_rejection"]:
-                if active_leg["dir"] == 1:
-                    # Long: preço caiu até 61.8%
-                    if lows[i] <= active_leg["fibo_618"]:
-                        active_leg["touched_618"] = True
-                        raw_entry = active_leg["fibo_618"]
-                        raw_sl = active_leg["fibo_790"]
-                        
-                        entry_price = raw_entry + spread
-                        sl_price = raw_sl
-                        risk = entry_price - sl_price
-                        
-                        if risk > spread * 1.5:
-                            # Define TP
-                            if target_mode == "3R":
-                                tp_price = entry_price + (risk * 3.0)
-                            elif target_mode == "0_percent":
-                                tp_price = active_leg["high"]
-                            elif target_mode == "proj_618":
-                                # Topo + 61.8% da correção (0.618 * range)
-                                corr_size = active_leg["high"] - active_leg["fibo_618"]
-                                tp_price = active_leg["high"] + (corr_size * 0.618)
-                                
-                            in_pos = True
-                            pos_type = 1
-                            trade_stage = 1
-                            entry_idx = i
-                            continue
-                else:
-                    # Short: preço subiu até 61.8%
-                    if highs[i] >= active_leg["fibo_618"]:
-                        active_leg["touched_618"] = True
-                        raw_entry = active_leg["fibo_618"]
-                        raw_sl = active_leg["fibo_790"]
-                        
-                        entry_price = raw_entry
-                        sl_price = raw_sl + spread
-                        risk = sl_price - entry_price
-                        
-                        if risk > spread * 1.5:
-                            if target_mode == "3R":
-                                tp_price = entry_price - (risk * 3.0)
-                            elif target_mode == "0_percent":
-                                tp_price = active_leg["low"]
-                            elif target_mode == "proj_618":
-                                corr_size = active_leg["fibo_618"] - active_leg["low"]
-                                tp_price = active_leg["low"] - (corr_size * 0.618)
-                                
-                            in_pos = True
-                            pos_type = -1
-                            trade_stage = 1
-                            entry_idx = i
-                            continue
-                            
-            # B) ENTRADA 2: Rejeição no nível 79.0% (caso stop no 61.8%)
-            elif active_leg["awaiting_79_rejection"]:
-                # Se violar o 100% (origem da perna), anula a perna completamente
-                if active_leg["dir"] == 1 and lows[i] <= active_leg["origin_100"]:
-                    active_leg = None
-                    continue
-                elif active_leg["dir"] == -1 and highs[i] >= active_leg["origin_100"]:
-                    active_leg = None
-                    continue
-                    
-                # Rejeição de Alta no 79%:
-                # Candle tocou a região de 79% (ou abaixo dela), mas fechou acima da abertura (candle verde) ou fez sombra inferior
-                if active_leg["dir"] == 1:
-                    # Rejeição compradora: fechamento > abertura e fechamento > fibo_790
-                    if closes[i] > opens[i] and closes[i] > active_leg["fibo_790"]:
-                        raw_entry = closes[i]
-                        raw_sl = min(lows[i], active_leg["origin_100"]) # Stop no fundo do 100%
-                        
-                        entry_price = raw_entry + spread
-                        sl_price = raw_sl
-                        risk = entry_price - sl_price
-                        
-                        if risk > spread * 1.5:
-                            if target_mode == "3R":
-                                tp_price = entry_price + (risk * 3.0)
-                            elif target_mode == "0_percent":
-                                tp_price = active_leg["high"]
-                            elif target_mode == "proj_618":
-                                corr_size = active_leg["high"] - lows[i]
-                                tp_price = active_leg["high"] + (corr_size * 0.618)
-                                
-                            in_pos = True
-                            pos_type = 1
-                            trade_stage = 2
-                            entry_idx = i
-                            active_leg["awaiting_79_rejection"] = False # já entrou
-                            continue
-                else:
-                    # Rejeição vendedora: fechamento < abertura e fechamento < fibo_790
-                    if closes[i] < opens[i] and closes[i] < active_leg["fibo_790"]:
-                        raw_entry = closes[i]
-                        raw_sl = max(highs[i], active_leg["origin_100"])
-                        
-                        entry_price = raw_entry
-                        sl_price = raw_sl + spread
-                        risk = sl_price - entry_price
-                        
-                        if risk > spread * 1.5:
-                            if target_mode == "3R":
-                                tp_price = entry_price - (risk * 3.0)
-                            elif target_mode == "0_percent":
-                                tp_price = active_leg["low"]
-                            elif target_mode == "proj_618":
-                                corr_size = highs[i] - active_leg["low"]
-                                tp_price = active_leg["low"] - (corr_size * 0.618)
-                                
-                            in_pos = True
-                            pos_type = -1
-                            trade_stage = 2
-                            entry_idx = i
-                            active_leg["awaiting_79_rejection"] = False
-                            continue
-                            
-    return trades
+    target_m = "3R" if target_mode == "3R" else ("proj_618" if target_mode == "proj_618" else "0_percent")
+    cfg = FiboOTEConfig(
+        fibo_entry=0.618,
+        fibo_stop=0.790,
+        target_mode=target_m,
+        trailing_exit_ma=None,
+        pivot_k=2,
+    )
+    strategy = FiboOTEStrategy(cfg)
+    trades = strategy.run_backtest(df, symbol, spread=spread)
+    return [
+        {
+            "stage": t.stage,
+            "direction": t.direction,
+            "entry_time": t.entry_time,
+            "exit_time": t.exit_time,
+            "entry_price": t.entry_price,
+            "stop_loss": t.stop_loss,
+            "take_profit": t.take_profit,
+            "risk_points": t.risk_points,
+            "pnl_points": t.pnl_points,
+            "r_multiple": t.r_multiple,
+            "win": t.win,
+            "exit_reason": t.exit_reason,
+            "r": t.r_multiple,
+        }
+        for t in trades
+    ]
 
 def main():
     symbols = ["BRENT", "XAUUSD", "NAS100", "DAX40", "EURUSD", "GBPUSD", "USDJPY"]

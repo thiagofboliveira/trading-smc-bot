@@ -51,6 +51,12 @@ class FiboOTEConfig:
     use_lock_2to1: bool = False           # Trava 2:1 (Perfil Blindado: ao atingir +2R, sobe stop para +1R)
     lock_trigger_r: float = 2.0
     lock_guarantee_r: float = 1.0
+    profit_lock_trigger_r: float | None = None  # Gatilho genérico de lock/breakeven em R (ex: 1.0, 1.5, 2.0)
+    profit_lock_guarantee_r: float = 0.0        # Novo stop garantido em R (0.0 = breakeven, 1.0 = lock)
+    partial_exit_trigger_r: float | None = None  # Gatilho de realização parcial em R (ex: 1.0, 1.5, 2.0)
+    partial_exit_pct: float = 0.0                # Fração da mão encerrada na parcial (ex: 0.5 para 50%)
+    trend_filter_80_200: bool = False            # Long só se EMA80 > SMA200, Short só se EMA80 < SMA200
+    confluence_ma: str | None = None             # Exige toque na média móvel na entrada ('ema8', 'sma20', etc.)
     check_intrabar_sl: bool = True        # A barra de entrada também pode estopar a posição
     max_position_candles: int = 0         # F-07: tempo máximo de posição (0 = sem limite)
     session_filter: bool = False          # F-08: filtro de horário de entrada
@@ -105,6 +111,8 @@ class _Position:
     risk: float
     locked: bool = False
     pending_ma_exit: bool = False
+    partial_taken: bool = False
+    realized_r: float = 0.0
 
 
 def _fractal_swings(highs: np.ndarray, lows: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
@@ -138,14 +146,16 @@ class FiboOTEStrategy:
                 df_m1["timestamp"] = pd.to_datetime(df_m1["timestamp"])
                 df_m1.set_index("timestamp", inplace=True)
 
-        rule = "5min" if self.config.timeframe in ("M5", "5min", "5m") else self.config.timeframe
-        df_res = df_m1.resample(rule).agg({
+        rule = "5min" if self.config.timeframe in ("M5", "5min", "5m") else ("15min" if self.config.timeframe in ("M15", "15min", "15m") else self.config.timeframe)
+        agg_dict = {
             "open": "first",
             "high": "max",
             "low": "min",
             "close": "last",
-            "volume": "sum"
-        }).dropna()
+        }
+        if "volume" in df_m1.columns:
+            agg_dict["volume"] = "sum"
+        df_res = df_m1.resample(rule).agg(agg_dict).dropna()
 
         if self.config.trailing_exit_ma:
             ma = self.config.trailing_exit_ma.lower()
@@ -155,10 +165,32 @@ class FiboOTEStrategy:
                 df_res["trailing_ma"] = df_res["close"].rolling(20).mean()
             elif ma == "sma9":
                 df_res["trailing_ma"] = df_res["close"].rolling(9).mean()
+            elif ma == "sma50":
+                df_res["trailing_ma"] = df_res["close"].rolling(50).mean()
             elif ma == "ema80":
                 df_res["trailing_ma"] = df_res["close"].ewm(span=80, adjust=False).mean()
+            elif ma == "sma200":
+                df_res["trailing_ma"] = df_res["close"].rolling(200).mean()
             else:
                 df_res["trailing_ma"] = df_res["close"].ewm(span=8, adjust=False).mean()
+
+        if self.config.trend_filter_80_200:
+            df_res["ema80"] = df_res["close"].ewm(span=80, adjust=False).mean()
+            df_res["sma200"] = df_res["close"].rolling(200).mean()
+
+        if self.config.confluence_ma:
+            cma = self.config.confluence_ma.lower()
+            if cma == "ema8":
+                df_res["confluence_ma"] = df_res["close"].ewm(span=8, adjust=False).mean()
+            elif cma == "sma20":
+                df_res["confluence_ma"] = df_res["close"].rolling(20).mean()
+            elif cma == "sma50":
+                df_res["confluence_ma"] = df_res["close"].rolling(50).mean()
+            elif cma == "ema80":
+                df_res["confluence_ma"] = df_res["close"].ewm(span=80, adjust=False).mean()
+            elif cma == "sma200":
+                df_res["confluence_ma"] = df_res["close"].rolling(200).mean()
+
         return df_res
 
     def run_backtest(self, df_m1: pd.DataFrame, symbol: str, spread: float) -> list[FiboTrade]:
@@ -174,6 +206,9 @@ class FiboOTEStrategy:
         closes = df["close"].to_numpy()
         ts = df.index
         mas = df["trailing_ma"].to_numpy() if "trailing_ma" in df.columns else None
+        emas80 = df["ema80"].to_numpy() if "ema80" in df.columns else None
+        smas200 = df["sma200"].to_numpy() if "sma200" in df.columns else None
+        conf_mas = df["confluence_ma"].to_numpy() if "confluence_ma" in df.columns else None
         swing_h, swing_l = _fractal_swings(highs, lows, k)
 
         def ask_adj(d: int) -> float:
@@ -181,13 +216,16 @@ class FiboOTEStrategy:
             return spread if d == -1 else 0.0
 
         def close_trade(pos: _Position, i: int, price: float, reason: str) -> FiboTrade:
-            pnl = pos.d * (price - pos.entry_price) - cfg.commission_per_unit
-            r = pnl / pos.risk
+            unscaled_pnl = pos.d * (price - pos.entry_price) - cfg.commission_per_unit
+            unscaled_r = unscaled_pnl / pos.risk
+            remaining_frac = 1.0 - (cfg.partial_exit_pct if pos.partial_taken else 0.0)
+            r = pos.realized_r + remaining_frac * unscaled_r
+            pnl = r * pos.risk
             return FiboTrade(
                 symbol=symbol, stage=1, direction="long" if pos.d == 1 else "short",
                 entry_time=ts[pos.entry_idx], exit_time=ts[i],
                 entry_price=pos.entry_price, stop_loss=pos.stop, take_profit=pos.target,
-                risk_points=pos.risk, pnl_points=pnl, r_multiple=r, win=pnl > 0, exit_reason=reason,
+                risk_points=pos.risk, pnl_points=pnl, r_multiple=r, win=r > 0, exit_reason=reason,
             )
 
         def stop_hit(pos: _Position, i: int) -> bool:
@@ -302,11 +340,21 @@ class FiboOTEStrategy:
                     trades.append(exit_trade)
                     pos = None
                     leg = None
-                elif cfg.use_lock_2to1 and not pos.locked:
-                    # a trava só protege a partir da próxima barra
-                    if d * (favorable - (pos.entry_price + d * pos.risk * cfg.lock_trigger_r)) >= 0:
-                        pos.stop = pos.entry_price + d * pos.risk * cfg.lock_guarantee_r
-                        pos.locked = True
+                else:
+                    # Checa realização parcial intrabar
+                    if cfg.partial_exit_trigger_r is not None and not pos.partial_taken:
+                        if d * (favorable - (pos.entry_price + d * pos.risk * cfg.partial_exit_trigger_r)) >= 0:
+                            pos.realized_r += cfg.partial_exit_pct * cfg.partial_exit_trigger_r
+                            pos.partial_taken = True
+
+                    # Checa trava 2:1 ou breakeven (a trava só protege a partir da próxima barra)
+                    use_lock = cfg.use_lock_2to1 or (cfg.profit_lock_trigger_r is not None)
+                    if use_lock and not pos.locked:
+                        trig_r = cfg.profit_lock_trigger_r if cfg.profit_lock_trigger_r is not None else cfg.lock_trigger_r
+                        guar_r = cfg.profit_lock_guarantee_r if cfg.profit_lock_trigger_r is not None else cfg.lock_guarantee_r
+                        if d * (favorable - (pos.entry_price + d * pos.risk * trig_r)) >= 0:
+                            pos.stop = pos.entry_price + d * pos.risk * guar_r
+                            pos.locked = True
                 continue
 
             # 3. Nova perna por quebra de estrutura (BOS), confirmada no fechamento de i
@@ -342,6 +390,17 @@ class FiboOTEStrategy:
             level = leg.level(cfg.fibo_entry)
             touch = lows[i] if d == 1 else highs[i]
             if d * (level - touch) >= 0:
+                # Checa filtros adicionais de tendência e confluência
+                if cfg.trend_filter_80_200 and emas80 is not None and smas200 is not None:
+                    if d == 1 and emas80[i] <= smas200[i]:
+                        continue
+                    if d == -1 and emas80[i] >= smas200[i]:
+                        continue
+                if cfg.confluence_ma and conf_mas is not None:
+                    c_ma = conf_mas[i]
+                    if not (lows[i] <= c_ma <= highs[i]):
+                        continue
+
                 leg.touched = True
                 pos = open_position(leg, i)
                 if pos is not None and cfg.check_intrabar_sl and stop_hit(pos, i):
@@ -361,3 +420,6 @@ class FiboOTEStrategy:
             trades.append(close_trade(pos, n - 1, closes[n - 1] + ask_adj(pos.d) + slip_exit, "END_OF_DATA"))
 
         return trades
+
+    # Alias canônico
+    run = run_backtest

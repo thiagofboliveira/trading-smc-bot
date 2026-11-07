@@ -15,6 +15,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from smc_trader.strategies.fibo_ote import FiboOTEConfig, FiboOTEStrategy
+
 SPREADS = {
     "BRENT": 0.04,
     "XAUUSD": 0.30,
@@ -66,170 +68,20 @@ def simulate_fast(
     session_filter: bool,
     k: int = 3
 ) -> list[dict[str, Any]]:
-    highs = df["high"].values
-    lows = df["low"].values
-    closes = df["close"].values
-    opens = df["open"].values
-    timestamps = df.index
-    hours = timestamps.hour
-    n = len(df)
-
-    # Identificar swings fractais
-    swing_highs = np.zeros(n, dtype=bool)
-    swing_lows = np.zeros(n, dtype=bool)
-
-    for i in range(k, n - k):
-        if highs[i] == max(highs[i - k : i + k + 1]):
-            swing_highs[i] = True
-        if lows[i] == min(lows[i - k : i + k + 1]):
-            swing_lows[i] = True
-
-    trades = []
-    last_sh_price = None
-    last_sh_idx = None
-    last_sl_price = None
-    last_sl_idx = None
-
-    in_pos = False
-    pos_dir = 0
-    entry_price = 0.0
-    sl_price = 0.0
-    tp_price = 0.0
-    entry_idx = 0
-    risk = 0.0
-
-    active_leg = None
-
-    for i in range(k + 1, n - 1):
-        chk = i - k
-        if swing_highs[chk]:
-            last_sh_price = highs[chk]
-            last_sh_idx = chk
-        if swing_lows[chk]:
-            last_sl_price = lows[chk]
-            last_sl_idx = chk
-
-        if in_pos:
-            c_high = highs[i]
-            c_low = lows[i]
-            if pos_dir == 1:
-                hit_sl = c_low <= sl_price
-                hit_tp = c_high >= tp_price
-                if hit_sl and hit_tp:
-                    trades.append({"entry_time": timestamps[entry_idx], "r": -1.0, "win": False})
-                    in_pos = False
-                elif hit_sl:
-                    trades.append({"entry_time": timestamps[entry_idx], "r": -1.0, "win": False})
-                    in_pos = False
-                elif hit_tp:
-                    r_mult = target_r if target_mode != "0_percent" else (tp_price - entry_price) / risk
-                    trades.append({"entry_time": timestamps[entry_idx], "r": r_mult, "win": True})
-                    in_pos = False
-                    active_leg = None
-            else:
-                hit_sl = c_high >= sl_price
-                hit_tp = c_low <= tp_price
-                if hit_sl and hit_tp:
-                    trades.append({"entry_time": timestamps[entry_idx], "r": -1.0, "win": False})
-                    in_pos = False
-                elif hit_sl:
-                    trades.append({"entry_time": timestamps[entry_idx], "r": -1.0, "win": False})
-                    in_pos = False
-                elif hit_tp:
-                    r_mult = target_r if target_mode != "0_percent" else (entry_price - tp_price) / risk
-                    trades.append({"entry_time": timestamps[entry_idx], "r": r_mult, "win": True})
-                    in_pos = False
-                    active_leg = None
-            continue
-
-        # Detecção de nova perna de impulsão por BOS
-        if active_leg is None and last_sh_price is not None and last_sl_price is not None:
-            if last_sh_idx > last_sl_idx:
-                if closes[i] > last_sh_price:
-                    leg_low = last_sl_price
-                    leg_high = highs[i]
-                    leg_range = leg_high - leg_low
-                    if leg_range > spread * 10:
-                        active_leg = {
-                            "dir": 1, "low": leg_low, "high": leg_high, "range": leg_range,
-                            "fibo_entry": leg_high - fibo_entry * leg_range,
-                            "fibo_stop": leg_high - fibo_stop * leg_range,
-                            "touched": False, "candles": 0
-                        }
-            elif last_sl_idx > last_sh_idx:
-                if closes[i] < last_sl_price:
-                    leg_high = last_sh_price
-                    leg_low = lows[i]
-                    leg_range = leg_high - leg_low
-                    if leg_range > spread * 10:
-                        active_leg = {
-                            "dir": -1, "high": leg_high, "low": leg_low, "range": leg_range,
-                            "fibo_entry": leg_low + fibo_entry * leg_range,
-                            "fibo_stop": leg_low + fibo_stop * leg_range,
-                            "touched": False, "candles": 0
-                        }
-
-        # Gatilho na perna ativa
-        if active_leg is not None:
-            active_leg["candles"] += 1
-            if active_leg["candles"] > 60:
-                active_leg = None
-                continue
-
-            if not active_leg["touched"]:
-                # Se continuar rompendo antes de retrair, expande perna
-                if active_leg["dir"] == 1 and highs[i] > active_leg["high"]:
-                    active_leg["high"] = highs[i]
-                    active_leg["range"] = active_leg["high"] - active_leg["low"]
-                    active_leg["fibo_entry"] = active_leg["high"] - fibo_entry * active_leg["range"]
-                    active_leg["fibo_stop"] = active_leg["high"] - fibo_stop * active_leg["range"]
-                elif active_leg["dir"] == -1 and lows[i] < active_leg["low"]:
-                    active_leg["low"] = lows[i]
-                    active_leg["range"] = active_leg["high"] - active_leg["low"]
-                    active_leg["fibo_entry"] = active_leg["low"] + fibo_entry * active_leg["range"]
-                    active_leg["fibo_stop"] = active_leg["low"] + fibo_stop * active_leg["range"]
-
-                # Checa filtro de horário se ativo (07:00 às 18:00 UTC)
-                if session_filter:
-                    h = hours[i]
-                    if not (7 <= h <= 18):
-                        continue
-
-                # Entrada no nível de Fibo
-                if active_leg["dir"] == 1:
-                    if lows[i] <= active_leg["fibo_entry"]:
-                        active_leg["touched"] = True
-                        raw_entry = active_leg["fibo_entry"]
-                        raw_sl = active_leg["fibo_stop"]
-                        entry_price = raw_entry + spread
-                        sl_price = raw_sl
-                        risk = entry_price - sl_price
-                        if risk > spread * 1.5:
-                            if target_mode == "0_percent":
-                                tp_price = active_leg["high"]
-                            else:
-                                tp_price = entry_price + (risk * target_r)
-                            in_pos = True
-                            pos_dir = 1
-                            entry_idx = i
-                else:
-                    if highs[i] >= active_leg["fibo_entry"]:
-                        active_leg["touched"] = True
-                        raw_entry = active_leg["fibo_entry"]
-                        raw_sl = active_leg["fibo_stop"]
-                        entry_price = raw_entry
-                        sl_price = raw_sl + spread
-                        risk = sl_price - entry_price
-                        if risk > spread * 1.5:
-                            if target_mode == "0_percent":
-                                tp_price = active_leg["low"]
-                            else:
-                                tp_price = entry_price - (risk * target_r)
-                            in_pos = True
-                            pos_dir = -1
-                            entry_idx = i
-
-    return trades
+    mode = "3R" if target_mode in ("2.5R", "3.0R") else "0_percent"
+    cfg = FiboOTEConfig(
+        fibo_entry=fibo_entry,
+        fibo_stop=fibo_stop,
+        target_mode=mode,
+        target_r=target_r,
+        trailing_exit_ma="ema8" if mode == "0_percent" else None,
+        pivot_k=k,
+        session_filter=session_filter,
+        session_windows=[("07:00", "18:00")] if session_filter else None,
+    )
+    strategy = FiboOTEStrategy(cfg)
+    trades = strategy.run_backtest(df, "SIM", spread=spread)
+    return [{"entry_time": t.entry_time, "r": t.r_multiple, "win": t.win} for t in trades]
 
 def main():
     print("=" * 80)

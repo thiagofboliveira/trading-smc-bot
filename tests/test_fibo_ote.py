@@ -268,3 +268,42 @@ def test_propriedades_em_dados_reais(symbol, spread):
         # nunca entra na barra que confirma o BOS: a barra de entrada é posterior ao BOS, logo há
         # ao menos 1 barra entre a última barra da perna e a entrada (checado nos testes de cenário)
         assert t.exit_time >= t.entry_time
+
+
+def test_b01_breakeven_trigger_moves_stop_to_entry():
+    """B0-1 / Breakeven: Quando atinge o gatilho (+1R), stop move para 0.0R (breakeven)."""
+    # barra 9 entra comprado (entry ~98.935, stop ~97.73, risk ~1.205)
+    # barra 10 sobe até 101.5 (> entry + 1.205 -> +2.1R), engatilhando breakeven
+    # barra 11 cai para 98.5 (fura entrada, acima do stop original). Deve sair a ~0.0R no breakeven!
+    b10 = (99.5, 101.5, 99.0, 101.0)
+    b11 = (101.0, 101.0, 98.5, 98.6)
+    trades = run(
+        long_entry_scenario([b10, b11]),
+        profit_lock_trigger_r=1.0,
+        profit_lock_guarantee_r=0.0,
+        target_mode="trailing_only",
+    )
+    assert len(trades) == 1
+    t = trades[0]
+    assert t.exit_reason == "LOCK_PROFIT_SL"
+    assert t.r_multiple == pytest.approx(0.0, abs=1e-3)
+
+
+def test_b01_partial_exit_realizes_fraction_of_r():
+    """B0-1 / Parciais: Quando atinge gatilho de parcial (+1R), realiza 50% e restante toma SL integral."""
+    # barra 9 entra comprado
+    # barra 10 sobe até 101.5 (+2.1R), realizando 50% no gatilho 1.0R (+0.5R garantido)
+    # barra 11 cai até 97.0 (fura stop original 97.73).
+    # R final: +0.5R (da parcial) + 0.5 * (-1.0R) = 0.0R!
+    b10 = (99.5, 101.5, 99.0, 101.0)
+    b11 = (101.0, 101.0, 97.0, 97.2)
+    trades = run(
+        long_entry_scenario([b10, b11]),
+        partial_exit_trigger_r=1.0,
+        partial_exit_pct=0.5,
+        target_mode="trailing_only",
+    )
+    assert len(trades) == 1
+    t = trades[0]
+    assert t.exit_reason == "STOP_LOSS"
+    assert t.r_multiple == pytest.approx(0.0, abs=1e-3)

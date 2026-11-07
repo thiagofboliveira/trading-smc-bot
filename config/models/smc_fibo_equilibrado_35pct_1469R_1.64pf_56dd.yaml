@@ -1,0 +1,41 @@
+# ===================================================================
+# PLAYBOOK OFICIAL — PERFIL EQUILIBRADO
+# ===================================================================
+# Nomenclatura Padrão: <nome>_<acerto>_<retorno>_<pf>_<maxdd>
+# Modelo: smc_fibo_equilibrado_35pct_1469R_1.64pf_56dd
+# ===================================================================
+
+model:
+  id: "smc_fibo_equilibrado_35pct_1469R_1.64pf_56dd"
+  name: "SMC-Fibo-Equilibrado_35pct_1469R_1.64pf_56dd"
+  version: "1.0.0"
+  description: "Perfil de Alta Consistência (35.4% Acerto, +1.469R Anual, PF 1.64, MaxDD -56R)"
+
+metrics:
+  win_rate_pct: 35.4
+  annual_return_r: 1469.0
+  profit_factor: 1.64
+  max_drawdown_r: 56.0
+
+timeframes:
+  operational: "M5"
+
+fibonacci:
+  entry_level: 0.650
+  stop_level: 0.790
+  origin_level: 1.000
+  target_mode: "3R"
+  target_r: 3.0
+  pivot_k: 3
+  max_holding_candles: 60
+  enable_reentry_79: false
+
+risk_management:
+  risk_pct_per_trade: 1.0
+  max_open_trades_total: 4
+  max_trades_per_day: 5
+  max_stops_per_day: 2
+
+session:
+  mode: "24h"
+  force_close_time: "21:30"

@@ -51,8 +51,8 @@ def test_ui_api_symbols(ui_server):
 def test_ui_api_backtest(ui_server):
     payload = {
         "symbol": "XAUUSD",
-        "start": "2026-09-01T00:00:00Z",
-        "end": "2026-09-07T00:00:00Z",
+        "start": "2026-09-15T00:00:00Z",
+        "end": "2026-09-22T00:00:00Z",
         "blocks_filter": ["OB"],
         "entry_mode": "confirmation",
         "stop_mode": "swing",
@@ -78,8 +78,8 @@ def test_ui_api_backtest(ui_server):
 def test_ui_api_chart(ui_server):
     payload = {
         "symbol": "XAUUSD",
-        "start": "2026-09-01T00:00:00Z",
-        "end": "2026-09-02T00:00:00Z",
+        "start": "2026-09-15T00:00:00Z",
+        "end": "2026-09-16T00:00:00Z",
         "tf": "M15",
         "blocks_filter": ["OB", "FVOB", "BB"],
     }

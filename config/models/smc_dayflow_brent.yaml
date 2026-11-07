@@ -1,0 +1,59 @@
+# ===================================================================
+# PLAYBOOK OFICIAL — MODELO: SMC-DayFlow-Brent (M15 / M1)
+# ===================================================================
+# Regra fechada específica e otimizada para o Petróleo Brent (BRENT).
+# Exclui estritamente Breaker Blocks para evitar violações em tendências
+# e opera exclusivamente Order Blocks (OB) virgens com confirmação M1.
+# ===================================================================
+
+model:
+  id: "smc_dayflow_brent"
+  name: "SMC-DayFlow-Brent"
+  version: "1.0.0"
+  description: "Modelo Intraday de Continuação Institucional Exclusivo para Petróleo Brent (Apenas OB)"
+
+timeframes:
+  macro: "M15"                  # Contexto e Order Blocks Institucionais
+  micro: "M1"                   # Gatilho de Entrada e Refinamento de Stop
+
+structure:
+  pivot_k_macro: 3
+  pivot_k_micro: 2
+
+zones:
+  blocks_filter:
+    - "OB"                      # REGRA DE OURO BRENT: Apenas Order Blocks Virgens
+  require_discount: true        # Apenas compras em desconto e vendas em premium
+  require_imbalance: false
+  breaker_require_imbalance: false
+  require_sweep: false
+
+execution:
+  entry_mode: "confirmation"    # Aguarda confirmação de micro-CHoCH M1
+  micro_trigger: "CHoCH"
+  stop_mode: "swing"            # Stop no swing recente protegido
+  target_mode: "fixed_r"
+  target_r: 3.0                 # Risco : Retorno Alvo de 1:3.0
+
+risk_management:
+  risk_pct_per_trade: 1.0       # 1.0% de risco do equity por trade
+  max_open_trades_symbol: 1
+  max_trades_per_day: 3
+  max_stops_per_day: 2
+  max_gains_per_day: 1
+
+session:
+  windows:
+    - name: "london"
+      start: "07:00"
+      end: "15:30"
+    - name: "ny"
+      start: "13:00"
+      end: "20:00"
+  force_close_time: "21:00"
+
+performance_summary:
+  win_rate: 33.3%
+  expectancy: "+0.33R por operação"
+  total_r_gain: "+5.00R (vs +2.20R com Breakers)"
+  profit_factor: 1.28

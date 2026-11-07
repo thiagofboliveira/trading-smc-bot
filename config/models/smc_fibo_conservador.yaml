@@ -1,0 +1,35 @@
+# ===================================================================
+# PLAYBOOK OFICIAL — PERFIL: SMC-Fibo-Conservador (Baixa Frequência)
+# ===================================================================
+# Foco: Máxima segurança, menor drawdown (-24.9R) e maior PF (2.23)
+# Nível de Entrada: 70.5% | Stop: 79.0% | Alvo: Topo (0%) | Timeframe: M15
+# ===================================================================
+
+model:
+  id: "smc_fibo_conservador"
+  name: "SMC-Fibo-Conservador"
+  version: "1.0.0"
+  description: "Perfil Conservador no M15 com Profit Factor 2.23 e Drawdown Mínimo (-24.9R)"
+
+timeframes:
+  operational: "M15"
+
+fibonacci:
+  entry_level: 0.705
+  stop_level: 0.790
+  origin_level: 1.000
+  target_mode: "0_percent"
+  target_r: 0.0
+  pivot_k: 3
+  max_holding_candles: 40
+  enable_reentry_79: false
+
+risk_management:
+  risk_pct_per_trade: 1.0
+  max_open_trades_total: 3
+  max_trades_per_day: 3
+  max_stops_per_day: 2
+
+session:
+  mode: "24h"
+  force_close_time: "21:30"

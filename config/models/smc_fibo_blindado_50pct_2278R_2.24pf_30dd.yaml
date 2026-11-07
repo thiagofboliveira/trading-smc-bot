@@ -1,0 +1,55 @@
+# ===================================================================
+# PLAYBOOK OFICIAL — PERFIL: SEGURANÇA PSICOLÓGICA & BLINDAGEM
+# ===================================================================
+# Nomenclatura Padrão: <nome>_<acerto>_<retorno>_<pf>_<maxdd>
+# Modelo: smc_fibo_blindado_50pct_2278R_2.24pf_30dd
+# ===================================================================
+# Inovação: SMC Fibo OTE com Trava de Lucro em +1.0R ao atingir +2.0R
+#           combinada com condução de Trailing Stop na MME 8.
+# Retorno Anual: +2.278,5 R | Taxa de Acerto: 49.6% (~50% acerto)
+# Profit Factor: 2.24 | Max Drawdown Mínimo: apenas -29.5 R
+# ===================================================================
+
+model:
+  id: "smc_fibo_blindado_50pct_2278R_2.24pf_30dd"
+  name: "SMC-Fibo-Blindado_50pct_2278R_2.24pf_30dd"
+  version: "1.0.0"
+  description: "Perfil de Segurança Máxima (50% Acerto, Trava +1R no 2:1, Drawdown Mínimo -29.5R)"
+
+metrics:
+  win_rate_pct: 49.6
+  annual_return_r: 2278.5
+  profit_factor: 2.24
+  max_drawdown_r: 29.5
+
+timeframes:
+  operational: "M5"
+
+fibonacci:
+  entry_level: 0.705            # Sweet Spot ICT
+  stop_level: 0.790             # Stop curto no 79.0%
+  origin_level: 1.000
+  target_mode: "0_percent"      # Alvo estrutural máximo no topo/fundo
+  pivot_k: 3
+  max_holding_candles: 60
+  enable_reentry_79: false
+
+profit_protection:
+  enable_profit_lock: true
+  trigger_r: 2.0                # Ao atingir +2.0R a favor...
+  lock_r: 1.0                   # ...o stop é movido imediatamente para travar +1.0R de lucro no bolso
+
+trailing:
+  mode: "moving_average"
+  ma_type: "ema8"               # MME 8 para conduzir o restante da expansão
+  exit_on_close_cross: true
+
+risk_management:
+  risk_pct_per_trade: 1.0
+  max_open_trades_total: 4
+  max_trades_per_day: 5
+  max_stops_per_day: 2
+
+session:
+  mode: "24h"
+  force_close_time: "21:30"

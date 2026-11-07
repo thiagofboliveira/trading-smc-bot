@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from smc_trader.analysis import analyze
 from smc_trader.backtest.engine import BacktestEngine
+from smc_trader.backtest.exporter import export_backtest_package
 from smc_trader.backtest.runner import run_grid
 from smc_trader.config import Config, ZoneConfig, load_config
 from smc_trader.data.dukascopy_source import fetch_m1
@@ -61,6 +62,12 @@ def _build_parser() -> argparse.ArgumentParser:
     bt.add_argument("--out", type=Path, default=None)
     bt.add_argument("--config", type=Path, default=Path("config/default.yaml"))
     bt.add_argument("--data-root", type=Path, default=None)
+    bt.add_argument(
+        "--export-audit",
+        action="store_true",
+        default=False,
+        help="exporta pasta {ativo}_{data_hora} com gráficos macro/micro, txt e planilha xlsx de 2 abas",
+    )
 
     grid = sub.add_parser("grid", help="executa grade de parâmetros SMC com divisão IS/OOS e atribuição")
     grid.add_argument("symbol")
@@ -84,6 +91,10 @@ def _build_parser() -> argparse.ArgumentParser:
     live.add_argument("--symbols", default=None, help="símbolos separados por vírgula (ex: XAUUSD,NAS100)")
     live.add_argument("--risk", type=float, default=None, help="risco percentual por trade (ex: 1.0)")
     live.add_argument("--dry-run", action="store_true", default=False, help="simula ciclo sem loop infinito")
+
+    fibo = sub.add_parser("fibo-backtest", help="executa auditoria da estratégia oficial SMC Fibonacci OTE")
+    fibo.add_argument("--symbol", default="all", help="símbolo a testar (ex: NAS100 ou 'all')")
+    fibo.add_argument("--target", choices=["3R", "0_percent", "proj_618"], default="3R", help="modo de alvo")
     return parser
 
 
@@ -172,6 +183,16 @@ def _cmd_backtest(args: argparse.Namespace, cfg: Config) -> int:
     print(f"Expectativa:       {m['expectancy']:+.2f}R")
     print(f"Profit Factor:     {m['profit_factor']:.2f}")
     print(f"Max Drawdown:      {m['max_drawdown_r']:.2f}R")
+
+    if getattr(args, "export_audit", False):
+        export_backtest_package(
+            symbol=args.symbol,
+            result=result,
+            c_m1=c_m1,
+            c_m15=c_m15,
+            analysis=analysis,
+            base_dir=Path("out/backtests"),
+        )
 
     if args.out is not None:
         args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -310,17 +331,34 @@ def _cmd_live(args: argparse.Namespace, cfg: Config) -> int:
 
     symbol_configs: dict[str, BacktestConfig] = {}
     symbol_blocks: dict[str, list[str]] = {}
+    symbol_models: dict[str, str] = {}
+    symbol_macro_tfs: dict[str, str] = {}
+    symbol_sweeps: dict[str, bool] = {}
+
+    models_catalog = prod_data.get("models", {})
     for sym in symbols_list:
         sym_raw = prod_data.get("symbols", {}).get(sym, {})
+        model_key = sym_raw.get("model", "smc_dayflow")
+        model_def = models_catalog.get(model_key, {})
+
+        model_name = model_def.get("name", sym_raw.get("model_name", "SMC-DayFlow"))
+        macro_tf = sym_raw.get("macro_tf", model_def.get("macro_tf", "M15"))
+        require_sweep = sym_raw.get("require_sweep", model_def.get("require_sweep", False))
+        entry_mode = sym_raw.get("entry_mode", model_def.get("entry_mode", "confirmation"))
+        stop_mode = sym_raw.get("stop_mode", model_def.get("stop_mode", "swing"))
+        target_r = sym_raw.get("target_r", model_def.get("target_r", 3.0))
+
         sym_bt = BacktestConfig(
-            entry_mode=sym_raw.get("entry_mode", "confirmation"),
-            stop_mode=sym_raw.get("stop_mode", "swing"),
-            target_r=sym_raw.get("target_r", 3.0),
+            entry_mode=entry_mode,
+            stop_mode=stop_mode,
+            target_r=target_r,
         )
-        if "zone" in sym_raw and "blocks_filter" in sym_raw["zone"]:
-            symbol_blocks[sym] = sym_raw["zone"]["blocks_filter"]
-        else:
-            symbol_blocks[sym] = ["OB"]
+
+        blocks = sym_raw.get("zone", {}).get("blocks_filter") or model_def.get("blocks_filter") or ["OB"]
+        symbol_blocks[sym] = blocks
+        symbol_models[sym] = model_name
+        symbol_macro_tfs[sym] = macro_tf
+        symbol_sweeps[sym] = require_sweep
         if "trailing" in sym_raw and "mode" in sym_raw["trailing"]:
             sym_bt.trailing.mode = sym_raw["trailing"]["mode"]
         symbol_configs[sym] = sym_bt
@@ -347,11 +385,20 @@ def _cmd_live(args: argparse.Namespace, cfg: Config) -> int:
         client=client,
         symbol_configs=symbol_configs,
         symbol_blocks=symbol_blocks,
+        symbol_models=symbol_models,
+        symbol_macro_tfs=symbol_macro_tfs,
+        symbol_sweeps=symbol_sweeps,
         risk_pct=risk_pct,
         notification_callback=lambda msg: print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}"),
     )
 
-    print("\n🟢 Motor em execução autônoma. Pressione Ctrl+C para encerrar.\n")
+    print("\n🟢 Motor em execução autônoma com Modelos Operacionais Fechados:")
+    for sym in symbols_list:
+        m_name = symbol_models.get(sym, "SMC-DayFlow")
+        m_tf = symbol_macro_tfs.get(sym, "M15")
+        s_req = "Sim (Sweep Obrigatório)" if symbol_sweeps.get(sym, False) else "Não (Fluxo Direto)"
+        print(f"  📌 {sym:7s} -> Modelo: [{m_name}] | TF: {m_tf}/M1 | Varredura Wyckoff: {s_req}")
+    print("\nPressione Ctrl+C para encerrar.\n")
     if args.dry_run:
         print("🔍 Modo Dry-Run ativo: executando ciclo de teste...")
         for sym in symbols_list:
@@ -374,6 +421,36 @@ def _cmd_live(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def _cmd_fibo_backtest(args: argparse.Namespace, cfg: Config) -> int:
+    import pandas as pd
+    from smc_trader.strategies.fibo_ote import FiboOTEConfig, FiboOTEStrategy
+    spreads = {
+        "BRENT": 0.04, "XAUUSD": 0.30, "NAS100": 1.50, "DAX40": 1.50,
+        "EURUSD": 0.00015, "GBPUSD": 0.00020, "USDJPY": 0.018
+    }
+    symbols = list(spreads.keys()) if args.symbol == "all" else [args.symbol]
+    strat = FiboOTEStrategy(FiboOTEConfig(target_mode=args.target))
+    print(f"\n🚀 Executando SMC Fibonacci OTE (M5 | Alvo {args.target}) para: {symbols}\n")
+    tot_r = 0.0
+    for sym in symbols:
+        p = Path(f"data/{sym}_M1_dukascopy.parquet")
+        if not p.exists():
+            print(f"⚠️ [{sym}] Dados não encontrados em {p}")
+            continue
+        df = pd.read_parquet(p)
+        trades = strat.run_backtest(df, sym, spreads.get(sym, 1.0))
+        if not trades:
+            print(f"[{sym}] Nenhum trade.")
+            continue
+        n_t = len(trades)
+        wins = sum(1 for t in trades if t.win)
+        r = sum(t.r_multiple for t in trades)
+        tot_r += r
+        print(f"📊 [{sym:6s}] Trades: {n_t:4d} | Acerto: {(wins/n_t)*100:5.1f}% | Retorno: {r:+6.1f}R | Exp: {r/n_t:+.3f}R")
+    print(f"\n🏆 Total Geral: {tot_r:+.1f}R\n")
+    return 0
+
+
 _COMMANDS = {
     "fetch": _cmd_fetch,
     "chart": _cmd_chart,
@@ -382,12 +459,13 @@ _COMMANDS = {
     "grid": _cmd_grid,
     "ui": _cmd_ui,
     "live": _cmd_live,
+    "fibo-backtest": _cmd_fibo_backtest,
 }
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    if args.command == "live":
+    if args.command in ("live", "fibo-backtest"):
         cfg = load_config(Path("config/default.yaml"))
     else:
         cfg = load_config(args.config)

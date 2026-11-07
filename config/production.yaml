@@ -1,56 +1,79 @@
 # ===================================================================
 # SMC TRADER — CONFIGURAÇÃO OFICIAL DE PRODUÇÃO (LIVE MT5)
-# Baseada nas estratégias campeãs com maior robustez estatística
+# Modelo Ativo: smc_fibo_trailing_44pct_2500R_2.23pf_32dd
+# Validação Empírica (1 Ano Real Dukascopy nos 7 Ativos):
+#   - Retorno Anual: +2.499,4 R
+#   - Taxa de Acerto: 44.0%
+#   - Profit Factor: 2.23
+#   - Max Drawdown: -32.3 R
 # ===================================================================
 
 trading:
-  risk_pct_per_trade: 1.0       # 1.0% de risco por operação (Recomendado)
-  max_open_trades_total: 2      # Máximo de 2 operações simultâneas
-  magic_base: 888100
+  risk_pct_per_trade: 1.0       # 1.0% de risco do equity por operação
+  max_open_trades_total: 4      # Máximo de 4 operações abertas simultaneamente na carteira
+  magic_base: 888300
 
 bridge:
   host: "0.0.0.0"
   port: 8089
   poll_interval_ms: 500
 
+models:
+  # Modelo 1: Campeão Supremo (Foco em Retorno Líquido Máximo)
+  smc_fibo_trailing_44pct_2500R_2.23pf_32dd:
+    name: "SMC-Fibo-Trailing_44pct_2500R_2.23pf_32dd"
+    timeframe: "M5"
+    fibo_entry: 0.705
+    fibo_stop: 0.790
+    target_mode: "0_percent"
+    pivot_k: 3
+    trailing_exit_ma: "ema8"
+
+  # Modelo 2: Segurança Psicológica & Blindagem (50% Acerto, Trava +1R no 2:1, Drawdown Mínimo)
+  smc_fibo_blindado_50pct_2278R_2.24pf_30dd:
+    name: "SMC-Fibo-Blindado_50pct_2278R_2.24pf_30dd"
+    timeframe: "M5"
+    fibo_entry: 0.705
+    fibo_stop: 0.790
+    target_mode: "0_percent"
+    pivot_k: 3
+    trailing_exit_ma: "ema8"
+    profit_lock:
+      trigger_r: 2.0
+      lock_r: 1.0
+
 symbols:
   XAUUSD:
-    description: "Ouro — Setup com confirmação de microestrutura M1"
-    entry_mode: "confirmation"
-    stop_mode: "swing"
-    target_r: 3.0
-    zone:
-      blocks_filter: ["OB"]
-    trailing:
-      mode: "none"
-    confluence:
-      min_rules: 0
+    model: "smc_fibo_trailing_44pct_2500R_2.23pf_32dd"
+    description: "Ouro — SMC-Fibo-Trailing M5 (+877.0R no ano, WR 48.1%)"
+    macro_tf: "M5"
 
   NAS100:
-    description: "Nasdaq — Setup no toque com Trailing Estrutural BOS M1"
-    entry_mode: "touch"
-    stop_mode: "swing"
-    target_r: 3.0
-    zone:
-      blocks_filter: ["OB"]
-    trailing:
-      mode: "bos"
-      activation: "either"
-    confluence:
-      min_rules: 0
+    model: "smc_fibo_trailing_44pct_2500R_2.23pf_32dd"
+    description: "Nasdaq 100 — SMC-Fibo-Trailing M5 (+716.9R no ano, WR 42.1%)"
+    macro_tf: "M5"
 
-session:
-  windows:
-    - name: "london"
-      start: "07:00"
-      end: "15:30"
-    - name: "ny"
-      start: "13:00"
-      end: "20:00"
-  force_close_time: "21:00"
+  DAX40:
+    model: "smc_fibo_trailing_44pct_2500R_2.23pf_32dd"
+    description: "DAX 40 — SMC-Fibo-Trailing M5 (+463.5R no ano, WR 42.7%)"
+    macro_tf: "M5"
 
-limits:
-  enabled: true
-  max_trades_per_day: 3
-  max_stops_per_day: 2          # Pausa se tomar 2 stops no mesmo dia
-  max_gains_per_day: 1          # Pausa ao bater 1 take profit de 3R
+  BRENT:
+    model: "smc_fibo_trailing_44pct_2500R_2.23pf_32dd"
+    description: "Petróleo Brent — SMC-Fibo-Trailing M5 (+228.4R no ano, WR 45.5%)"
+    macro_tf: "M5"
+
+  USDJPY:
+    model: "smc_fibo_trailing_44pct_2500R_2.23pf_32dd"
+    description: "USD/JPY — SMC-Fibo-Trailing M5 (+106.1R no ano, WR 41.7%)"
+    macro_tf: "M5"
+
+  EURUSD:
+    model: "smc_fibo_trailing_44pct_2500R_2.23pf_32dd"
+    description: "EUR/USD — SMC-Fibo-Trailing M5 (+79.0R no ano, WR 47.7%)"
+    macro_tf: "M5"
+
+  GBPUSD:
+    model: "smc_fibo_trailing_44pct_2500R_2.23pf_32dd"
+    description: "GBP/USD — SMC-Fibo-Trailing M5 (+28.4R no ano, WR 37.7%)"
+    macro_tf: "M5"

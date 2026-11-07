@@ -49,8 +49,8 @@ def test_missing_file_names_symbol_and_path(tmp_path):
 
 def test_unknown_tf_raises(tmp_path):
     save_m1(tmp_path, "EURUSD", _m1("2024-01-02 10:00", 5))
-    with pytest.raises(ValueError, match="M15"):
-        load_candles(tmp_path, "EURUSD", "H4")
+    with pytest.raises(ValueError, match="(?i)timeframe desconhecido"):
+        load_candles(tmp_path, "EURUSD", "INVALID")
 
 
 def test_sources_do_not_mix(tmp_path):

@@ -1,0 +1,41 @@
+# ===================================================================
+# PLAYBOOK OFICIAL — PERFIL AGRESSIVO
+# ===================================================================
+# Nomenclatura Padrão: <nome>_<acerto>_<retorno>_<pf>_<maxdd>
+# Modelo: smc_fibo_agressivo_25pct_2101R_1.89pf_43dd
+# ===================================================================
+
+model:
+  id: "smc_fibo_agressivo_25pct_2101R_1.89pf_43dd"
+  name: "SMC-Fibo-Agressivo_25pct_2101R_1.89pf_43dd"
+  version: "1.0.0"
+  description: "Perfil de Máxima Assimetria (24.6% Acerto, +2.101R Anual, PF 1.89, MaxDD -43R)"
+
+metrics:
+  win_rate_pct: 24.6
+  annual_return_r: 2101.3
+  profit_factor: 1.89
+  max_drawdown_r: 42.8
+
+timeframes:
+  operational: "M5"
+
+fibonacci:
+  entry_level: 0.705
+  stop_level: 0.790
+  origin_level: 1.000
+  target_mode: "0_percent"
+  target_r: 0.0
+  pivot_k: 3
+  max_holding_candles: 60
+  enable_reentry_79: false
+
+risk_management:
+  risk_pct_per_trade: 1.0
+  max_open_trades_total: 4
+  max_trades_per_day: 5
+  max_stops_per_day: 2
+
+session:
+  mode: "24h"
+  force_close_time: "21:30"

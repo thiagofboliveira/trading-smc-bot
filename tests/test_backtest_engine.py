@@ -199,8 +199,8 @@ def test_real_data_backtest_consistency():
     if not real_file.exists():
         pytest.skip("sem data/XAUUSD_M1_dukascopy.parquet")
 
-    start = pd.Timestamp("2026-09-01", tz="UTC")
-    end = pd.Timestamp("2026-09-15", tz="UTC")
+    start = pd.Timestamp("2026-09-15", tz="UTC")
+    end = pd.Timestamp("2026-09-30", tz="UTC")
     c_m1 = load_candles(Path("data"), "XAUUSD", "M1", start, end)
     assert len(c_m1) > 1000
 

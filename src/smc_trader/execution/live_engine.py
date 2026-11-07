@@ -27,6 +27,9 @@ class SymbolRuntimeState:
     symbol: str
     config: BacktestConfig
     magic: int
+    model_name: str = "SMC-DayFlow"
+    macro_tf: str = "M15"
+    require_sweep: bool = False
     blocks_filter: list[str] = field(default_factory=lambda: ["OB"])
     active_zones: list[Zone] = field(default_factory=list)
     zone_states: dict[tuple[pd.Timestamp, pd.Timestamp], dict[str, Any]] = field(default_factory=dict)
@@ -43,6 +46,9 @@ class LiveTradingEngine:
         client: BaseMT5Client,
         symbol_configs: dict[str, BacktestConfig],
         symbol_blocks: dict[str, list[str]] | None = None,
+        symbol_models: dict[str, str] | None = None,
+        symbol_macro_tfs: dict[str, str] | None = None,
+        symbol_sweeps: dict[str, bool] | None = None,
         risk_pct: float = 1.0,
         pivot_k_htf: int = 3,
         notification_callback: Callable[[str], None] | None = None,
@@ -59,11 +65,25 @@ class LiveTradingEngine:
         self.running = False
 
         blocks_map = symbol_blocks or {}
+        models_map = symbol_models or {}
+        tfs_map = symbol_macro_tfs or {}
+        sweeps_map = symbol_sweeps or {}
         magic_base = 888100
         for idx, (sym, cfg) in enumerate(symbol_configs.items(), start=1):
             magic = magic_base + idx
             bf = blocks_map.get(sym, ["OB"])
-            self.runtimes[sym] = SymbolRuntimeState(symbol=sym, config=cfg, magic=magic, blocks_filter=bf)
+            model_name = models_map.get(sym, "SMC-DayFlow")
+            macro_tf = tfs_map.get(sym, "M15")
+            req_sweep = sweeps_map.get(sym, False)
+            self.runtimes[sym] = SymbolRuntimeState(
+                symbol=sym,
+                config=cfg,
+                magic=magic,
+                model_name=model_name,
+                macro_tf=macro_tf,
+                require_sweep=req_sweep,
+                blocks_filter=bf,
+            )
             self.session_mgrs[sym] = SessionManager(cfg.session)
             self.limits_trackers[sym] = DailyLimitsTracker(cfg.limits)
 
@@ -77,8 +97,9 @@ class LiveTradingEngine:
         session_mgr = self.session_mgrs[symbol]
         limits_tracker = self.limits_trackers[symbol]
 
-        # 1. Obtém candles recentes de M1 (pelo menos 350 candles para cálculo de M15 e médias)
-        candles_m1 = self.client.get_candles(symbol, timeframe="M1", count=450)
+        # 1. Obtém candles recentes de M1 (suficientes para cálculo de H1/M15 e médias)
+        candles_count = 2000 if state.macro_tf in ("H1", "H4") else 450
+        candles_m1 = self.client.get_candles(symbol, timeframe="M1", count=candles_count)
         if candles_m1.empty or len(candles_m1) < 50:
             return
 
@@ -139,15 +160,19 @@ class LiveTradingEngine:
         if not (allowed_session and allowed_limits):
             return
 
-        # A. Constrói M15 e analisa zonas institucionais
-        candles_m15 = resample_ohlc(candles_m1, "M15")
-        if len(candles_m15) < 15:
+        # A. Constrói Timeframe Macro do Modelo e analisa zonas institucionais
+        candles_macro = resample_ohlc(candles_m1, state.macro_tf)
+        if len(candles_macro) < 15:
             return
 
         allowed_blocks = state.blocks_filter or ["OB"]
         zcfg = ZoneConfig(blocks_filter=allowed_blocks, breaker_require_imbalance=True)
-        analysis = analyze(candles_m15, pivot_k=self.pivot_k_htf, config=zcfg)
+        analysis = analyze(candles_macro, pivot_k=self.pivot_k_htf, config=zcfg)
         all_zones = analysis.zones + analysis.breakers
+
+        # Se o modelo exigir varredura prévia de liquidez (Wyckoff Spring/UTAD)
+        if state.require_sweep:
+            all_zones = [z for z in all_zones if z.swept_liquidity]
 
         # Atualiza dicionário de estados de zonas
         for z in all_zones:
@@ -253,11 +278,11 @@ class LiveTradingEngine:
             stop_loss=stop_loss,
             take_profit=take_profit,
             magic=state.magic,
-            comment=f"SMC-{zone.kind[:2]}-{entry_mode[:4]}",
+            comment=f"{state.model_name[:12]}",
         )
 
         self.notify(
-            f"🚀 [{symbol}] DISPARANDO ORDEM {zone.direction.upper()}: "
+            f"🚀 [{symbol}] [{state.model_name}] DISPARANDO ORDEM {zone.direction.upper()}: "
             f"Lote: {lot} | Entrada: {entry_price} | SL: {stop_loss} | TP: {take_profit} (R:R 1:{target_r:.0f})"
         )
 

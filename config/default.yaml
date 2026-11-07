@@ -12,6 +12,8 @@ dukascopy:
     US30: "E_D&J-Ind"
     NAS100: "E_NQ-100"
     BRENT: "E_Brent"
+    DAX40: "DEU.IDX/EUR"
+    USDJPY: "USD/JPY"
 structure:
   pivot_k_htf: 3
   pivot_k_ltf: 2

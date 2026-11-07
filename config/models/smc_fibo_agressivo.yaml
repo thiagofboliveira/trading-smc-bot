@@ -1,0 +1,35 @@
+# ===================================================================
+# PLAYBOOK OFICIAL — PERFIL: SMC-Fibo-Agressivo (Retorno Máximo)
+# ===================================================================
+# Foco: Retorno máximo no ano (+2.101R), assimetria extrema (~8.3:1)
+# Nível de Entrada: 70.5% (Sweet Spot) | Stop: 79.0% | Alvo: Topo (0%)
+# ===================================================================
+
+model:
+  id: "smc_fibo_agressivo"
+  name: "SMC-Fibo-Agressivo"
+  version: "1.0.0"
+  description: "Perfil de Máxima Assimetria com Payoff ~8:1 e Retorno Anual de +2.101R"
+
+timeframes:
+  operational: "M5"
+
+fibonacci:
+  entry_level: 0.705
+  stop_level: 0.790
+  origin_level: 1.000
+  target_mode: "0_percent"
+  target_r: 0.0
+  pivot_k: 3
+  max_holding_candles: 60
+  enable_reentry_79: false
+
+risk_management:
+  risk_pct_per_trade: 1.0
+  max_open_trades_total: 4
+  max_trades_per_day: 5
+  max_stops_per_day: 2
+
+session:
+  mode: "24h"
+  force_close_time: "21:30"

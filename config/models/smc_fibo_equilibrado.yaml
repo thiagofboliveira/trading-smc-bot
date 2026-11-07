@@ -1,0 +1,35 @@
+# ===================================================================
+# PLAYBOOK OFICIAL — PERFIL: SMC-Fibo-Equilibrado (Consistência)
+# ===================================================================
+# Foco: Equilíbrio com alta taxa de acerto (35.4% WR, Payoff 3:1, +1.469R)
+# Nível de Entrada: 65.0% | Stop: 79.0% | Alvo: 3.0R Fixo
+# ===================================================================
+
+model:
+  id: "smc_fibo_equilibrado"
+  name: "SMC-Fibo-Equilibrado"
+  version: "1.0.0"
+  description: "Perfil de Alta Consistência com 35.4% de Taxa de Acerto e +1.469R"
+
+timeframes:
+  operational: "M5"
+
+fibonacci:
+  entry_level: 0.650
+  stop_level: 0.790
+  origin_level: 1.000
+  target_mode: "3R"
+  target_r: 3.0
+  pivot_k: 3
+  max_holding_candles: 60
+  enable_reentry_79: false
+
+risk_management:
+  risk_pct_per_trade: 1.0
+  max_open_trades_total: 4
+  max_trades_per_day: 5
+  max_stops_per_day: 2
+
+session:
+  mode: "24h"
+  force_close_time: "21:30"

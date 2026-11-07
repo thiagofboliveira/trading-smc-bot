@@ -74,5 +74,5 @@ def test_unsorted_and_duplicated_input_is_normalized():
 
 def test_unknown_tf_raises():
     m1 = _m1(_range("2024-01-02 10:00", "2024-01-02 10:14"))
-    with pytest.raises(ValueError, match="M15"):
-        resample_ohlc(m1, "H4")
+    with pytest.raises(ValueError, match="Timeframe desconhecido"):
+        resample_ohlc(m1, "INVALID")

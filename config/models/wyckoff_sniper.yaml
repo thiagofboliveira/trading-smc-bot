@@ -1,0 +1,69 @@
+# ===================================================================
+# PLAYBOOK OFICIAL — MODELO 2: Wyckoff-Sniper (H1 / M1)
+# ===================================================================
+# Foco: Entradas cirúrgicas nos extremos de liquidez macro (Spring / UTAD),
+# alta taxa de acerto (>60% a 70%) e drawdown reduzido.
+# Exige captura explícita de liquidez prévia antes do acionamento do bloco.
+# ===================================================================
+
+model:
+  id: "wyckoff_sniper"
+  name: "Wyckoff-Sniper"
+  version: "1.0.0"
+  description: "Modelo Sniper de Reversão Institucional em Extremos de Liquidez Wyckoff"
+
+timeframes:
+  macro: "H1"                   # Contexto Macro: Ranges Wyckoff, Liquidez e Blocos
+  micro: "M1"                   # Gatilho Sniper de Entrada e Rejeição Imediata
+
+structure:
+  pivot_k_macro: 3              # Sensibilidade de pivots no H1
+  pivot_k_micro: 2              # Sensibilidade de pivots no M1
+
+zones:
+  blocks_filter:
+    - "OB"                      # Order Blocks institucionais
+    - "BB"                      # Breaker Blocks formados após mitigação
+  require_discount: true        # Apenas compras em Deep Discount e vendas em High Premium
+  require_imbalance: true       # Exige Fair Value Gap / Imbalance na saída do bloco
+  breaker_require_imbalance: true
+  breaker_max_age: 48           # Validade máxima do breaker em barras H1 (2 dias)
+  require_sweep: true           # REGRA DE OURO: Varredura obrigatória de topo/fundo prévio
+
+execution:
+  entry_mode: "confirmation"    # Confirmação obrigatória
+  micro_trigger: "CHoCH"        # Transição de fluxo institucional no M1
+  stop_mode: "swing"            # Stop no extremo da manipulação (varredura/sweep)
+  target_mode: "fixed_r"
+  target_r: 3.0                 # Risco : Retorno Alvo de 1:3.0
+
+risk_management:
+  risk_pct_per_trade: 1.0       # 1.0% de risco por operação
+  max_open_trades_symbol: 1
+  max_trades_per_day: 2         # Operações mais seletivas
+  max_stops_per_day: 1          # Pausa diária imediata se o extremo falhar
+  max_gains_per_day: 1          # 1 trade no alvo = +3.0R (meta diária batida)
+
+session:
+  windows:
+    - name: "london"
+      start: "07:00"
+      end: "15:30"
+    - name: "ny"
+      start: "13:00"
+      end: "20:00"
+  force_close_time: "21:00"
+
+validated_assets:
+  - symbol: "XAUUSD"
+    notes: "Taxa de acerto 75.0%, Expectativa +1.68R no estudo H1/M1"
+  - symbol: "DAX40"
+    notes: "Taxa de acerto 66.7%, varreduras perfeitas na abertura de Frankfurt"
+  - symbol: "NAS100"
+    notes: "Taxa de acerto 60.0%, captura de liquidez na abertura de NY"
+  - symbol: "USDJPY"
+    notes: "Taxa de acerto 100.0% em setups de sweep no H1"
+  - symbol: "GBPUSD"
+    notes: "Taxa de acerto 66.7%, sweeps de liquidez asiática em Londres"
+  - symbol: "EURUSD"
+    notes: "Excelente relação custo/benefício com baixo slippage"

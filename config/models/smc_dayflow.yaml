@@ -1,0 +1,75 @@
+# ===================================================================
+# PLAYBOOK OFICIAL — MODELO 1: SMC-DayFlow (M15 / M1)
+# ===================================================================
+# Foco: Consistência diária, alto volume de trades e captura de expansão.
+# Baseado na confluência institucional de Order Blocks + Breaker Blocks
+# em M15 com gatilho de micro-CHoCH em M1.
+# ===================================================================
+
+model:
+  id: "smc_dayflow"
+  name: "SMC-DayFlow"
+  version: "1.0.0"
+  description: "Modelo Intraday de Continuação e Reação a Zonas Institucionais"
+
+timeframes:
+  macro: "M15"                  # Contexto, Estrutura Institucional e Zonas
+  micro: "M1"                   # Gatilho de Entrada e Refinamento de Stop
+
+structure:
+  pivot_k_macro: 3              # Sensibilidade de pivots no M15
+  pivot_k_micro: 2              # Sensibilidade de pivots no M1
+
+zones:
+  blocks_filter:
+    - "OB"                      # Order Blocks
+    - "BB"                      # Breaker Blocks
+  require_discount: true        # Apenas compras em desconto e vendas em premium
+  require_imbalance: false
+  breaker_require_imbalance: true
+  breaker_max_age: 96           # Validade máxima do breaker em barras M15
+  require_sweep: false          # Não restringe apenas a sweeps extremos (opera fluxo)
+
+execution:
+  entry_mode: "confirmation"    # Aguarda confirmação no micro (não entra a cego)
+  micro_trigger: "CHoCH"        # Mudança de caráter no M1
+  stop_mode: "swing"            # Stop posicionado no swing recente protegido
+  target_mode: "fixed_r"
+  target_r: 3.0                 # Risco : Retorno Alvo de 1:3.0
+
+risk_management:
+  risk_pct_per_trade: 1.0       # 1.0% de risco do patrimônio líquido por operação
+  max_open_trades_symbol: 1     # Máximo 1 trade aberto por ativo simultaneamente
+  max_trades_per_day: 3
+  max_stops_per_day: 2          # Circuit breaker diário
+  max_gains_per_day: 1          # Meta diária batida (1x3 = +3R)
+
+session:
+  windows:
+    - name: "london"
+      start: "07:00"
+      end: "15:30"
+    - name: "ny"
+      start: "13:00"
+      end: "20:00"
+  force_close_time: "21:00"     # Encerra qualquer operação antes do swap/roll
+
+validated_assets:
+  - symbol: "XAUUSD"
+    blocks_filter: ["OB", "BB"]
+    notes: "Taxa de acerto 50.0%, Expectativa +0.35R, PF 1.70"
+  - symbol: "BRENT"
+    blocks_filter: ["OB"] # REGRA ESTRITA: Breakers desativados no Brent (evita falsos retestes)
+    notes: "Taxa de acerto 33.3% a 36.4%, Expectativa +0.21R, PF 1.28 com OB exclusivo"
+  - symbol: "NAS100"
+    blocks_filter: ["OB", "BB"]
+    notes: "Excelente fluidez nas sessões de Londres e NY"
+  - symbol: "DAX40"
+    blocks_filter: ["OB", "BB"]
+    notes: "Alta correlação na abertura europeia das 07:00 às 11:00"
+  - symbol: "EURUSD"
+    blocks_filter: ["OB", "BB"]
+    notes: "Alta precisão com spread ultra reduzido"
+  - symbol: "GBPUSD"
+    blocks_filter: ["OB", "BB"]
+    notes: "Captura de expansão volátil na sessão de Londres"

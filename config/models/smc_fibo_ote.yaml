@@ -1,0 +1,55 @@
+# ===================================================================
+# PLAYBOOK OFICIAL — MODELO 3: SMC-Fibo-OTE (M5)
+# ===================================================================
+# Foco: Alta assimetria matemática de Risco:Retorno (1:3.0 a 1:3.6).
+# Validação Empírica (1 Ano Real Dukascopy): +1.208R (OOS +740R).
+# Mecânica: Perna impulsiva com BOS em M5 -> Entrada na retração 61.8% ->
+#           Stop protegido na retração de 79.0% -> Alvo em 3.0R.
+# ===================================================================
+
+model:
+  id: "smc_fibo_ote"
+  name: "SMC-Fibo-OTE"
+  version: "1.0.0"
+  description: "Modelo de Retração Ótima (Optimal Trade Entry) em M5 com Risco:Retorno 1:3"
+
+timeframes:
+  operational: "M5"             # Timeframe dos swings, retrações e execução
+
+fibonacci:
+  entry_level: 0.618            # Entrada a mercado/limite no toque de 61.8%
+  stop_level: 0.790             # Stop loss posicionado no nível de 79.0%
+  origin_level: 1.000           # Origem da pernada (100%)
+  target_mode: "3R"             # Opções: "3R" (fixo 1:3), "0_percent" (topo prévio), "proj_618"
+  target_r: 3.0
+  pivot_k: 3                    # Sensibilidade dos pivôs fractais (janela de 3 candles)
+  max_holding_candles: 60       # Validade máxima da perna sem ativação (5 horas em M5)
+  enable_reentry_79: false      # Desativado por padrão (S1 sozinho gerou +1.208R)
+
+risk_management:
+  risk_pct_per_trade: 1.0       # 1.0% de risco do equity por trade
+  max_open_trades_symbol: 1     # Máximo 1 trade aberto por ativo
+  max_trades_per_day: 4
+  max_stops_per_day: 2          # Circuit breaker diário
+
+session:
+  windows:
+    - name: "london"
+      start: "07:00"
+      end: "15:30"
+    - name: "ny"
+      start: "13:00"
+      end: "20:00"
+  force_close_time: "21:30"
+
+validated_assets:
+  - symbol: "NAS100"
+    performance: "+371.0R (WR 35.2%, Payoff 3:1)"
+  - symbol: "XAUUSD"
+    performance: "+356.0R (WR 33.8%, Payoff 3:1)"
+  - symbol: "DAX40"
+    performance: "+260.0R (WR 32.7%, Payoff 3:1)"
+  - symbol: "BRENT"
+    performance: "+132.0R (WR 29.7%, Payoff 3:1)"
+  - symbol: "EURUSD"
+    performance: "+67.0R (WR 29.1%, Payoff 3:1)"

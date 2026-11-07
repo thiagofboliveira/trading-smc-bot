@@ -11,6 +11,8 @@ dependencies = [
     "pyyaml",
     "plotly",
     "dukascopy-python",
+    "openpyxl>=3.1.5",
+    "matplotlib>=3.11.2",
 ]
 
 [project.scripts]

@@ -1,0 +1,50 @@
+# ===================================================================
+# PLAYBOOK OFICIAL — NOVO MODELO CAMPEÃO ABSOLUTO DO PROJETO
+# ===================================================================
+# Nomenclatura Padrão: <nome>_<acerto>_<retorno>_<pf>_<maxdd>
+# Modelo: smc_fibo_trailing_44pct_2500R_2.23pf_32dd
+# ===================================================================
+# Inovação: SMC Fibo OTE com Saída Dinâmica por Trailing Stop na MME 8
+# Retorno Anual: +2.499,4 R | Taxa de Acerto: 44.0% | Profit Factor: 2.23
+# Max Drawdown: apenas -32.3 R (Relação Retorno/Drawdown de 77 : 1!)
+# ===================================================================
+
+model:
+  id: "smc_fibo_trailing_44pct_2500R_2.23pf_32dd"
+  name: "SMC-Fibo-Trailing_44pct_2500R_2.23pf_32dd"
+  version: "1.0.0"
+  description: "Modelo Campeão com Condução de Trailing Stop por MME 8 (44% Acerto, +2.500R, PF 2.23)"
+
+metrics:
+  win_rate_pct: 44.0
+  annual_return_r: 2499.4
+  profit_factor: 2.23
+  max_drawdown_r: 32.3
+  walk_forward_efficiency: 1.32
+
+timeframes:
+  operational: "M5"
+
+fibonacci:
+  entry_level: 0.705            # Sweet Spot ICT
+  stop_level: 0.790             # Stop curto no 79.0%
+  origin_level: 1.000
+  target_mode: "0_percent"      # Alvo estrutural máximo no topo/fundo
+  pivot_k: 3
+  max_holding_candles: 60
+  enable_reentry_79: false
+
+trailing:
+  mode: "moving_average"
+  ma_type: "ema8"               # MME 8 (Média Móvel Exponencial de 8 períodos)
+  exit_on_close_cross: true     # Encerra a posição no fechamento de vela contrária à MME 8
+
+risk_management:
+  risk_pct_per_trade: 1.0
+  max_open_trades_total: 4
+  max_trades_per_day: 5
+  max_stops_per_day: 2
+
+session:
+  mode: "24h"
+  force_close_time: "21:30"

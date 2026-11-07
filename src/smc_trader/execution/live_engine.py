@@ -1,8 +1,10 @@
 """Motor de Execução Autônoma em Tempo Real (Live Trading Engine) para MetaTrader 5."""
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
+
 import pandas as pd
 
 from smc_trader.analysis import analyze
@@ -265,7 +267,7 @@ class LiveTradingEngine:
             # 2. Confirmação por Micro-CHoCH M1
             elif z_info["state"] == "ARMED":
                 needed_dir = "up" if long else "down"
-                choch = m1_chochs.get((needed_dir, last_time))
+                choch = m1_chochs.get((needed_dir, last_closed_time))
                 if choch is not None and (zone.low <= c_close <= zone.high):
                     z_info["state"] = "CONSUMED"
                     m1_swing = choch.range_low if long else choch.range_high

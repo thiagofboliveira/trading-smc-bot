@@ -112,51 +112,33 @@ Quando o robô estiver conectado à ponte MT5:
 
 ---
 
-## 📐 Modelos Fibonacci M5 com Confirmação de Fechamento na `EMA 80` (Candidatos Preliminares)
+## 📐 Modelo Fibonacci M5 com Confirmação de Fechamento na `EMA 80` (Não Validado Fora da Amostra)
 
-Estes dois perfis operam a retração de Fibonacci no gráfico de **M5** sem ordens limite cegas no toque: o motor aguarda o **fechamento da barra `i`** que toca a `EMA 80` dentro da zona `[50% a 79%]` e só executa a entrada na **abertura da barra seguinte (`open[i + 1]`)**.
+O perfil `smc_fibo_rejeicao_ema80_pavio` opera a retração de Fibonacci no gráfico de **M5** aguardando o **fechamento da barra `i`** que toca a `EMA 80` dentro da zona `[50% a 79%]` com pavio $\ge 50\%$ do range, executando a entrada a mercado na **abertura da barra seguinte (`open[i + 1]`)**. A variante sem filtro de pavio (`smc_fibo_rejeicao_ema80_zona`) foi descartada por não apresentar vantagem no motor (`+2,0R` em 2026 e `-57,3R` em 2 anos).
 
-| Característica | Perfil Seletivo: `smc_fibo_rejeicao_ema80_pavio` | Perfil Frequente: `smc_fibo_rejeicao_ema80_zona` |
-| :--- | :--- | :--- |
-| **Arquivo YAML** | `config/models/smc_fibo_rejeicao_ema80_pavio.yaml` | `config/models/smc_fibo_rejeicao_ema80_zona.yaml` |
-| **Timeframe Operacional** | `M5` (`pivot_k: 2`, sessão `07:00–18:00` UTC) | `M5` (`pivot_k: 2`, sessão `07:00–18:00` UTC) |
-| **Zona de Retração** | `fibo_entry: 0.500` até `fibo_rejection_max: 0.790` | `fibo_entry: 0.500` até `fibo_rejection_max: 0.790` |
-| **Confluência e Regime** | Toque na `EMA 80` (`confluence_ma: ema80`) + fechamento a favor da `EMA 80` (`trend_ma: ema80`) | Toque na `EMA 80` (`confluence_ma: ema80`) + fechamento a favor da `EMA 80` (`trend_ma: ema80`) |
-| **Filtro de Pavio** | `rejection_min_wick_ratio: 0.50` ($\ge 50\%$ do range da barra `i`) | `rejection_min_wick_ratio: 0.0` (sem exigência de pavio mínimo) |
-| **Execução e Condução Padrão** | Entrada em `open[i + 1]`, Stop `0.886`, Trava `+1R` em `1,618R` + BOS a BOS (`bos_swing_trailing: true`) até **`4,0R`** | Entrada em `open[i + 1]`, Stop `0.886`, Condução BOS a BOS (`bos_swing_trailing: true`) até **`5,0R`** |
+| Característica | `smc_fibo_rejeicao_ema80_pavio` |
+| :--- | :--- |
+| **Arquivo YAML** | `config/models/smc_fibo_rejeicao_ema80_pavio.yaml` |
+| **Timeframe Operacional** | `M5` (`pivot_k: 2`, sessão `07:00–18:00` UTC) |
+| **Zona de Retração** | `fibo_entry: 0.500` até `fibo_rejection_max: 0.790` (stop em `0.886`) |
+| **Confluência, Regime e Pavio** | Toque na `EMA 80` + fechamento a favor da `EMA 80` + pavio $\ge 50\%$ (`rejection_min_wick_ratio: 0.50`) |
+| **Execução e Saída** | Entrada em `open[i + 1]`, Trava `+1,0R` ao tocar `1,618R`, Alvo `4,0R` (`bos_swing_trailing: false`) |
 
-### Protocolo de Validação Anti-Viés (`AGENTS.md` — Seção 2)
+### Teste de 2 Anos (`2024-10-16` a `2026-10-16`, Dukascopy M1 $\to$ M5, com spreads)
 
-* **Fonte e Período:** `backtest` em dados M1 Dukascopy reamostrados para M5 (`01/03/2026` a `16/10/2026`, `0,63` ano), aplicando os spreads de `config/default.yaml` (dentro da amostra; escolhidos após avaliar `72` variantes de entrada, stop e saída).
-* **Revisão de Causalidade:** toda decisão usa exclusivamente dados da barra `i` **após o seu fechamento** (`closes[i]`, `highs[i]`, `lows[i]`, `ema80[i]`), com preenchimento na abertura da barra `i + 1` (`opens[i + 1] + spread` na compra; `opens[i + 1]` na venda) e verificação conservadora de stop antes de alvo na mesma barra.
-* **Rodada sem custo, Controle Aleatório e Separação Temporal (1ª metade vs. 2ª metade):**
-  * **Com pavio $\ge 50\%$:** sem custo = `+0,273R/trade`; controle aleatório = `+0,091R/trade`; 1ª metade (IS) = `+0,153R/trade`, 2ª metade (OOS) = `+0,280R/trade`.
-  * **Sem filtro de pavio:** sem custo = `+0,145R/trade`; controle aleatório = `+0,120R/trade`; 1ª metade (IS) = `+0,108R/trade`, 2ª metade (OOS) = `+0,039R/trade`.
+Os parâmetros foram escolhidos nos `7,5` meses de `2026-03` a `2026-10` (após testar `72` variantes). Quando submetidos ao teste fora da amostra nos `16,5` meses anteriores (`2024-10-16` a `2026-03-01`), o desempenho agregado nos 6 ativos foi **negativo**:
 
-### Desempenho por Ativo no Motor (`FiboOTEStrategy`, `01/03/2026` a `16/10/2026`, com custos)
+| Ativo | Dentro da Amostra (`2026-03` a `2026-10`, 7,5m) | Fora da Amostra (`2024-10` a `2026-02`, 16,5m inéditos) | Consolidado 2 Anos (`2024-10` a `2026-10`, 24m) | Expectativa 2 Anos (EP) |
+| :--- | :---: | :---: | :---: | :---: |
+| **BRENT** | `+16,2R` (46 tr, WR 43,5%) | `+8,0R` (33 tr, WR 48,5%) | `+24,2R` (79 tr, WR 45,6%) | `+0,306R ± 0,196R` |
+| **NAS100** | `+11,0R` (28 tr, WR 53,6%) | `+2,3R` (61 tr, WR 39,3%) | `+13,3R` (89 tr, WR 43,8%) | `+0,149R ± 0,164R` |
+| **XAUUSD** | `+12,0R` (27 tr, WR 55,6%) | `-9,0R` (58 tr, WR 29,3%) | `+3,0R` (85 tr, WR 37,6%) | `+0,036R ± 0,168R` |
+| **EURUSD** | `+3,0R` (14 tr, WR 50,0%) | `-4,0R` (44 tr, WR 31,8%) | `-1,0R` (58 tr, WR 36,2%) | `-0,017R ± 0,201R` |
+| **US30** | `+4,7R` (33 tr, WR 39,4%) | `-9,6R` (80 tr, WR 35,0%) | `-4,9R` (113 tr, WR 36,3%) | `-0,043R ± 0,140R` |
+| **GBPUSD** | `+2,0R` (12 tr, WR 33,3%) | `-22,0R` (59 tr, WR 23,7%) | `-20,0R` (71 tr, WR 25,4%) | `-0,282R ± 0,168R` |
+| **TOTAL (6 Ativos)** | **`+48,8R`** (160 tr, WR 46,2%, `+0,305R ± 0,134R`) | **`-34,3R`** (335 tr, WR 33,7%, `-0,102R ± 0,079R`) | **`+14,6R`** (495 tr, WR 37,8%, MaxDD 49,6R) | **`+0,029R ± 0,070R`** |
 
-| Ativo | `smc_fibo_rejeicao_ema80_pavio` (Pavio $\ge 50\%$) | `smc_fibo_rejeicao_ema80_zona` (Sem filtro de pavio) |
-| :--- | :--- | :--- |
-| **XAUUSD** | `27` trades \| WR `40,7%` \| **`+6,0R`** (`+0,222R/tr`) | `84` trades \| WR `36,9%` \| **`+8,6R`** (`+0,102R/tr`) |
-| **NAS100** | `29` trades \| WR `48,3%` \| **`+13,0R`** (`+0,448R/tr`) | `92` trades \| WR `35,9%` \| **`+9,5R`** (`+0,104R/tr`) |
-| **US30** | `32` trades \| WR `31,2%` \| **`-2,0R`** (`-0,062R/tr`) | `100` trades \| WR `37,0%` \| **`+10,4R`** (`+0,104R/tr`) |
-| **BRENT** | `46` trades \| WR `39,1%` \| **`+7,7R`** (`+0,168R/tr`) | `103` trades \| WR `30,1%` \| **`-10,3R`** (`-0,100R/tr`) |
-| **EURUSD** | `14` trades \| WR `50,0%` \| **`+7,0R`** (`+0,500R/tr`) | `37` trades \| WR `43,2%` \| **`+11,0R`** (`+0,297R/tr`) |
-| **GBPUSD** | `13` trades \| WR `30,8%` \| **`-1,0R`** (`-0,077R/tr`) | `41` trades \| WR `39,0%` \| **`+7,0R`** (`+0,171R/tr`) |
-| **TOTAL (7,5 meses)** | **`161` trades \| WR `39,8%` \| `+30,7R` (`+0,191R ± 0,116R/tr`) \| MaxDD `9,0R`** | **`414` trades \| WR `36,5%` \| `+40,3R` (`+0,097R ± 0,071R/tr`) \| MaxDD `21,8R`** |
+*(Com `bos_swing_trailing: true`, o período dentro da amostra deu `+33,8R` e o fora da amostra deu `-12,1R`, totalizando `+21,8R` nos 2 anos, `+0,044R ± 0,070R/trade`, MaxDD `26,7R` — ainda estatisticamente indistinguível de zero no portfólio completo).*
 
-### Condução Estrutural de BOS em BOS (`bos_swing_trailing: true`) e Alvos Estendidos (`3R` a `6R`)
-
-O motor suporta conduzir o stop estruturalmente de BOS em BOS (`bos_swing_trailing: true`), movendo o stop para o último fundo/topo fractal confirmado (`pivot_k: 2`, respeitando **F-01** e **F-03**) sempre que o preço fecha rompendo a estrutura a favor da operação:
-
-| Variante de Condução (`backtest` M1 $\to$ M5, `01/03/2026` a `16/10/2026`, com spreads) | Trades ($N$) | Acerto (WR) | Trades $\ge 4R$ / $\ge 5R$ | Saldo ($R$) | Expectativa ($R$/tr ± EP) | 1ª / 2ª Metade (IS / OOS) | Ativos + |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Perfil Seletivo (`Pavio >= 50%`) — Fixo `1,618R`** | `161` | `46,0%` | `0` / `0` | `+32,5R` | `+0,202R` (`±0,103`) | `+0,119R` / `+0,328R` | `5/6` |
-| **Perfil Seletivo (`Pavio >= 50%`) — Trava `+1R` em `1,618R` + BOS $\to$ Swing (Alvo `4R`)** | `159` | `45,9%` | `14` / `0` | **`+38,4R`** | **`+0,242R` (`±0,122`)** | `+0,183R` / `+0,335R` | `6/6` |
-| **Perfil Seletivo (`Pavio >= 50%`) — Trava `+1R` em `1,618R` + BOS $\to$ Swing (Alvo `5R`)** | `159` | `45,9%` | `8` / `8` | `+36,8R` | `+0,231R` (`±0,125`) | `+0,162R` / `+0,339R` | `6/6` |
-| **Perfil Frequente (`Sem filtro pavio`) — Todo BOS $\to$ Fundo do BOS (Alvo `4R`)** | `414` | `37,7%` | `45` / `1` | **`+62,3R`** | **`+0,151R` (`±0,083`)** | `+0,207R` / `+0,085R` | `5/6` |
-| **Perfil Frequente (`Sem filtro pavio`) — Todo BOS $\to$ Fundo do BOS (Alvo `5R`)** | `413` | `37,5%` | `32` / `30` | **`+66,6R`** | **`+0,161R` (`±0,087`)** | `+0,192R` / `+0,129R` | `4/6` |
-| **Perfil Frequente (`Sem filtro pavio`) — Todo BOS $\to$ Fundo do BOS (Alvo `6R`)** | `413` | `37,5%` | `26` / `22` | **`+71,0R`** | **`+0,172R` (`±0,091`)** | `+0,186R` / `+0,161R` | `4/6` |
-| **Perfil Frequente (`Sem filtro pavio`) — Todo BOS $\to$ Fundo do BOS (Sem alvo fixo)** | `412` | `37,6%` | `20` / `12` | `+48,1R` | `+0,117R` (`±0,086`) | `+0,124R` / `+0,113R` | `4/6` |
 
 

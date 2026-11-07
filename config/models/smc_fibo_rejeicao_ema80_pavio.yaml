@@ -6,19 +6,20 @@
 # Conceito: Zona de retração [50% a 79%] com toque na EMA 80 no M5,
 # exigindo fechamento da barra de gatilho a favor da EMA 80 e acima/abaixo
 # de 79%, com pavio de rejeição >= 50% do range da barra.
-# Execução e Condução: Entrada causal na abertura da barra seguinte (i + 1),
-# stop inicial em 88,6% da perna, trava de +1,0R ao atingir +1,618R e
-# condução estrutural BOS a BOS (bos_swing_trailing) até o alvo teto de 4,0R.
-# Status: Candidato preliminar para validação em paper trading (amostra:
-# backtest Dukascopy M1 -> M5, 01/03/2026 a 16/10/2026, com spreads de
-# config/default.yaml; 159 trades, WR 45,9%, +38,4R, +0,242R ± 0,122R/trade).
+# Execução e Condução: Entrada causal a mercado na abertura da barra seguinte (i + 1),
+# stop inicial em 88,6% da perna, trava de +1,0R ao atingir +1,618R e alvo em 4,0R.
+# Status: Resultado preliminar, NÃO validado fora da amostra (em backtest Dukascopy
+# M1 -> M5 com spreads de config/default.yaml: dentro da amostra 01/03/2026 a 16/10/2026
+# deu +48,8R em 160 trades, WR 46,2%, +0,305R ± 0,134R/tr; porém fora da amostra
+# 16/10/2024 a 01/03/2026 deu -34,3R em 335 trades, WR 33,7%, -0,102R ± 0,079R/tr;
+# consolidado 2 anos: +14,6R em 495 trades, +0,029R ± 0,070R/tr).
 # ===================================================================
 
 model:
   id: "smc_fibo_rejeicao_ema80_pavio"
   name: "SMC-Fibo-Rejeicao-EMA80-Pavio"
-  version: "1.1.0"
-  description: "Zona Fibo [50%-79%] com toque/rejeição na EMA 80 (pavio >= 50%), trava +1R em 1.618R e condução BOS a BOS até 4.0R"
+  version: "1.2.0"
+  description: "Zona Fibo [50%-79%] com toque/rejeição na EMA 80 (pavio >= 50%), trava +1R em 1.618R e alvo 4.0R (não validado no OOS 2024-2026)"
 
 timeframes:
   operational: "M5"
@@ -42,8 +43,8 @@ filters:
   confluence_ma: "ema80"
 
 trailing:
-  mode: "bos_swing"
-  bos_swing_trailing: true
+  mode: "none"
+  bos_swing_trailing: false
   profit_lock:
     trigger_r: 1.618
     lock_r: 1.0

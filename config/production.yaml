@@ -1,8 +1,8 @@
 # ===================================================================
 # SMC TRADER — CONFIGURAÇÃO OFICIAL DE PRODUÇÃO (LIVE / PAPER MT5)
 # Validado via Pydantic com restrição estrita extra='forbid'
-# Modelo Oficial: SMC-Fibo-Regime-80 (BOS + Fibo 61.8% + Regime MME80)
-# Resultado Auditado Global: +106.9R | PF 1.19 | Win Rate 42.9%
+# Modelo Oficial: SMC-Fibo-Regime-80 (BOS + Fibo 61.8% + Stop 88.6% + Regime MME80)
+# Resultado Auditado Global: +150.3R | PF 1.23 | Win Rate 35.4% | MaxDD -18.2R
 # ===================================================================
 
 trading:
@@ -29,7 +29,7 @@ models:
     strategy: "fibo_ote"
     timeframe: "M5"
     fibo_entry: 0.618
-    fibo_stop: 1.000
+    fibo_stop: 0.886
     target_mode: "0_percent"
     target_r: 3.0
     pivot_k: 2
@@ -46,21 +46,21 @@ models:
 symbols:
   XAUUSD:
     model: "smc_fibo_regime_80"
-    description: "Ouro — SMC-Fibo-Regime-80 M5 (+14.2R auditado, PF 1.12)"
+    description: "Ouro — SMC-Fibo-Regime-80 M5 (+25.0R auditado, PF 1.25)"
     macro_tf: "M5"
     order_type: "limit"
     enabled: false
 
   NAS100:
     model: "smc_fibo_regime_80"
-    description: "Nasdaq 100 — SMC-Fibo-Regime-80 M5 (+45.9R auditado, PF 1.18)"
+    description: "Nasdaq 100 — SMC-Fibo-Regime-80 M5 (+42.9R auditado, PF 1.28)"
     macro_tf: "M5"
     order_type: "limit"
     enabled: false
 
   US30:
     model: "smc_fibo_regime_80"
-    description: "Dow Jones 30 — SMC-Fibo-Regime-80 M5 (+45.9R auditado, PF 1.18)"
+    description: "Dow Jones 30 — SMC-Fibo-Regime-80 M5 (+14.9R auditado, PF 1.15)"
     macro_tf: "M5"
     order_type: "limit"
     enabled: false
@@ -74,7 +74,7 @@ symbols:
 
   BRENT:
     model: "smc_fibo_regime_80"
-    description: "Petróleo Brent — SMC-Fibo-Regime-80 M5"
+    description: "Petróleo Brent — SMC-Fibo-Regime-80 M5 (+50.1R auditado, PF 1.34)"
     macro_tf: "M5"
     order_type: "limit"
     enabled: false
@@ -88,14 +88,14 @@ symbols:
 
   EURUSD:
     model: "smc_fibo_regime_80"
-    description: "EUR/USD — SMC-Fibo-Regime-80 M5"
+    description: "EUR/USD — SMC-Fibo-Regime-80 M5 (+0.6R auditado)"
     macro_tf: "M5"
     order_type: "limit"
     enabled: false
 
   GBPUSD:
     model: "smc_fibo_regime_80"
-    description: "GBP/USD — SMC-Fibo-Regime-80 M5"
+    description: "GBP/USD — SMC-Fibo-Regime-80 M5 (+16.8R auditado, PF 1.29)"
     macro_tf: "M5"
     order_type: "limit"
     enabled: false

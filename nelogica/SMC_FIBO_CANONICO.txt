@@ -10,7 +10,7 @@
 
 Parametro
   FiboEntrada(0.618);              // Nível Sweet Spot Institucional (61.8%)
-  FiboStop(1.000);                 // Nível de Invalidação Estrutural (100% da perna)
+  FiboStop(0.886);                 // Nível Harmônico Institucional (88.6%)
   PeriodoMMETendencia(80);         // MME de Regime de Tendência Intraday (M5)
   UsarFiltroTendencia(Verdadeiro); // Long só acima da MME 80, Short só abaixo
   PeriodoMME(8);                   // MME de Condução de Saída

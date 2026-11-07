@@ -1,22 +1,22 @@
 // ==============================================================================
-// PLAYBOOK OFICIAL SMC-FIBO-TRAILING (NTSL / PROFIT / RICO TRADER)
+// PLAYBOOK OFICIAL SMC-FIBO-TRAILING UNIVERSAL (NTSL / PROFIT / RICO TRADER)
 // ==============================================================================
 // Estratégia: SMC Fibonacci OTE (Optimal Trade Entry) + Condução Livre MME 8
-// Modelo: smc_fibo_trailing_44pct_2500R_2.23pf_32dd (Campeã Suprema)
-// Retorno Validado: +8.037 R (2 Anos) | +2.500 R (1 Ano) | Profit Factor: 2.70
-// Plataforma: Nelogica ProfitChart / Rico Trader / Clear Trader / XP Trader
-// Timeframes Recomendados B3: 2 Minutos (M2) ou 5 Minutos (M5)
-// Ativos Recomendados: Mini-Índice (WIN) e Mini-Dólar (WDO)
+// Versão: 2.0 UNIVERSAL (Auto-Adaptação Dinâmica de Volatilidade para QUALQUER ATIVO)
+// Compatível com: Mini-Índice (WIN), Mini-Dólar (WDO), Ações (PETR4, VALE3), BDRs, Cripto
 // ==============================================================================
 
 Parametro
   FiboEntrada(0.705);       // Nível Sweet Spot Institucional (70.5%)
   FiboStop(0.790);          // Nível de Invalidação Curto (79.0%)
   PeriodoMME(8);            // Média Móvel Exponencial para Condução do Trade
-  MinPernadaPontos(150.0);   // Amplitude mínima do BOS (WIN: 150 pts | WDO: 5 pts)
+  MultVolatilidade(1.5);    // Multiplicador do Range Médio (Auto-escala para qualquer ativo)
+  PeriodoVolatilidade(20);  // Barras para calcular o tamanho médio do candle
 
 Var
   mme8              : Real;
+  rangeMedio        : Real;
+  filtroMinimo      : Real;
   topoFractal       : Booleano;
   fundoFractal      : Booleano;
   ultimoTopo        : Real;
@@ -40,7 +40,12 @@ Inicio
   // 1. Cálculo da MME de Condução
   mme8 := MediaExp(PeriodoMME, Fechamento);
 
-  // 2. Detecção de Swings Fractais (Atraso de 2 barras para confirmação sem repintura)
+  // 2. Cálculo Universal de Volatilidade (Auto-Escala Dinâmica)
+  // Em vez de pontos fixos que só funcionam no WIN, calcula o tamanho médio dos candles do ativo
+  rangeMedio   := Media(PeriodoVolatilidade, Maxima - Minima);
+  filtroMinimo := rangeMedio * MultVolatilidade;
+
+  // 3. Detecção de Swings Fractais (Atraso de 2 barras para confirmação sem repintura)
   topoFractal := (Maxima[2] > Maxima[1]) e (Maxima[2] > Maxima[0]) e 
                  (Maxima[2] > Maxima[3]) e (Maxima[2] > Maxima[4]);
                  
@@ -53,14 +58,14 @@ Inicio
   Se fundoFractal Entao
     ultimoFundo := Minima[2];
 
-  // 3. Detecção de Quebra de Estrutura (BOS - Break of Structure)
+  // 4. Detecção de Quebra de Estrutura (BOS - Break of Structure)
   Se (Not HasPosition) e (emOperacao = 0) Entao
   Inicio
-    // BOS de Alta: Fechamento rompe o último topo institucional
+    // BOS de Alta: Fechamento rompe o último topo institucional com perna relevante
     Se (ultimoTopo > 0) e (ultimoFundo > 0) e (Fechamento > ultimoTopo) e (Fechamento[1] <= ultimoTopo) Entao
     Inicio
       diffPernada := Maxima - ultimoFundo;
-      Se diffPernada >= MinPernadaPontos Entao
+      Se diffPernada >= filtroMinimo Entao
       Inicio
         pernadaAltaAtiva  := Verdadeiro;
         pernadaBaixaAtiva := Falso;
@@ -69,11 +74,11 @@ Inicio
       Fim;
     Fim;
 
-    // BOS de Baixa: Fechamento perde o último fundo institucional
+    // BOS de Baixa: Fechamento perde o último fundo institucional com perna relevante
     Se (ultimoTopo > 0) e (ultimoFundo > 0) e (Fechamento < ultimoFundo) e (Fechamento[1] >= ultimoFundo) Entao
     Inicio
       diffPernada := ultimoTopo - Minima;
-      Se diffPernada >= MinPernadaPontos Entao
+      Se diffPernada >= filtroMinimo Entao
       Inicio
         pernadaBaixaAtiva := Verdadeiro;
         pernadaAltaAtiva  := Falso;
@@ -90,7 +95,7 @@ Inicio
   Se pernadaBaixaAtiva e (Minima < refFundo) Entao
     refFundo := Minima;
 
-  // 4. Execução de Entrada no Sweet Spot 70.5% (Se não estiver posicionado)
+  // 5. Execução de Entrada no Sweet Spot 70.5% (Se não estiver posicionado)
   Se (Not HasPosition) e (emOperacao = 0) Entao
   Inicio
     // Entrada Comprada
@@ -132,7 +137,7 @@ Inicio
     Fim;
   Fim;
 
-  // 5. Gestão Ativa da Posição (Condução 100% Livre pela MME 8 até Inversão ou Alvo)
+  // 6. Gestão Ativa da Posição (Condução 100% Livre pela MME 8 até Inversão ou Alvo)
   Se HasPosition ou (emOperacao <> 0) Entao
   Inicio
     // -------------------------------------------------------------

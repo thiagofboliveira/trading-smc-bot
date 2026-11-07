@@ -73,7 +73,10 @@ def _build_parser() -> argparse.ArgumentParser:
     imp.add_argument("csv", type=Path)
     imp.add_argument("--symbol", required=True)
     imp.add_argument(
-        "--format", choices=["mt5", "profit"], default="mt5", help="origem do arquivo"
+        "--format",
+        choices=["mt5", "profit", "generic"],
+        default="mt5",
+        help="origem do arquivo (mt5, profit ou generic CSV)",
     )
     imp.add_argument(
         "--bar-label",
@@ -327,6 +330,9 @@ def _cmd_import_csv(args: argparse.Namespace, cfg: Config) -> int:
     if args.format == "profit":
         df = import_profit_csv(args.csv, bar_label=args.bar_label)
         source = "profit"
+    elif args.format == "generic":
+        df = import_profit_csv(args.csv, tz="UTC", bar_label=args.bar_label)
+        source = "generic"
     else:
         df = import_mt5_csv(args.csv, cfg.data)
         source = "mt5"

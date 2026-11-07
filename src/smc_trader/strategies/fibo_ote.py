@@ -203,6 +203,8 @@ class FiboOTEStrategy:
         }
         if "volume" in df_m1.columns:
             agg_dict["volume"] = "sum"
+        if "roll" in df_m1.columns:
+            agg_dict["roll"] = "max"
         df_res = df_m1.resample(rule).agg(agg_dict).dropna()
 
         if self.config.trailing_exit_ma:
@@ -248,7 +250,11 @@ class FiboOTEStrategy:
         return df_res
 
     def run_backtest(
-        self, df_m1: pd.DataFrame, symbol: str, spread: float
+        self,
+        df_m1: pd.DataFrame,
+        symbol: str,
+        spread: float,
+        df_ask_m1: pd.DataFrame | None = None,
     ) -> list[FiboTrade]:
         """Simulação cronológica barra a barra. Ver o docstring do módulo para o modelo."""
         df = self.resample_data(df_m1)
@@ -260,6 +266,7 @@ class FiboOTEStrategy:
         highs = df["high"].to_numpy()
         lows = df["low"].to_numpy()
         closes = df["close"].to_numpy()
+        rolls = df["roll"].to_numpy() if "roll" in df.columns else None
         ts = df.index
         mas = df["trailing_ma"].to_numpy() if "trailing_ma" in df.columns else None
         emas80 = df["ema80"].to_numpy() if "ema80" in df.columns else None
@@ -269,9 +276,18 @@ class FiboOTEStrategy:
         )
         swing_h, swing_l = _fractal_swings(highs, lows, k)
 
-        def ask_adj(d: int) -> float:
-            """Short recompra no ask: seus preços de saída são `bid + spread`."""
-            return spread if d == -1 else 0.0
+        # M-07: Resample de candles Ask reais se disponíveis
+        df_ask = self.resample_data(df_ask_m1) if df_ask_m1 is not None else None
+        ask_opens = df_ask["open"].to_numpy() if df_ask is not None else None
+        ask_highs = df_ask["high"].to_numpy() if df_ask is not None else None
+
+        def ask_adj(d: int, i: int) -> float:
+            """Short recompra no ask: seus preços de saída são ask_open ou bid + spread."""
+            if d != -1:
+                return 0.0
+            if ask_opens is not None and i < len(ask_opens):
+                return float(ask_opens[i] - opens[i])
+            return spread
 
         def close_trade(pos: _Position, i: int, price: float, reason: str) -> FiboTrade:
             unscaled_pnl = pos.d * (price - pos.entry_price) - cfg.commission_per_unit
@@ -296,7 +312,15 @@ class FiboOTEStrategy:
             )
 
         def stop_hit(pos: _Position, i: int) -> bool:
-            adverse = lows[i] if pos.d == 1 else highs[i] + spread
+            adverse = (
+                lows[i]
+                if pos.d == 1
+                else (
+                    ask_highs[i]
+                    if (ask_highs is not None and i < len(ask_highs))
+                    else highs[i] + spread
+                )
+            )
             return pos.d * (pos.stop - adverse) >= 0
 
         def get_stop_exit_price(pos: _Position, i: int) -> float:
@@ -304,22 +328,37 @@ class FiboOTEStrategy:
             if pos.d == 1:
                 return min(opens[i], pos.stop) - cfg.slippage
             else:
-                return max(opens[i] + spread, pos.stop) + cfg.slippage
+                open_ask = (
+                    ask_opens[i]
+                    if (ask_opens is not None and i < len(ask_opens))
+                    else opens[i] + spread
+                )
+                return max(open_ask, pos.stop) + cfg.slippage
 
         def get_target_exit_price(pos: _Position, i: int) -> float:
             if pos.d == 1:
                 return max(opens[i], pos.target) - cfg.slippage
             else:
-                return min(opens[i] + spread, pos.target) + cfg.slippage
+                open_ask = (
+                    ask_opens[i]
+                    if (ask_opens is not None and i < len(ask_opens))
+                    else opens[i] + spread
+                )
+                return min(open_ask, pos.target) + cfg.slippage
 
         def open_position(leg: _Leg, i: int) -> _Position | None:
             d = leg.d
             level = leg.level(cfg.fibo_entry)
             stop = leg.level(cfg.fibo_stop)
             slip = cfg.slippage if d == 1 else -cfg.slippage
-            entry = level + (spread if d == 1 else 0.0) + slip
+            curr_spread = (
+                (ask_opens[i] - opens[i])
+                if (ask_opens is not None and i < len(ask_opens))
+                else spread
+            )
+            entry = level + (curr_spread if d == 1 else 0.0) + slip
             risk = d * (entry - stop)
-            if risk <= spread * 1.5:
+            if risk <= curr_spread * 1.5:
                 return None
             if cfg.target_mode == "3R":
                 target = entry + d * risk * cfg.target_r
@@ -338,6 +377,13 @@ class FiboOTEStrategy:
         leg: _Leg | None = None
 
         for i in range(k + 1, n):
+            # D-02: Transição de contrato futuro com rolagem: invalida perna ativa
+            if rolls is not None and rolls[i]:
+                leg = None
+                last_sh_price = last_sl_price = None
+                last_sh_idx = last_sl_idx = None
+                continue
+
             # 1. Swings confirmados com atraso de k barras
             chk = i - k
             if swing_h[chk]:
@@ -348,7 +394,7 @@ class FiboOTEStrategy:
             # 2. Gerenciamento da posição aberta (barras posteriores à entrada)
             if pos is not None:
                 d = pos.d
-                adj = ask_adj(d)
+                adj = ask_adj(d, i)
 
                 # F-06: saída por MME engatilhada na barra anterior executa no open desta barra
                 if pos.pending_ma_exit:
@@ -555,7 +601,7 @@ class FiboOTEStrategy:
                 close_trade(
                     pos,
                     n - 1,
-                    closes[n - 1] + ask_adj(pos.d) + slip_exit,
+                    closes[n - 1] + ask_adj(pos.d, n - 1) + slip_exit,
                     "END_OF_DATA",
                 )
             )

@@ -1,103 +1,156 @@
 # 🤝 HANDOFF OFICIAL DO PROJETO — TRADING SMC BOT
-**Documento de Transição e Contexto Contínuo para Agentes de IA e Desenvolvedores**  
+**Documento de Transição Técnica e Contexto Arquitetural para Desenvolvedores e Agentes de IA**  
 **Data:** 07 de Novembro de 2026  
-**Status do Repositório:** 100% Auditado, Validado Empiricamente, Sincronizado e Limpo (`main`)
+**Repositório Remoto:** `git@github.com:thiagofboliveira/trading-smc-bot.git`  
+**Branch Principal de Trabalho:** `feat/backtest-engine`  
+**Status do Backlog de Auditoria (`docs/BACKLOG_CORRECOES.md`):** **61 de 61 itens concluídos (100%)**  
+**Suíte de Testes:** **604 testes passando (`uv run pytest`)** · **0 erros de linting (`uv run ruff check`)**
 
 ---
 
-## 📌 1. Visão Geral e Objetivo do Projeto
+## 📌 1. Visão Geral e Arquitetura do Sistema
 
-O **trading-smc-bot** é um ecossistema quantitativo e algorítmico institucional baseado em conceitos de **Smart Money Concepts (SMC)** e **Fibonacci Optimal Trade Entry (OTE)**.
+O **trading-smc-bot** é um ecossistema quantitativo e algorítmico institucional de alta fidelidade matemática, projetado para operar sem qualquer viés de lookahead, viés de sobrevivência ou suposições irreais de execução.
 
-### Plataformas Alvo:
-1. **MetaTrader 5 (Python SDK / MQL5):** Ativos globais da Dukascopy (`XAUUSD`, `NAS100`, `DAX40`, `BRENT`, `EURUSD`, `GBPUSD`, `USDJPY`).
-2. **Nelogica Profit / Rico Trader (NTSL):** Mercado B3 brasileiro (`WIN` Mini-Índice e `WDO` Mini-Dólar).
-
----
-
-## 🚨 2. A Auditoria Crítica do Gemini Argon (Marco Fundamental)
-
-### As 3 Distorções Identificadas e Corrigidas no Motor Python (`fibo_ote.py`):
-1. **O Bug da Imunidade na Vela de Entrada (`continue`):**
-   * *Diagnóstico:* Logo após abrir a posição no toque de Fibonacci (`in_pos = True`), o código executava um `continue`, saltando para a próxima barra sem verificar se a **própria barra de entrada** furou o Stop Loss.
-   * *Correção:* Adicionado `INTRABAR_STOP_LOSS`. Se `lows[i] <= sl_price` (para long) ou `highs[i] >= sl_price` (para short) na própria barra de entrada, a posição é estopada imediatamente com -1.0 R.
-   * *Impacto Empírico:* O teste em 4,95M candles Dukascopy revelou que isso ocorreu **4.470 vezes** na perna de 70.5% a 79.0%, porque o stop de 8.5% da perna é estreito demais para barras voláteis de M5.
-2. **Saída de Trailing Stop no Prejuízo:**
-   * *Diagnóstico:* O motor Python antigo saía por cruzamento da MME 8 mesmo no prejuízo (ex: -0.2 R).
-   * *Correção:* Adicionada a condição `c_close > entry_price` (para compra) e `c_close < entry_price` (para venda), igual ao código Nelogica NTSL. Aumentou o Win Rate de 45.7% para 49.4%.
-3. **Ausência da Trava 2:1 no Core Config:**
-   * *Correção:* Implementado `use_lock_2to1` nativamente no motor, permitindo subir o stop garantindo +1.0 R ao atingir +2.0 R a favor.
+### O sistema unifica três frentes operacionais sob a mesma especificação matemática:
+1. **Motor Backtest / Pesquisa:** Simulação cronológica barra a barra em dados M1/M5 da Dukascopy e B3 (WIN/WDO), com modelo explícito de spread bid/ask nos dois lados, slippage real, comissão por lote, simulação de portfólio multi-ativos e validação estatística por Monte Carlo.
+2. **Motor MetaTrader 5 (MT5 Live & Paper):** Execução incremental barra a barra via cliente nativo MT5 ou ponte HTTP com EA MQL5 (`mql5/SMC_Bridge_EA.mq5`), com ordens limite pendentes no nível de retração, trailing stop, reconciliação persistente de posições (`StateStore`) e Kill Switch de proteção de capital.
+3. **Nelogica Profit / Rico Trader (NTSL B3):** Estratégia canônica unificada (`nelogica/SMC_FIBO_CANONICO.ntsl`) com ordens de stop/alvo reais na bolsa (`SellToCoverStop` / `SellToCoverLimit`), entrada por ordem limite (`BuyLimit` / `SellShortLimit`), filtros de sessão B3 (17:00 / 17:45) e paridade estrita com o algoritmo Python.
 
 ---
 
-## 📊 3. Tabela Oficial de Estratégias (Recalibração 2 Anos Dukascopy — 4.95M Candles)
+## 🏛️ 2. Estrutura do Repositório
 
-Todos os modelos seguem rigorosamente a regra padrão de nomenclatura:
-> **`<nome_base>_<taxaacerto>_<retornoanual>_<profitfactor>_<maxdrawdown>`**
-
-| Perfil / Função | Nome Oficial do Modelo | Taxa Acerto | Retorno / Ano | Retorno 2 Anos | Profit Factor | Max Drawdown | Payoff | Config YAML |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| **🥇 Campeão Institucional** | `smc_fibo_estrutural_68pct_809R_1.48pf_30dd` | **68,3%** | **+808,6 R** | +1.617,1 R | **1,48** | **-29,8 R** | 0.69 | [`smc_fibo_estrutural_68pct_809R_1.48pf_30dd.yaml`](config/models/smc_fibo_estrutural_68pct_809R_1.48pf_30dd.yaml) |
-| **🚀 Campeão Retorno Bruto** | `smc_fibo_trailing_51pct_929R_1.35pf_46dd` | **51,4%** | **+928,6 R** | +1.857,3 R | **1,35** | **-46,3 R** | 1.28 | [`smc_fibo_trailing_51pct_929R_1.35pf_46dd.yaml`](config/models/smc_fibo_trailing_51pct_929R_1.35pf_46dd.yaml) |
-| **🎯 Sweet Spot ICT** | `smc_fibo_sweetspot_53pct_774R_1.36pf_47dd` | **53,3%** | **+774,2 R** | +1.548,5 R | **1,36** | **-46,9 R** | 1.19 | [`smc_fibo_sweetspot_53pct_774R_1.36pf_47dd.yaml`](config/models/smc_fibo_sweetspot_53pct_774R_1.36pf_47dd.yaml) |
-| **🛡️ Fortaleza Anti-Drawdown** | `smc_fibo_blindado_69pct_529R_1.32pf_26dd` | **69,0%** | **+528,7 R** | +1.057,4 R | **1,32** | **-26,2 R** | 0.59 | [`smc_fibo_blindado_69pct_529R_1.32pf_26dd.yaml`](config/models/smc_fibo_blindado_69pct_529R_1.32pf_26dd.yaml) |
-| **⚖️ Alvo Fixo (3R)** | `smc_fibo_equilibrado_28pct_700R_1.19pf_49dd` | **28,4%** | **+700,0 R** | +1.400,0 R | **1,19** | **-49,0 R** | 3.00 | [`smc_fibo_equilibrado_28pct_700R_1.19pf_49dd.yaml`](config/models/smc_fibo_equilibrado_28pct_700R_1.19pf_49dd.yaml) |
-| **⏱️ Sessão Nobre (07-18 UTC)**| `smc_fibo_conservador_66pct_337R_1.31pf_28dd` | **65,8%** | **+337,3 R** | +674,5 R | **1,31** | **-28,4 R** | 0.68 | [`smc_fibo_conservador_66pct_337R_1.31pf_28dd.yaml`](config/models/smc_fibo_conservador_66pct_337R_1.31pf_28dd.yaml) |
-
----
-
-## 🇧🇷 4. Validação Empírica em Produção no Rico Trader (B3)
-
-O usuário executou backtests no **Rico Trader (ProfitChart)** com dados reais da B3 em 3 meses:
-* **Mini-Índice (`WIN`):** **+R$ 1.400,00 líquido** (1 contrato), **Win Rate 42%**, **Profit Factor 2.30**, máx. 5 perdedoras seguidas.
-* **Mini-Dólar (`WDO$N` série contínua):** **+R$ 456,00 líquido** (1 contrato), **Win Rate 46%**, **Profit Factor 1.50**, máx. 6 vencedoras seguidas.
-* **Diagnóstico:** O Rico Trader já executa candle a candle e tick a tick, reproduzindo exatamente as métricas do motor Python auditado (PF entre 1.35 e 2.30 e Win Rate entre 42% e 68%).
-
----
-
-## 🛠️ 5. Scripts Nelogica NTSL (`nelogica/`)
-
-Todos os scripts NTSL possuem:
-1. **Auto-Escala Dinâmica:** `filtroMinimo := Media(20, Maxima - Minima) * MultVolatilidade(1.5)`. Funciona sem alteração no WIN, WDO, PETR4, Cripto.
-2. **Plot Visual Direto no Gráfico Principal:**
-   * Linha 1 (Ciano / `clAqua`): Topo Considerado (`ultimoTopo` em espera / `refTopo` no BOS).
-   * Linha 2 (Magenta / `clFuchsia`): Fundo Considerado (`ultimoFundo` em espera / `refFundo` no BOS).
-   * Candle Amarelo (`clAmarelo`): Sinaliza a barra da quebra de estrutura (BOS).
-3. **Filtros de Risco com Default Universal (`0.0`):**
-   * `MaxStopPontos(0.0)` e `MinStopPontos(0.0)` para não bloquear ordens em ativos com cotações diferentes. Para WIN sugerir 250/50 e para WDO sugerir 10/4.
-
-### Arquivos Disponíveis:
-* `nelogica/SMC_FIBO_ESTRUTURAL.ntsl` e `.txt` (Campeão Institucional)
-* `nelogica/SMC_FIBO_SWEETSPOT.ntsl` e `.txt` (Sweet Spot 70.5% / 88.6%)
-* `nelogica/SMC_FIBO_BLINDADO.ntsl` e `.txt` (Trava 2:1)
-* `nelogica/SMC_FIBO_TRAILING.ntsl` e `.txt` (Versão Trailing livre)
-
----
-
-## 💻 6. Ambiente de Desenvolvimento e Comandos Úteis
-
-* **Diretório do Projeto:** `D:\thiago\Projetos\trading-smc-bot`
-* **Gerenciador de Pacotes:** `uv` com Python 3.12 virtualenv.
-* **Comandos Chave:**
-  ```powershell
-  # Rodar backtest CLI Python:
-  uv run smc fibo-backtest --symbol all
-
-  # Rodar a recalibração de variáveis auditada:
-  uv run python scripts/recalibrate_all_variables_audited.py
-
-  # Testar variações de Stop Loss auditadas:
-  uv run python scripts/test_stop_variations_audited.py
-
-  # Iniciar servidor UI local:
-  uv run smc ui --port 8080
-  ```
+```text
+├── config/                     # Configurações de modelos YAML e custos de mercado
+│   ├── costs.yaml              # Custos centralizados (spread, slippage, comissões)
+│   ├── production.yaml         # Configuração estrita de produção (extra="forbid")
+│   └── models/                 # Modelos estratégicos versionados
+├── data/                       # Armazenamento local de candles em formato Parquet
+├── docs/                       # Especificações e auditoria
+│   ├── BACKLOG_CORRECOES.md    # Backlog completo de 61 itens (100% concluído)
+│   └── SPEC_SMC_FIBO.md        # Especificação canônica unificada em pseudocódigo
+├── mql5/                       # Expert Advisors MetaTrader 5
+│   └── SMC_Bridge_EA.mq5       # EA ponte com autenticação bearer e retcodes
+├── nelogica/                   # Scripts NTSL para o ProfitChart (B3)
+│   └── SMC_FIBO_CANONICO.ntsl  # Código canônico parametrizado para WIN e WDO
+├── src/smc_trader/             # Código-fonte principal
+│   ├── analysis.py             # Pipeline macro de análise SMC
+│   ├── cli.py                  # Interface de linha de comando CLI (`smc`)
+│   ├── config.py               # Modelos de configuração tipados Pydantic/dataclass
+│   ├── backtest/               # Motor de simulação
+│   │   ├── engine.py           # BacktestEngine (zonas SMC, OB, BB, sweeps, CHoCH)
+│   │   ├── exporter.py         # Exportador profissional XLSX/PNG/JSON com SHA-256 (M-09)
+│   │   ├── portfolio.py        # Simulação realista de portfólio multi-ativos (M-05)
+│   │   ├── robustness.py       # Monte Carlo, alarmes de sanidade e baseline (M-06, M-08)
+│   │   ├── runner.py           # Execução em grade e walk-forward
+│   │   ├── session.py          # Gerenciamento de sessões e horários
+│   │   └── types.py            # Tipos de dados (Trade, BacktestResult, etc.)
+│   ├── data/                   # Ingestão e tratamento de dados
+│   │   ├── continuous.py       # Séries contínuas B3 com marcação de rolagem (D-02)
+│   │   ├── dukascopy.py        # Download histórico M1 Dukascopy (bid e ask)
+│   │   ├── profit_import.py    # Importador flexível Profit/generic CSV (D-01)
+│   │   ├── quality.py          # Auditoria de integridade de candles
+│   │   └── store.py            # Persistência atômica Parquet
+│   ├── execution/              # Execução ao vivo MT5
+│   │   ├── fibo_live.py        # Motor incremental Fibo OTE live
+│   │   ├── live_engine.py      # LiveEngine com ciclo de vida e reconciliação
+│   │   ├── mt5_interface.py    # BridgeMT5Client e NativeMT5Client (fail-closed)
+│   │   ├── kill_switch.py      # Kill Switch (limite diário %, delay, spread spike)
+│   │   ├── journal.py          # Diário estruturado de trades JSONL
+│   │   ├── sizing.py           # Dimensionamento de posição por risco real de tick
+│   │   └── state_store.py      # Persistência de estado e idempotência de comandos
+│   ├── strategies/             # Estratégias institucionais
+│   │   └── fibo_ote.py         # FiboOTEStrategy (motor canônico livre de vieses)
+│   ├── structure/              # Detecção de pivôs fractais e BOS/CHoCH
+│   └── zones/                  # Detecção de Order Blocks, Breakers, FVGs e Sweeps
+└── tests/                      # Suíte de 604 testes automatizados
+```
 
 ---
 
-## ⚠️ 7. Diretrizes Cruciais para os Próximos Agentes
+## 🛡️ 3. O Marco da Auditoria: Resumo das Correções Críticas
 
-1. **NUNCA reintroduza o viés do `continue`:** Qualquer teste no motor Python DEVE verificar se a própria barra de entrada furou o stop (`check_intrabar_sl`).
-2. **Preserve a Trava de Lucro no Trailing:** O trailing stop na MME 8 só pode disparar se `c_close > entry_price` (para long) ou `c_close < entry_price` (para short).
-3. **Mantenha os Defaults do Nelogica em `0.0`:** Parâmetros de pontos fixos devem permanecer desativados por padrão para preservar a universalidade automática do código entre Índices, Moedas e Ações.
-4. **Siga a Nomenclatura:** Toda nova estratégia deve ter nome no padrão `<nome_base>_<taxaacerto>_<retornoanual>_<profitfactor>_<maxdrawdown>`.
+Todos os 61 itens levantados no backlog de auditoria foram corrigidos e cobertos por testes unitários e de integração:
+
+### 1. Eliminação dos Vieses do Motor Fibo (`F-01` a `F-11`):
+* **Lookahead no BOS (F-01):** Entrada só é permitida a partir da barra posterior ao fechamento que confirmou o BOS (`i > bos_idx`).
+* **Assimetria de Spread nos Shorts (F-02, M-07):** Shorts recompram no Ask (`bid + spread` ou candle Ask real). Stop, alvo e saídas por média pagam spread em ambos os lados.
+* **Trava 2:1 e Expansão da Perna (F-03, F-04):** A barra corrente é testada contra os níveis calculados na barra anterior ($i-1$). A máxima nova só expande a perna para a barra seguinte ($i+1$).
+* **Gaps e MME (F-05, F-06):** Saídas por gap executam no `open`. Saída por MME engatilhada no close executa no `open` da barra seguinte.
+* **Desempate Fractal (F-11):** Platôs de máximas/mínimas iguais desempatam deterministicamente na primeira ocorrência, alinhando Python e NTSL.
+
+### 2. Motor de Zonas SMC (`Z-01` a `Z-10`):
+* **Médias sem Lookahead (Z-01):** As médias M15/M5 entregam apenas dados de buckets cujo fechamento já ocorreu.
+* **Stop no Candle de Entrada (Z-02):** Toques que violam o stop no mesmo candle são imediatamente estopados com -1.0 R.
+* **Mitigação durante Posição Aberta (Z-08):** Zonas tocadas enquanto há uma posição aberta são marcadas como `CONSUMED` e não geram falsas reentradas posteriores.
+* **Confirmação CHoCH sem Atraso (Z-09):** O evento CHoCH é indexado pelo candle de rompimento (`break_time`), executando a entrada imediatamente no close do candle confirmatório.
+
+### 3. Validação Realista e Estatística (`M-01` a `M-09`):
+* **Seleção Estrita por In-Sample (M-01, M-02):** Modelos são selecionados unicamente no período de treino e testados fora da amostra (Walk-Forward).
+* **Portfólio Realista (M-05):** Simulação de conta com controle global de concorrência (`max_open_trades_total`) e curva de capital/drawdown ordenados por **saída**.
+* **Monte Carlo e Baseline (M-06, M-08):** 1.000 permutações de trade order medem o Drawdown no percentil 95. Baseline aleatório confirma se há vantagem estatística ($p < 0.05$) com correção de Bonferroni. Alarmes alertam para PF > 2.5 ou assimetrias.
+* **Reprodutibilidade Criptográfica (M-09):** Exportações geram `reproducibility.json` com SHA-256 do parquet, da config e hash do commit git.
+
+### 4. Execução ao Vivo e MT5 (`L-01` a `L-11`):
+* **Fail-Closed:** O modo `live` recusa-se a operar se o cliente for `MockMT5Client`.
+* **Paridade Live/Backtest:** `FiboOTEStrategy` incremental compartilhada. Teste de replay histórico comprova paridade idêntica trade a trade.
+* **Idempotência e Reconciliação:** IDs de comando determinísticos (`make_cmd_id`), sincronização com deals da corretora e persistência em `data/live_state.json`.
+* **Kill Switch:** Trava automática por perda diária %, limite de stops seguidos, spike de spread e delay de dados.
+
+### 5. NTSL e Dados B3 (`N-01` a `N-05`, `D-01` a `D-05`):
+* **Ordens Reais na Bolsa:** Envio contínuo de `SellToCoverStop` / `BuyToCoverStop` e `SellToCoverLimit` / `BuyToCoverLimit`.
+* **Horários B3:** Trava de novas entradas às 17:00 e zeragem compulsória às 17:45.
+* **Séries Contínuas com Rolagem:** Módulo `continuous.py` emenda contratos marcando `roll = True` e invalidando pernas ativas para não gerar falsos BOS no gap de rolagem.
+
+---
+
+## 💻 4. Guia Rápido de Comandos
+
+O ambiente utiliza **Linux / Python 3.13** gerenciado via **`uv`**.
+
+### Executar a Suíte Completa de Testes:
+```bash
+uv run pytest
+```
+
+### Checagem de Qualidade e Tipagem (Ruff):
+```bash
+uv run ruff check src/ tests/
+```
+
+### Importar Dados Históricos (Profit, MT5 ou Generic CSV):
+```bash
+uv run smc import-csv caminho/arquivo.csv --symbol WIN --format profit
+uv run smc import-csv caminho/arquivo.csv --symbol WDO --format generic
+```
+
+### Baixar Histórico da Dukascopy (Bid e Ask):
+```bash
+uv run smc fetch --symbol XAUUSD --start 2024-01-01 --end 2026-10-31
+```
+
+### Rodar Backtest com o Motor Canônico Fibo OTE:
+```bash
+uv run smc fibo-backtest --symbol XAUUSD
+```
+
+### Iniciar o Modo Live Paper / Real com MT5:
+```bash
+uv run smc live --config config/production.yaml
+```
+
+---
+
+## ⚠️ 5. Diretrizes para Futuras Alterações e Novos Agentes
+
+1. **Nunca quebre o teste de Invariância de Prefixo (`tests/test_prefix_invariance.py`):**
+   Qualquer decisão tomada no instante $t$ não pode depender de candles posteriores a $t$. Se o teste falhar, há lookahead.
+2. **Short SEMPRE paga spread na saída:**
+   Vendas entram no Bid e recompram no Ask. Nunca compare stop ou alvo de short diretamente com a série Bid sem adicionar o spread.
+3. **Respeite o Fail-Closed em Produção:**
+   Nunca permita bypass de validações financeiras (`KillSwitch`, sizing de risco, confirmação de lotes mínimos).
+4. **Mantenha os 604 testes verdes:**
+   Antes de submeter qualquer commit, garanta que `uv run pytest` e `uv run ruff check` passem sem nenhum erro.
+5. **Preserve a Especificação Unificada:**
+   Qualquer mudança na lógica de entrada ou saída deve ser primeiramente refletida em [`docs/SPEC_SMC_FIBO.md`](docs/SPEC_SMC_FIBO.md) e mantida em sincronia entre Python, MQL5 e NTSL.

@@ -22,9 +22,10 @@ Regras anti-viés (cada uma tem teste em `tests/test_fibo_ote.py`):
 * Dentro da mesma barra, a ordem entre eventos é desconhecida: vale o caso conservador
   (stop antes de alvo; a barra de entrada só pode ser estopada, nunca alvejada).
 
-Suposições ainda NÃO tratadas (ver docs/BACKLOG_CORRECOES.md): gap além do stop (F-05),
-saída por MME no próprio fechamento (F-06), posição aberta no fim dos dados e limite de
-tempo de posição (F-07), sessão e fim de semana (F-08), custos de comissão/slippage (F-10).
+Também tratados: gap além do stop (F-05), saída por MME na abertura seguinte (F-06),
+posição aberta no fim dos dados e limite de tempo, que sai na abertura da barra (F-07),
+sessão e fim de semana (F-08), comissão e slippage (F-10) e rolagem de contrato, que
+encerra a posição na última barra do contrato antigo (D-02).
 """
 
 from dataclasses import dataclass
@@ -105,6 +106,22 @@ class FiboTrade:
     r_multiple: float
     win: bool
     exit_reason: str
+
+
+@dataclass
+class PendingSetup:
+    """Entrada que o backtest executaria na PRÓXIMA barra, se o preço tocar o nível.
+
+    No live vira uma ordem limite armada: `entry_price` já inclui o spread do long (compra no ask).
+    """
+
+    direction: Literal["long", "short"]
+    entry_price: float
+    stop_loss: float
+    take_profit: float
+    risk: float
+    bos_time: pd.Timestamp
+    candles_left: int  # barras restantes de validade da perna
 
 
 @dataclass
@@ -257,6 +274,31 @@ class FiboOTEStrategy:
         df_ask_m1: pd.DataFrame | None = None,
     ) -> list[FiboTrade]:
         """Simulação cronológica barra a barra. Ver o docstring do módulo para o modelo."""
+        result = self._run(df_m1, symbol, spread, df_ask_m1, live=False)
+        assert isinstance(result, list)
+        return result
+
+    def pending_setup(
+        self, df_m1: pd.DataFrame, spread: float, symbol: str = "LIVE"
+    ) -> PendingSetup | None:
+        """Mesma simulação do backtest, parada na última barra FECHADA da janela.
+
+        Devolve a entrada que valeria para a barra seguinte (perna ativa, ainda sem toque,
+        sem posição simulada) ou None. É a ponte usada pelo live: a decisão vem do mesmo
+        código do backtest e depende só dos timestamps da janela, não de índices guardados.
+        """
+        result = self._run(df_m1, symbol, spread, None, live=True)
+        assert result is None or isinstance(result, PendingSetup)
+        return result
+
+    def _run(
+        self,
+        df_m1: pd.DataFrame,
+        symbol: str,
+        spread: float,
+        df_ask_m1: pd.DataFrame | None,
+        live: bool,
+    ) -> "list[FiboTrade] | PendingSetup | None":
         df = self.resample_data(df_m1)
         cfg = self.config
         k = cfg.pivot_k
@@ -375,20 +417,36 @@ class FiboOTEStrategy:
         last_sh_idx = last_sl_idx = None
         pos: _Position | None = None
         leg: _Leg | None = None
+        last_roll_idx = -1
 
         for i in range(k + 1, n):
             # D-02: Transição de contrato futuro com rolagem: invalida perna ativa
             if rolls is not None and rolls[i]:
+                if pos is not None:
+                    # a barra marcada é a última do contrato antigo: encerra nela, sem o salto
+                    slip_exit = -cfg.slippage if pos.d == 1 else cfg.slippage
+                    trades.append(
+                        close_trade(
+                            pos, i, closes[i] + ask_adj(pos.d, i) + slip_exit, "ROLLOVER"
+                        )
+                    )
+                    pos = None
                 leg = None
                 last_sh_price = last_sl_price = None
                 last_sh_idx = last_sl_idx = None
+                last_roll_idx = i
                 continue
 
             # 1. Swings confirmados com atraso de k barras
             chk = i - k
-            if swing_h[chk]:
+            # D-02: janela do fractal que cruza a rolagem mistura dois contratos
+            if chk - k <= last_roll_idx:
+                swing_ok = False
+            else:
+                swing_ok = True
+            if swing_ok and swing_h[chk]:
                 last_sh_price, last_sh_idx = highs[chk], chk
-            if swing_l[chk]:
+            if swing_ok and swing_l[chk]:
                 last_sl_price, last_sl_idx = lows[chk], chk
 
             # 2. Gerenciamento da posição aberta (barras posteriores à entrada)
@@ -437,7 +495,7 @@ class FiboOTEStrategy:
                     slip_exit = -cfg.slippage if d == 1 else cfg.slippage
                     trades.append(
                         close_trade(
-                            pos, i, closes[i] + adj + slip_exit, "TIME_EXPIRATION"
+                            pos, i, opens[i] + adj + slip_exit, "TIME_EXPIRATION"
                         )
                     )
                     pos = None
@@ -593,6 +651,24 @@ class FiboOTEStrategy:
                 ext = highs[i] if d == 1 else lows[i]
                 if d * (ext - leg.extreme) > 0:
                     leg.extreme = ext
+        if live:
+            if pos is not None or leg is None or leg.touched or n < 1:
+                return None
+            # a próxima barra incrementa `candles` antes de testar a validade
+            if leg.candles + 1 > cfg.max_holding_candles:
+                return None
+            nxt = open_position(leg, n)
+            if nxt is None:
+                return None
+            return PendingSetup(
+                direction="long" if leg.d == 1 else "short",
+                entry_price=nxt.entry_price,
+                stop_loss=nxt.stop,
+                take_profit=nxt.target,
+                risk=nxt.risk,
+                bos_time=ts[leg.bos_idx],
+                candles_left=cfg.max_holding_candles - leg.candles,
+            )
         # F-07: posição ainda aberta no fim dos dados é encerrada no último fechamento,
         # em vez de sumir da conta (viés de sobrevivência).
         if pos is not None:

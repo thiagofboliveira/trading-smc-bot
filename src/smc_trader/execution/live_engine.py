@@ -32,7 +32,7 @@ from smc_trader.config import (
     ZoneConfig,
 )
 from smc_trader.data.resample import resample_ohlc
-from smc_trader.execution.fibo_live import FiboLiveEvaluator
+from smc_trader.execution.fibo_live import FiboLiveAction, FiboLiveEvaluator
 from smc_trader.execution.journal import TradeJournal
 from smc_trader.execution.kill_switch import KillSwitch
 from smc_trader.execution.mt5_interface import BaseMT5Client
@@ -65,6 +65,7 @@ class SymbolRuntimeState:
     trailing_mgr: TrailingManager | None = None
     current_position: LivePosition | None = None
     pending_order_ticket: int | None = None
+    pending_order_price: float | None = None
     last_processed_m1_time: pd.Timestamp | None = None
     processed_deal_tickets: set[int] = field(default_factory=set)
 
@@ -258,7 +259,8 @@ class LiveTradingEngine:
         self._sync_deals_and_limits(symbol, now)
 
         # 3. Obtém candles M1 da corretora
-        candles_count = 1200 if state.macro_tf in ("M15", "H1") else 400
+        # a perna vale até max_holding_candles barras e o fractal precisa de contexto antes dela
+        candles_count = 3600 if state.macro_tf in ("M15", "H1") else 1500
         candles_m1_raw = self.client.get_candles(
             symbol, timeframe="M1", count=candles_count
         )
@@ -342,7 +344,32 @@ class LiveTradingEngine:
             current_pos_open_price=pos_entry,
             current_pos_stop_loss=pos_sl,
             current_pos_ticket=pos_ticket,
+            current_pos_open_time=(
+                state.current_position.open_time if is_pos and state.current_position else None
+            ),
         )
+
+        # L-06: a ordem limite armada acompanha o setup. Com posição, a pendente já foi
+        # executada. Setup novo ou alterado: cancela e rearma. Setup extinto: só cancela.
+        if is_pos:
+            state.pending_order_ticket = None
+            state.pending_order_price = None
+        elif state.pending_order_ticket and evaluator.evaluated:
+            desired = next((a for a in actions if a.action_type == "PLACE_LIMIT"), None)
+            same = desired is not None and state.pending_order_price == round(
+                desired.price, sym_info.digits
+            )
+            if same:
+                actions = [a for a in actions if a.action_type != "PLACE_LIMIT"]
+            else:
+                actions = [
+                    FiboLiveAction(
+                        action_type="CANCEL_ORDER",
+                        ticket=state.pending_order_ticket,
+                        reason="SETUP_CHANGED" if desired else "SETUP_EXPIRED",
+                    ),
+                    *actions,
+                ]
 
         for act in actions:
             if act.action_type in ("MARKET_ENTRY", "PLACE_LIMIT"):
@@ -430,6 +457,9 @@ class LiveTradingEngine:
                 )
                 res = self.client.send_order(order_req)
                 if res.success:
+                    if is_limit:
+                        state.pending_order_ticket = res.ticket
+                        state.pending_order_price = entry_p
                     self.journal.log_order_fill(
                         symbol=symbol,
                         ticket=res.ticket,
@@ -465,6 +495,9 @@ class LiveTradingEngine:
             elif act.action_type == "CANCEL_ORDER":
                 self.notify(f"🚫 [{symbol}] Cancelando ordem pendente #{act.ticket} ({act.reason})")
                 self.client.cancel_order(act.ticket)
+                if act.ticket == state.pending_order_ticket:
+                    state.pending_order_ticket = None
+                    state.pending_order_price = None
 
     def _process_zones_strategy(
         self,

@@ -130,6 +130,7 @@ class MockMT5Client(BaseMT5Client):
         }
         self.positions: dict[int, LivePosition] = {}
         self.orders: dict[int, OrderRequest] = {}
+        self.order_after: dict[int, pd.Timestamp | None] = {}
         self.closed_deals: list[ClosedTradeInfo] = []
         self.candles_db: dict[tuple[str, str], pd.DataFrame] = {}
         self.ticket_seq = 100000
@@ -156,6 +157,43 @@ class MockMT5Client(BaseMT5Client):
 
     def set_candles(self, symbol: str, timeframe: str, df: pd.DataFrame) -> None:
         self.candles_db[(symbol, timeframe)] = df
+        if timeframe == "M1":
+            self._fill_limit_orders(symbol, df)
+
+    def _fill_limit_orders(self, symbol: str, df: pd.DataFrame) -> None:
+        """Preenche ordens limite pelo toque das barras posteriores à ordem (dados são bid).
+
+        Compra: o ask (bid + spread) cai até o preço. Venda: o bid sobe até o preço.
+        """
+        spread = self.get_symbol_info(symbol).ask - self.get_symbol_info(symbol).bid
+        for ticket, order in list(self.orders.items()):
+            if order.symbol != symbol:
+                continue
+            after = self.order_after.get(ticket)
+            bars = df if after is None else df[df.index > after]
+            if order.direction == "long":
+                hit = bars[bars["low"] + spread <= order.price]
+            else:
+                hit = bars[bars["high"] >= order.price]
+            if hit.empty:
+                continue
+            del self.orders[ticket]
+            self.order_after.pop(ticket, None)
+            self.positions[ticket] = LivePosition(
+                ticket=ticket,
+                symbol=symbol,
+                direction=order.direction,
+                volume=order.volume,
+                open_price=order.price,
+                current_price=order.price,
+                stop_loss=order.stop_loss,
+                take_profit=order.take_profit,
+                open_time=hit.index[0],
+                initial_risk=abs(order.price - order.stop_loss),
+                magic=order.magic,
+                comment=order.comment,
+                cmd_id=order.cmd_id,
+            )
 
     def get_candles(
         self, symbol: str, timeframe: str = "M1", count: int = 300
@@ -169,6 +207,11 @@ class MockMT5Client(BaseMT5Client):
 
         if order.order_type == "limit":
             self.orders[ticket] = order
+            m1 = self.candles_db.get((order.symbol, "M1"))
+            # a barra corrente (última linha) ainda está em formação: vale a partir dela
+            self.order_after[ticket] = (
+                m1.index[-2] if m1 is not None and len(m1) >= 2 else None
+            )
             return OrderResult(
                 success=True,
                 ticket=ticket,
@@ -245,6 +288,7 @@ class MockMT5Client(BaseMT5Client):
     def cancel_order(self, ticket: int) -> bool:
         if ticket in self.orders:
             del self.orders[ticket]
+            self.order_after.pop(ticket, None)
             return True
         return False
 

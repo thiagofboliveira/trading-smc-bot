@@ -141,6 +141,32 @@ def test_f07_tempo_maximo_posicao_encerra():
     assert t.exit_time == bar_time(12)  # entrou na 9 + 3 barras = 12
 
 
+def test_f07_expiracao_nao_ignora_stop_da_barra_de_expiracao():
+    # Barra 12 vai abaixo do stop (97.73) e fecha no alto: a saída por tempo deve ser
+    # no open (decidida no fechamento da barra anterior), nunca no close dessa barra.
+    neutral = [(99.5, 100.0, 99.0, 99.5)] * 2
+    crash = (99.5, 100.0, 90.0, 107.0)
+    trades = run(long_entry_scenario(neutral + [crash]), max_position_candles=3)
+    t = trades[0]
+    assert t.exit_reason == "TIME_EXPIRATION"
+    assert t.pnl_points == pytest.approx(99.5 - (ENTRY_LEVEL + SPREAD))
+
+
+def test_d02_rolagem_fecha_posicao_no_ultimo_fechamento_do_contrato_antigo():
+    bars = long_entry_scenario([(99.5, 100.0, 99.0, 99.5), (99.5, 100.0, 99.0, 99.5)])
+    m1 = m1_from_m5(bars)
+    roll_bar = 11
+    m1["roll"] = False
+    m1.loc[m1.index[5 * roll_bar : 5 * roll_bar + 5], "roll"] = True
+    after = m1.index >= bar_time(roll_bar + 1)
+    m1.loc[after, ["open", "high", "low", "close"]] += 1000.0  # novo contrato, 1000 pontos acima
+    trades = FiboOTEStrategy(cfg()).run_backtest(m1, "TEST", SPREAD)
+    t = trades[0]
+    assert t.exit_reason == "ROLLOVER"
+    assert t.exit_time == bar_time(roll_bar)
+    assert abs(t.r_multiple) < 5
+
+
 def test_f07_fim_dos_dados_fecha_posicao_aberta():
     # Apenas o prefixo + BOS + entrada (sem barras posteriores suficientes para stop/alvo)
     bars = PREFIX + [BOS_QUIET, (107.0, 107.5, 98.5, 99.5)]

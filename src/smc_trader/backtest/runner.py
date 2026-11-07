@@ -51,7 +51,9 @@ class GridRunResult:
     walk_forward: WalkForwardSummary | None = None
 
 
-def _precompute_m1_structures(candles_m1: pd.DataFrame, base_config: BacktestConfig) -> dict[str, Any]:
+def _precompute_m1_structures(
+    candles_m1: pd.DataFrame, base_config: BacktestConfig
+) -> dict[str, Any]:
     """Pré-computa pivôs, CHoCHs e médias M1 uma única vez para acelerar a grade."""
     if candles_m1.empty:
         return {}
@@ -60,8 +62,12 @@ def _precompute_m1_structures(candles_m1: pd.DataFrame, base_config: BacktestCon
     m1_chochs = {(e.direction, e.time): e for e in events_m1 if e.kind == "CHoCH"}
     m1_bos = {(e.direction, e.time): e for e in events_m1 if e.kind == "BOS"}
     eng_temp = BacktestEngine(base_config)
-    ema80 = eng_temp._prepare_ma_series(candles_m1, base_config.confluence.ma_timeframe, "ema", 80)
-    sma200 = eng_temp._prepare_ma_series(candles_m1, base_config.confluence.ma_timeframe, "sma", 200)
+    ema80 = eng_temp._prepare_ma_series(
+        candles_m1, base_config.confluence.ma_timeframe, "ema", 80
+    )
+    sma200 = eng_temp._prepare_ma_series(
+        candles_m1, base_config.confluence.ma_timeframe, "sma", 200
+    )
     return {
         "events": events_m1,
         "chochs": m1_chochs,
@@ -71,7 +77,9 @@ def _precompute_m1_structures(candles_m1: pd.DataFrame, base_config: BacktestCon
     }
 
 
-def compute_breaker_stats(candles_m15: pd.DataFrame, breakers: list[Zone]) -> dict[str, Any]:
+def compute_breaker_stats(
+    candles_m15: pd.DataFrame, breakers: list[Zone]
+) -> dict[str, Any]:
     """Calcula estatísticas sobre breakers, identificando os que tocam a zona no 1º candle M15 após a criação."""
     total_breakers = len(breakers)
     if total_breakers == 0 or candles_m15.empty:
@@ -101,7 +109,9 @@ def compute_breaker_stats(candles_m15: pd.DataFrame, breakers: list[Zone]) -> di
     return {
         "total_breakers": total_breakers,
         "early_mitigated": early_count,
-        "early_pct": (early_count / total_breakers * 100.0) if total_breakers > 0 else 0.0,
+        "early_pct": (early_count / total_breakers * 100.0)
+        if total_breakers > 0
+        else 0.0,
     }
 
 
@@ -121,6 +131,7 @@ def run_grid(
 
     if "close_time" not in candles_m1.columns:
         from smc_trader.data.candles import with_close_time
+
         candles_m1 = with_close_time(candles_m1, "M1")
 
     # 1. Estrutura macro M15 única para todas as execuções
@@ -152,7 +163,10 @@ def run_grid(
 
     for idx, var in enumerate(variants, start=1):
         if idx % 25 == 1 or idx == total_var:
-            print(f"Progresso da grade: [{idx}/{total_var}] variantes processadas...", flush=True)
+            print(
+                f"Progresso da grade: [{idx}/{total_var}] variantes processadas...",
+                flush=True,
+            )
 
         # Filtra zonas conforme blocks_filter
         allowed_kinds = set(var.blocks_filter)
@@ -165,9 +179,13 @@ def run_grid(
         engine = BacktestEngine(var_cfg)
 
         # Execução In-Sample
-        is_res = engine.run(is_candles, var_zones, symbol=symbol, precomputed_m1=is_m1_data)
+        is_res = engine.run(
+            is_candles, var_zones, symbol=symbol, precomputed_m1=is_m1_data
+        )
         # Execução Out-of-Sample
-        oos_res = engine.run(oos_candles, var_zones, symbol=symbol, precomputed_m1=oos_m1_data)
+        oos_res = engine.run(
+            oos_candles, var_zones, symbol=symbol, precomputed_m1=oos_m1_data
+        )
 
         # Walk-forward por janela (opcional)
         wf_res_metrics: list[dict[str, Any]] = []
@@ -184,7 +202,10 @@ def run_grid(
 
         drop_pct: float | None = None
         if is_m.get("expectancy", 0.0) != 0:
-            drop_pct = ((oos_m.get("expectancy", 0.0) - is_m.get("expectancy", 0.0)) / abs(is_m.get("expectancy", 0.0))) * 100.0
+            drop_pct = (
+                (oos_m.get("expectancy", 0.0) - is_m.get("expectancy", 0.0))
+                / abs(is_m.get("expectancy", 0.0))
+            ) * 100.0
 
         summary = VariantExecutionSummary(
             config_hash=var.config_hash,
@@ -204,7 +225,9 @@ def run_grid(
 
     # 6. Atribuição e Ranking
     attr_data = analyze_attribution(summaries, min_trades=min_trades)
-    md_report = format_attribution_markdown(attr_data, symbol=symbol, breaker_stats=breaker_stats)
+    md_report = format_attribution_markdown(
+        attr_data, symbol=symbol, breaker_stats=breaker_stats
+    )
 
     # 7. M-02: Walk-Forward Optimization Verdadeiro (otimiza no treino, testa na janela seguinte)
     wf_summary: WalkForwardSummary | None = None
@@ -223,7 +246,11 @@ def run_grid(
                 allowed_kinds = set(var.blocks_filter)
                 if "BB" in allowed_kinds:
                     allowed_kinds.add("BREAKER")
-                v_zones = [z for z in all_zones if z.kind in allowed_kinds and z.created_at <= w.train_end]
+                v_zones = [
+                    z
+                    for z in all_zones
+                    if z.kind in allowed_kinds and z.created_at <= w.train_end
+                ]
                 v_eng = BacktestEngine(var.to_backtest_config(base_config))
                 train_res = v_eng.run(w.train_df, v_zones, symbol=symbol)
                 exp = train_res.metrics.get("expectancy", 0.0)
@@ -238,14 +265,26 @@ def run_grid(
                 allowed_kinds = set(best_var.blocks_filter)
                 if "BB" in allowed_kinds:
                     allowed_kinds.add("BREAKER")
-                v_zones = [z for z in all_zones if z.kind in allowed_kinds and z.created_at <= w.train_end]
-                best_is_metrics = BacktestEngine(best_var.to_backtest_config(base_config)).run(w.train_df, v_zones, symbol=symbol).metrics
+                v_zones = [
+                    z
+                    for z in all_zones
+                    if z.kind in allowed_kinds and z.created_at <= w.train_end
+                ]
+                best_is_metrics = (
+                    BacktestEngine(best_var.to_backtest_config(base_config))
+                    .run(w.train_df, v_zones, symbol=symbol)
+                    .metrics
+                )
 
             # Teste estrito Fora da Amostra (OOS) na janela w.test_df
             allowed_kinds = set(best_var.blocks_filter)
             if "BB" in allowed_kinds:
                 allowed_kinds.add("BREAKER")
-            v_zones_oos = [z for z in all_zones if z.kind in allowed_kinds and z.created_at <= w.test_end]
+            v_zones_oos = [
+                z
+                for z in all_zones
+                if z.kind in allowed_kinds and z.created_at <= w.test_end
+            ]
             oos_eng = BacktestEngine(best_var.to_backtest_config(base_config))
             oos_res = oos_eng.run(w.test_df, v_zones_oos, symbol=symbol)
             all_oos_trades.extend(oos_res.trades)
@@ -272,8 +311,12 @@ def run_grid(
             )
 
         combined_oos_r = sum(t.r_multiple for t in all_oos_trades)
-        total_test_days = sum((w.test_end - w.test_start).total_seconds() / 86400.0 for w in wf_windows)
-        oos_annual_r = (combined_oos_r / total_test_days * 365.25) if total_test_days > 0 else 0.0
+        total_test_days = sum(
+            (w.test_end - w.test_start).total_seconds() / 86400.0 for w in wf_windows
+        )
+        oos_annual_r = (
+            (combined_oos_r / total_test_days * 365.25) if total_test_days > 0 else 0.0
+        )
         avg_is_annual = (total_is_annual_r / len(wf_windows)) if wf_windows else 0.0
         wfe = (oos_annual_r / avg_is_annual) if avg_is_annual > 0 else 0.0
 

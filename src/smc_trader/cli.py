@@ -24,7 +24,11 @@ from smc_trader.viz.chart import build_chart
 
 def _utc(text: str) -> datetime:
     dt = datetime.fromisoformat(text)
-    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+    return (
+        dt.replace(tzinfo=timezone.utc)
+        if dt.tzinfo is None
+        else dt.astimezone(timezone.utc)
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -33,7 +37,13 @@ def _build_parser() -> argparse.ArgumentParser:
     fetch = sub.add_parser("fetch", help="baixa M1 da Dukascopy e grava em Parquet")
     fetch.add_argument("symbol")
     fetch.add_argument("--from", dest="start", type=_utc, default=None)
-    fetch.add_argument("--to", dest="end", type=_utc, default=None, help="padrão com --years: hoje (UTC)")
+    fetch.add_argument(
+        "--to",
+        dest="end",
+        type=_utc,
+        default=None,
+        help="padrão com --years: hoje (UTC)",
+    )
     fetch.add_argument(
         "--years",
         type=int,
@@ -58,10 +68,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="tipos de bloco a mostrar, separados por vírgula: OB, FVOB, BB (sobrescreve a config)",
     )
 
-    imp = sub.add_parser("import-csv", help="importa CSV M1 exportado do MT5 ou do Profit")
+    imp = sub.add_parser(
+        "import-csv", help="importa CSV M1 exportado do MT5 ou do Profit"
+    )
     imp.add_argument("csv", type=Path)
     imp.add_argument("--symbol", required=True)
-    imp.add_argument("--format", choices=["mt5", "profit"], default="mt5", help="origem do arquivo")
+    imp.add_argument(
+        "--format", choices=["mt5", "profit"], default="mt5", help="origem do arquivo"
+    )
     imp.add_argument(
         "--bar-label",
         choices=["open", "close"],
@@ -71,10 +85,25 @@ def _build_parser() -> argparse.ArgumentParser:
     imp.add_argument("--config", type=Path, default=Path("config/default.yaml"))
     imp.add_argument("--data-root", type=Path, default=None)
 
-    chk = sub.add_parser("check-data", help="valida a qualidade dos candles M1 gravados (buracos, picos, fuso)")
-    chk.add_argument("symbols", nargs="+", help="símbolos, ou 'all' para todos os arquivos da fonte")
-    chk.add_argument("--source", choices=["dukascopy", "mt5", "profit"], default=None, help="padrão: profit p/ WIN/WDO, senão dukascopy")
-    chk.add_argument("--max-gap", type=int, default=60, help="minutos sem barra a partir dos quais é buraco")
+    chk = sub.add_parser(
+        "check-data",
+        help="valida a qualidade dos candles M1 gravados (buracos, picos, fuso)",
+    )
+    chk.add_argument(
+        "symbols", nargs="+", help="símbolos, ou 'all' para todos os arquivos da fonte"
+    )
+    chk.add_argument(
+        "--source",
+        choices=["dukascopy", "mt5", "profit"],
+        default=None,
+        help="padrão: profit p/ WIN/WDO, senão dukascopy",
+    )
+    chk.add_argument(
+        "--max-gap",
+        type=int,
+        default=60,
+        help="minutos sem barra a partir dos quais é buraco",
+    )
     chk.add_argument("--config", type=Path, default=Path("config/default.yaml"))
     chk.add_argument("--data-root", type=Path, default=None)
 
@@ -92,55 +121,122 @@ def _build_parser() -> argparse.ArgumentParser:
         help="exporta pasta {ativo}_{data_hora} com gráficos macro/micro, txt e planilha xlsx de 2 abas",
     )
 
-    grid = sub.add_parser("grid", help="executa grade de parâmetros SMC com divisão IS/OOS e atribuição")
+    grid = sub.add_parser(
+        "grid", help="executa grade de parâmetros SMC com divisão IS/OOS e atribuição"
+    )
     grid.add_argument("symbol")
     grid.add_argument("--from", dest="start", type=_utc, default=None)
     grid.add_argument("--to", dest="end", type=_utc, default=None)
-    grid.add_argument("--min-trades", type=int, default=30, help="piso de trades no IS para qualificação")
-    grid.add_argument("--walk-forward", action="store_true", default=False, help="ativa janelas de walk-forward rolante")
-    grid.add_argument("--out", type=Path, default=Path("out/grid_report.md"), help="caminho do relatório Markdown de saída")
+    grid.add_argument(
+        "--min-trades",
+        type=int,
+        default=30,
+        help="piso de trades no IS para qualificação",
+    )
+    grid.add_argument(
+        "--walk-forward",
+        action="store_true",
+        default=False,
+        help="ativa janelas de walk-forward rolante",
+    )
+    grid.add_argument(
+        "--out",
+        type=Path,
+        default=Path("out/grid_report.md"),
+        help="caminho do relatório Markdown de saída",
+    )
     grid.add_argument("--config", type=Path, default=Path("config/default.yaml"))
     grid.add_argument("--data-root", type=Path, default=None)
 
     ui = sub.add_parser("ui", help="inicia servidor web com frontend interativo SMC")
-    ui.add_argument("--host", default="127.0.0.1", help="endereço do host (padrão: 127.0.0.1)")
-    ui.add_argument("--port", type=int, default=8080, help="porta do servidor (padrão: 8080)")
+    ui.add_argument(
+        "--host", default="127.0.0.1", help="endereço do host (padrão: 127.0.0.1)"
+    )
+    ui.add_argument(
+        "--port", type=int, default=8080, help="porta do servidor (padrão: 8080)"
+    )
     ui.add_argument("--config", type=Path, default=Path("config/default.yaml"))
     ui.add_argument("--data-root", type=Path, default=None)
 
-    live = sub.add_parser("live", help="inicia motor de execução autônoma para MetaTrader 5")
+    live = sub.add_parser(
+        "live", help="inicia motor de execução autônoma para MetaTrader 5"
+    )
     live.add_argument("--config", type=Path, default=Path("config/production.yaml"))
-    live.add_argument("--mode", choices=["bridge", "mock"], default="bridge", help="modo de conexão (bridge EA ou mock para teste)")
-    live.add_argument("--symbols", default=None, help="símbolos separados por vírgula (ex: XAUUSD,NAS100)")
-    live.add_argument("--risk", type=float, default=None, help="risco percentual por trade (ex: 1.0)")
-    live.add_argument("--dry-run", action="store_true", default=False, help="simula ciclo sem loop infinito")
+    live.add_argument(
+        "--mode",
+        choices=["bridge", "mock"],
+        default="bridge",
+        help="modo de conexão (bridge EA ou mock para teste)",
+    )
+    live.add_argument(
+        "--symbols",
+        default=None,
+        help="símbolos separados por vírgula (ex: XAUUSD,NAS100)",
+    )
+    live.add_argument(
+        "--risk", type=float, default=None, help="risco percentual por trade (ex: 1.0)"
+    )
+    live.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="simula ciclo sem loop infinito",
+    )
 
-    fibo = sub.add_parser("fibo-backtest", help="executa auditoria da estratégia oficial SMC Fibonacci OTE")
-    fibo.add_argument("--symbol", default="all", help="símbolo a testar (ex: NAS100 ou 'all')")
-    fibo.add_argument("--target", choices=["3R", "0_percent", "proj_618"], default="3R", help="modo de alvo")
+    fibo = sub.add_parser(
+        "fibo-backtest",
+        help="executa auditoria da estratégia oficial SMC Fibonacci OTE",
+    )
+    fibo.add_argument(
+        "--symbol", default="all", help="símbolo a testar (ex: NAS100 ou 'all')"
+    )
+    fibo.add_argument(
+        "--target",
+        choices=["3R", "0_percent", "proj_618"],
+        default="3R",
+        help="modo de alvo",
+    )
     return parser
 
 
 def _cmd_fetch(args: argparse.Namespace, cfg: Config) -> int:
     instrument = cfg.dukascopy.instruments.get(args.symbol)
     if instrument is None:
-        print(f"Símbolo sem mapeamento Dukascopy na config: {args.symbol}", file=sys.stderr)
+        print(
+            f"Símbolo sem mapeamento Dukascopy na config: {args.symbol}",
+            file=sys.stderr,
+        )
         return 2
     root = args.data_root if args.data_root is not None else cfg.data.root
     if args.years is not None:
         if args.start is not None or args.years < 1:
             print("use --years N (N >= 1) sozinho, sem --from", file=sys.stderr)
             return 2
-        end = args.end or datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        end = args.end or datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         start = years_back_start(end, args.years)
-        print(f"{args.symbol}: baixando {start:%Y-%m-%d} a {end:%Y-%m-%d} (mês a mês, retoma de onde parou)")
-        res = fetch_history(args.symbol, instrument, start, end, cfg.dukascopy.offer_side, root, fetcher=fetch_m1)
+        print(
+            f"{args.symbol}: baixando {start:%Y-%m-%d} a {end:%Y-%m-%d} (mês a mês, retoma de onde parou)"
+        )
+        res = fetch_history(
+            args.symbol,
+            instrument,
+            start,
+            end,
+            cfg.dukascopy.offer_side,
+            root,
+            fetcher=fetch_m1,
+        )
         print(
             f"{args.symbol}: {res.rows_saved:,} candles novos | meses: {len(res.saved_months)} baixados, "
             f"{len(res.skipped_months)} já existiam, {len(res.empty_months)} vazios, {len(res.failed_months)} falharam"
         )
         if res.failed_months:
-            print(f"meses com falha (rode de novo para repetir): {', '.join(res.failed_months)}", file=sys.stderr)
+            print(
+                f"meses com falha (rode de novo para repetir): {', '.join(res.failed_months)}",
+                file=sys.stderr,
+            )
             return 1
         return 0
     if args.start is None or args.end is None:
@@ -201,7 +297,9 @@ def _cmd_chart(args: argparse.Namespace, cfg: Config) -> int:
     if args.blocks is not None:
         parsed = [b.strip().upper() for b in args.blocks.split(",") if b.strip()]
         try:
-            zones_cfg = ZoneConfig.model_validate({**cfg.zones.model_dump(), "blocks_filter": parsed})
+            zones_cfg = ZoneConfig.model_validate(
+                {**cfg.zones.model_dump(), "blocks_filter": parsed}
+            )
         except ValidationError:
             print(
                 f"--blocks inválido: {args.blocks!r}; use uma lista não vazia de OB, FVOB, BB",
@@ -236,7 +334,11 @@ def _cmd_import_csv(args: argparse.Namespace, cfg: Config) -> int:
     save_m1(root, args.symbol, df, source=source)
     print(f"{args.symbol}: {len(df)} candles M1 importados em {root} (fonte {source})")
     if len(df):
-        first = df.index[0].tz_convert("America/Sao_Paulo") if source == "profit" else df.index[0]
+        first = (
+            df.index[0].tz_convert("America/Sao_Paulo")
+            if source == "profit"
+            else df.index[0]
+        )
         print(f"  período: {df.index[0]} a {df.index[-1]} | primeira barra: {first}")
     return 0
 
@@ -263,7 +365,9 @@ def _cmd_backtest(args: argparse.Namespace, cfg: Config) -> int:
     m = result.metrics
     print(f"=== Backtest SMC: {args.symbol} ===")
     print(f"Total de trades:   {m['total_trades']}")
-    print(f"Taxa de acerto:    {m['win_rate']:.1f}% ({m['win_trades']}W / {m['loss_trades']}L)")
+    print(
+        f"Taxa de acerto:    {m['win_rate']:.1f}% ({m['win_trades']}W / {m['loss_trades']}L)"
+    )
     print(f"R Médio:           {m['avg_r']:+.2f}R")
     print(f"Expectativa:       {m['expectancy']:+.2f}R")
     print(f"Profit Factor:     {m['profit_factor']:.2f}")
@@ -334,7 +438,9 @@ def _cmd_grid(args: argparse.Namespace, cfg: Config) -> int:
     # Imprime sumário no terminal
     data = res.attribution_analysis
     print(f"Total de variantes: {data['total_variants']}")
-    print(f"Qualificadas (IS trades >= {args.min_trades}): {data['qualified_variants']}")
+    print(
+        f"Qualificadas (IS trades >= {args.min_trades}): {data['qualified_variants']}"
+    )
     print(f"Robustas (OOS Exp > 0): {data['robust_variants']}")
 
     ranking = data.get("ranking", [])
@@ -346,7 +452,9 @@ def _cmd_grid(args: argparse.Namespace, cfg: Config) -> int:
         print(f"Stop:         {best.stop_mode}")
         print(f"Trailing:     {best.trailing_mode}")
         print(f"Confluência:  {best.confluence_profile}")
-        print(f"Expectativa:  {best.oos_metrics.get('expectancy', 0.0):+.2f}R (IS: {best.is_metrics.get('expectancy', 0.0):+.2f}R)")
+        print(
+            f"Expectativa:  {best.oos_metrics.get('expectancy', 0.0):+.2f}R (IS: {best.is_metrics.get('expectancy', 0.0):+.2f}R)"
+        )
         print(f"Taxa Acerto:  {best.oos_metrics.get('win_rate', 0.0):.1f}%")
         print(f"Profit Factor:{best.oos_metrics.get('profit_factor', 0.0):.2f}")
         print(f"Max Drawdown: {best.oos_metrics.get('max_drawdown_r', 0.0):.1f}R")
@@ -391,6 +499,7 @@ def _cmd_grid(args: argparse.Namespace, cfg: Config) -> int:
 
 def _cmd_ui(args: argparse.Namespace, cfg: Config) -> int:
     from smc_trader.ui.server import run_ui_server
+
     run_ui_server(cfg, host=args.host, port=args.port, data_root=args.data_root)
     return 0
 
@@ -402,16 +511,28 @@ def _cmd_live(args: argparse.Namespace, cfg: Config) -> int:
     from smc_trader.execution.live_engine import LiveTradingEngine
     from smc_trader.execution.mt5_interface import MockMT5Client, BridgeEAServer
 
-    prod_cfg_path = args.config if args.config.exists() else Path("config/production.yaml")
+    prod_cfg_path = (
+        args.config if args.config.exists() else Path("config/production.yaml")
+    )
     with open(prod_cfg_path, "r", encoding="utf-8") as f:
         prod_data = yaml.safe_load(f)
 
-    symbols_list = args.symbols.split(",") if args.symbols else list(prod_data.get("symbols", {}).keys())
-    risk_pct = args.risk if args.risk is not None else float(prod_data.get("trading", {}).get("risk_pct_per_trade", 1.0))
+    symbols_list = (
+        args.symbols.split(",")
+        if args.symbols
+        else list(prod_data.get("symbols", {}).keys())
+    )
+    risk_pct = (
+        args.risk
+        if args.risk is not None
+        else float(prod_data.get("trading", {}).get("risk_pct_per_trade", 1.0))
+    )
 
     print("=" * 65)
     print("🚀 SMC AUTO-TRADER — MOTOR DE PRODUÇÃO METATRADER 5")
-    print(f"Modo: {args.mode.upper()} | Ativos: {', '.join(symbols_list)} | Risco: {risk_pct}% por trade")
+    print(
+        f"Modo: {args.mode.upper()} | Ativos: {', '.join(symbols_list)} | Risco: {risk_pct}% por trade"
+    )
     print("=" * 65)
 
     symbol_configs: dict[str, BacktestConfig] = {}
@@ -428,8 +549,12 @@ def _cmd_live(args: argparse.Namespace, cfg: Config) -> int:
 
         model_name = model_def.get("name", sym_raw.get("model_name", "SMC-DayFlow"))
         macro_tf = sym_raw.get("macro_tf", model_def.get("macro_tf", "M15"))
-        require_sweep = sym_raw.get("require_sweep", model_def.get("require_sweep", False))
-        entry_mode = sym_raw.get("entry_mode", model_def.get("entry_mode", "confirmation"))
+        require_sweep = sym_raw.get(
+            "require_sweep", model_def.get("require_sweep", False)
+        )
+        entry_mode = sym_raw.get(
+            "entry_mode", model_def.get("entry_mode", "confirmation")
+        )
         stop_mode = sym_raw.get("stop_mode", model_def.get("stop_mode", "swing"))
         target_r = sym_raw.get("target_r", model_def.get("target_r", 3.0))
 
@@ -439,7 +564,11 @@ def _cmd_live(args: argparse.Namespace, cfg: Config) -> int:
             target_r=target_r,
         )
 
-        blocks = sym_raw.get("zone", {}).get("blocks_filter") or model_def.get("blocks_filter") or ["OB"]
+        blocks = (
+            sym_raw.get("zone", {}).get("blocks_filter")
+            or model_def.get("blocks_filter")
+            or ["OB"]
+        )
         symbol_blocks[sym] = blocks
         symbol_models[sym] = model_name
         symbol_macro_tfs[sym] = macro_tf
@@ -461,8 +590,12 @@ def _cmd_live(args: argparse.Namespace, cfg: Config) -> int:
         bridge_server.start()
         print(f"✅ Ponte MetaTrader 5 iniciada na porta {port} (escutando em {host})")
         print("👉 Se o MT5 estiver na mesma máquina: URL http://127.0.0.1:8089")
-        print("👉 Se o MT5 estiver em outra máquina (Windows na rede): URL http://<IP_DESTA_MAQUINA>:8089")
-        print("👉 Anexe o Expert Advisor 'mql5/SMC_Bridge_EA.mq5' no gráfico do seu MetaTrader 5!")
+        print(
+            "👉 Se o MT5 estiver em outra máquina (Windows na rede): URL http://<IP_DESTA_MAQUINA>:8089"
+        )
+        print(
+            "👉 Anexe o Expert Advisor 'mql5/SMC_Bridge_EA.mq5' no gráfico do seu MetaTrader 5!"
+        )
         client = MockMT5Client()
         client.connect()
 
@@ -474,15 +607,23 @@ def _cmd_live(args: argparse.Namespace, cfg: Config) -> int:
         symbol_macro_tfs=symbol_macro_tfs,
         symbol_sweeps=symbol_sweeps,
         risk_pct=risk_pct,
-        notification_callback=lambda msg: print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}"),
+        notification_callback=lambda msg: print(
+            f"[{datetime.now().strftime('%H:%M:%S')}] {msg}"
+        ),
     )
 
     print("\n🟢 Motor em execução autônoma com Modelos Operacionais Fechados:")
     for sym in symbols_list:
         m_name = symbol_models.get(sym, "SMC-DayFlow")
         m_tf = symbol_macro_tfs.get(sym, "M15")
-        s_req = "Sim (Sweep Obrigatório)" if symbol_sweeps.get(sym, False) else "Não (Fluxo Direto)"
-        print(f"  📌 {sym:7s} -> Modelo: [{m_name}] | TF: {m_tf}/M1 | Varredura Wyckoff: {s_req}")
+        s_req = (
+            "Sim (Sweep Obrigatório)"
+            if symbol_sweeps.get(sym, False)
+            else "Não (Fluxo Direto)"
+        )
+        print(
+            f"  📌 {sym:7s} -> Modelo: [{m_name}] | TF: {m_tf}/M1 | Varredura Wyckoff: {s_req}"
+        )
     print("\nPressione Ctrl+C para encerrar.\n")
     if args.dry_run:
         print("🔍 Modo Dry-Run ativo: executando ciclo de teste...")
@@ -521,16 +662,26 @@ def _spread_for(symbol: str, cfg: Config) -> float:
 def _cmd_fibo_backtest(args: argparse.Namespace, cfg: Config) -> int:
     import pandas as pd
     from smc_trader.strategies.fibo_ote import FiboOTEConfig, FiboOTEStrategy
+
     if args.symbol == "all":
         symbols = list(_FIBO_ALL)  # B3 só quando pedido explicitamente
     else:
         symbols = [args.symbol]
     strat = FiboOTEStrategy(FiboOTEConfig(target_mode=args.target))
-    print(f"\n🚀 Executando SMC Fibonacci OTE (M5 | Alvo {args.target}) para: {symbols}\n")
+    print(
+        f"\n🚀 Executando SMC Fibonacci OTE (M5 | Alvo {args.target}) para: {symbols}\n"
+    )
     tot_r = 0.0
     for sym in symbols:
         p = next(
-            (c for c in (Path(f"data/{sym}_M1_{src}.parquet") for src in ("dukascopy", "profit")) if c.exists()),
+            (
+                c
+                for c in (
+                    Path(f"data/{sym}_M1_{src}.parquet")
+                    for src in ("dukascopy", "profit")
+                )
+                if c.exists()
+            ),
             Path(f"data/{sym}_M1_dukascopy.parquet"),
         )
         if not p.exists():
@@ -545,7 +696,9 @@ def _cmd_fibo_backtest(args: argparse.Namespace, cfg: Config) -> int:
         wins = sum(1 for t in trades if t.win)
         r = sum(t.r_multiple for t in trades)
         tot_r += r
-        print(f"📊 [{sym:6s}] Trades: {n_t:4d} | Acerto: {(wins/n_t)*100:5.1f}% | Retorno: {r:+6.1f}R | Exp: {r/n_t:+.3f}R")
+        print(
+            f"📊 [{sym:6s}] Trades: {n_t:4d} | Acerto: {(wins / n_t) * 100:5.1f}% | Retorno: {r:+6.1f}R | Exp: {r / n_t:+.3f}R"
+        )
     print(f"\n🏆 Total Geral: {tot_r:+.1f}R\n")
     return 0
 

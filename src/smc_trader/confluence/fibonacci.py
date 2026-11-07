@@ -2,7 +2,10 @@ from typing import Literal
 
 
 def calculate_fib_level(
-    direction: Literal["long", "short"], range_low: float, range_high: float, level: float
+    direction: Literal["long", "short"],
+    range_low: float,
+    range_high: float,
+    level: float,
 ) -> float:
     """Calcula o nível de retração de Fibonacci a partir do range.
 

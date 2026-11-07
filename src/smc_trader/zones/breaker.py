@@ -128,7 +128,11 @@ def build_breakers(
             continue
         bos_pos = pos
 
-        stop = n if cfg.breaker_max_age is None else min(n, bos_pos + cfg.breaker_max_age + 1)
+        stop = (
+            n
+            if cfg.breaker_max_age is None
+            else min(n, bos_pos + cfg.breaker_max_age + 1)
+        )
         if bos_pos + 1 >= stop:
             continue
         sub_close = close[bos_pos + 1 : stop]
@@ -189,7 +193,9 @@ def build_breakers(
                 created_at=pd.Timestamp(created_at),
                 range_low=range_low,
                 range_high=range_high,
-                in_discount=in_discount(direction, origin.low, origin.high, range_low, range_high),
+                in_discount=in_discount(
+                    direction, origin.low, origin.high, range_low, range_high
+                ),
                 swept_liquidity=swept,
                 end_time=end_time,
                 end_reason=end_reason,

@@ -12,11 +12,15 @@ SOURCES = ("dukascopy", "mt5", "profit")
 
 def _path(root: Path, symbol: str, source: str) -> Path:
     if source not in SOURCES:
-        raise ValueError(f"source deve ser um de {sorted(SOURCES)}, recebido: {source!r}")
+        raise ValueError(
+            f"source deve ser um de {sorted(SOURCES)}, recebido: {source!r}"
+        )
     return Path(root) / f"{symbol}_M1_{source}.parquet"
 
 
-def save_m1(root: Path, symbol: str, df: pd.DataFrame, source: str = "dukascopy") -> None:
+def save_m1(
+    root: Path, symbol: str, df: pd.DataFrame, source: str = "dukascopy"
+) -> None:
     path = _path(root, symbol, source)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
@@ -50,7 +54,9 @@ def load_candles(
 ) -> pd.DataFrame:
     path = _path(root, symbol, source)
     if not path.exists():
-        raise FileNotFoundError(f"Sem dados M1 para {symbol} (fonte {source}): arquivo não encontrado em {path}")
+        raise FileNotFoundError(
+            f"Sem dados M1 para {symbol} (fonte {source}): arquivo não encontrado em {path}"
+        )
     tf_minutes(tf)
     m1 = pd.read_parquet(path)
     out = m1 if tf == "M1" else resample_ohlc(m1, tf)

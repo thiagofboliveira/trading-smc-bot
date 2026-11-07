@@ -3,6 +3,7 @@
 2. Bridge EA (via microservidor HTTP/REST local compatível com qualquer SO e VPS).
 3. Mock MT5 (para testes automatizados e simulação em dry-run).
 """
+
 import abc
 import json
 import logging
@@ -46,7 +47,9 @@ class BaseMT5Client(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def get_candles(self, symbol: str, timeframe: str = "M1", count: int = 300) -> pd.DataFrame:
+    def get_candles(
+        self, symbol: str, timeframe: str = "M1", count: int = 300
+    ) -> pd.DataFrame:
         pass
 
     @abc.abstractmethod
@@ -54,7 +57,9 @@ class BaseMT5Client(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def modify_position(self, ticket: int, stop_loss: float, take_profit: float) -> bool:
+    def modify_position(
+        self, ticket: int, stop_loss: float, take_profit: float
+    ) -> bool:
         pass
 
     @abc.abstractmethod
@@ -81,9 +86,33 @@ class MockMT5Client(BaseMT5Client):
             currency="USD",
         )
         self.symbols: dict[str, SymbolInfo] = {
-            "XAUUSD": SymbolInfo("XAUUSD", bid=2650.0, ask=2650.2, point=0.01, digits=2, spread=0.20, tick_value=1.0),
-            "NAS100": SymbolInfo("NAS100", bid=19800.0, ask=19801.5, point=0.1, digits=1, spread=1.5, tick_value=1.0),
-            "EURUSD": SymbolInfo("EURUSD", bid=1.0850, ask=1.08508, point=0.00001, digits=5, spread=0.00008, tick_value=1.0),
+            "XAUUSD": SymbolInfo(
+                "XAUUSD",
+                bid=2650.0,
+                ask=2650.2,
+                point=0.01,
+                digits=2,
+                spread=0.20,
+                tick_value=1.0,
+            ),
+            "NAS100": SymbolInfo(
+                "NAS100",
+                bid=19800.0,
+                ask=19801.5,
+                point=0.1,
+                digits=1,
+                spread=1.5,
+                tick_value=1.0,
+            ),
+            "EURUSD": SymbolInfo(
+                "EURUSD",
+                bid=1.0850,
+                ask=1.08508,
+                point=0.00001,
+                digits=5,
+                spread=0.00008,
+                tick_value=1.0,
+            ),
         }
         self.positions: dict[int, LivePosition] = {}
         self.candles_db: dict[tuple[str, str], pd.DataFrame] = {}
@@ -104,13 +133,17 @@ class MockMT5Client(BaseMT5Client):
 
     def get_symbol_info(self, symbol: str) -> SymbolInfo:
         if symbol not in self.symbols:
-            self.symbols[symbol] = SymbolInfo(symbol, bid=100.0, ask=100.1, point=0.01, digits=2, spread=0.1)
+            self.symbols[symbol] = SymbolInfo(
+                symbol, bid=100.0, ask=100.1, point=0.01, digits=2, spread=0.1
+            )
         return self.symbols[symbol]
 
     def set_candles(self, symbol: str, timeframe: str, df: pd.DataFrame) -> None:
         self.candles_db[(symbol, timeframe)] = df
 
-    def get_candles(self, symbol: str, timeframe: str = "M1", count: int = 300) -> pd.DataFrame:
+    def get_candles(
+        self, symbol: str, timeframe: str = "M1", count: int = 300
+    ) -> pd.DataFrame:
         df = self.candles_db.get((symbol, timeframe), pd.DataFrame())
         return df.tail(count)
 
@@ -132,9 +165,17 @@ class MockMT5Client(BaseMT5Client):
             comment=order.comment,
         )
         self.positions[ticket] = pos
-        return OrderResult(success=True, ticket=ticket, price=order.price, volume=order.volume, comment="OK")
+        return OrderResult(
+            success=True,
+            ticket=ticket,
+            price=order.price,
+            volume=order.volume,
+            comment="OK",
+        )
 
-    def modify_position(self, ticket: int, stop_loss: float, take_profit: float) -> bool:
+    def modify_position(
+        self, ticket: int, stop_loss: float, take_profit: float
+    ) -> bool:
         if ticket in self.positions:
             self.positions[ticket].stop_loss = stop_loss
             self.positions[ticket].take_profit = take_profit

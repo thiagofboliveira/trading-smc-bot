@@ -8,6 +8,7 @@ Sob esse filtro o resultado não tem look-ahead (verificado por testes). Uso em
 janela exige aquecimento: o primeiro rompimento da janela é rotulado BOS
 (trend None).
 """
+
 from dataclasses import dataclass, field
 
 import pandas as pd

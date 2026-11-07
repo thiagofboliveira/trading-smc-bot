@@ -1,19 +1,19 @@
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Literal
 
 from smc_trader.config import (
     BacktestConfig,
-    ConfluenceConfig,
-    TrailingConfig,
 )
 
 BlocksFilterType = tuple[str, ...]
 EntryModeType = Literal["touch", "confirmation", "hybrid"]
 StopModeType = Literal["ob", "swing", "m1_swing"]
 TrailingModeType = Literal["none", "ema", "bos"]
-ConfluenceProfileType = Literal["all_active", "ema_only", "sma_only", "fib_only", "none"]
+ConfluenceProfileType = Literal[
+    "all_active", "ema_only", "sma_only", "fib_only", "none"
+]
 
 
 @dataclass(frozen=True)
@@ -67,15 +67,55 @@ class GridVariant:
         # Configurar confluência conforme o perfil
         confluence_dict = base_config.confluence.model_dump()
         if self.confluence_profile == "all_active":
-            confluence_dict.update({"use_ema80": True, "use_sma200": True, "use_fib618": True, "use_fib790": True, "min_rules": 1})
+            confluence_dict.update(
+                {
+                    "use_ema80": True,
+                    "use_sma200": True,
+                    "use_fib618": True,
+                    "use_fib790": True,
+                    "min_rules": 1,
+                }
+            )
         elif self.confluence_profile == "ema_only":
-            confluence_dict.update({"use_ema80": True, "use_sma200": False, "use_fib618": False, "use_fib790": False, "min_rules": 1})
+            confluence_dict.update(
+                {
+                    "use_ema80": True,
+                    "use_sma200": False,
+                    "use_fib618": False,
+                    "use_fib790": False,
+                    "min_rules": 1,
+                }
+            )
         elif self.confluence_profile == "sma_only":
-            confluence_dict.update({"use_ema80": False, "use_sma200": True, "use_fib618": False, "use_fib790": False, "min_rules": 1})
+            confluence_dict.update(
+                {
+                    "use_ema80": False,
+                    "use_sma200": True,
+                    "use_fib618": False,
+                    "use_fib790": False,
+                    "min_rules": 1,
+                }
+            )
         elif self.confluence_profile == "fib_only":
-            confluence_dict.update({"use_ema80": False, "use_sma200": False, "use_fib618": True, "use_fib790": True, "min_rules": 1})
+            confluence_dict.update(
+                {
+                    "use_ema80": False,
+                    "use_sma200": False,
+                    "use_fib618": True,
+                    "use_fib790": True,
+                    "min_rules": 1,
+                }
+            )
         elif self.confluence_profile == "none":
-            confluence_dict.update({"use_ema80": False, "use_sma200": False, "use_fib618": False, "use_fib790": False, "min_rules": 1})
+            confluence_dict.update(
+                {
+                    "use_ema80": False,
+                    "use_sma200": False,
+                    "use_fib618": False,
+                    "use_fib790": False,
+                    "min_rules": 1,
+                }
+            )
 
         # Configurar trailing
         trailing_dict = base_config.trailing.model_dump()

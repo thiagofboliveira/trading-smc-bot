@@ -21,7 +21,9 @@ def normalize_dukascopy(df: pd.DataFrame) -> pd.DataFrame:
 
 def _next_month_start(t: datetime) -> datetime:
     year, month = (t.year + 1, 1) if t.month == 12 else (t.year, t.month + 1)
-    return t.replace(year=year, month=month, day=1, hour=0, minute=0, second=0, microsecond=0)
+    return t.replace(
+        year=year, month=month, day=1, hour=0, minute=0, second=0, microsecond=0
+    )
 
 
 def fetch_m1(

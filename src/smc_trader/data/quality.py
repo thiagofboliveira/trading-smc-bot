@@ -6,13 +6,18 @@ ordem, horário incompatível com a sessão do ativo) do que apenas pede atenç�
 Um backtest sobre dado com erro não é confiável; avisos precisam ser olhados, não
 necessariamente corrigidos (feriados, notícias e aberturas geram os dois).
 """
+
 from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
 
-_SPIKE_Z = 40.0  # desvios robustos (MAD) além dos quais um retorno de 1 barra vira "pico"
-_OUTSIDE_SESSION_LIMIT = 0.01  # >1% das barras fora do horário esperado => provável erro de fuso
+_SPIKE_Z = (
+    40.0  # desvios robustos (MAD) além dos quais um retorno de 1 barra vira "pico"
+)
+_OUTSIDE_SESSION_LIMIT = (
+    0.01  # >1% das barras fora do horário esperado => provável erro de fuso
+)
 _FLAT_WARN = 0.40
 
 
@@ -39,7 +44,9 @@ class QualityReport:
 
 
 def _spans_saturday(start: pd.Timestamp, end: pd.Timestamp) -> bool:
-    days = pd.date_range(start.normalize() + pd.Timedelta(days=1), end.normalize(), freq="D")
+    days = pd.date_range(
+        start.normalize() + pd.Timedelta(days=1), end.normalize(), freq="D"
+    )
     return bool((days.weekday == 5).any())
 
 
@@ -94,8 +101,14 @@ def check_quality(
         hours = pd.Series([g[0].hour for g in rep.gaps])
         top_hour, top_n = int(hours.mode().iloc[0]), int(hours.value_counts().iloc[0])
         if top_n / len(rep.gaps) >= 0.6:
-            typical = float(np.median([g[2] for g in rep.gaps if g[0].hour == top_hour]))
-            keep = [g for g in rep.gaps if not (g[0].hour == top_hour and g[2] <= 2 * typical)]
+            typical = float(
+                np.median([g[2] for g in rep.gaps if g[0].hour == top_hour])
+            )
+            keep = [
+                g
+                for g in rep.gaps
+                if not (g[0].hour == top_hour and g[2] <= 2 * typical)
+            ]
             rep.daily_breaks = len(rep.gaps) - len(keep)
             rep.gaps = keep
     if rep.gaps:
@@ -117,7 +130,9 @@ def check_quality(
             z = np.abs(r - med) / (1.4826 * mad)
             rep.spikes = int((z > _SPIKE_Z).sum())
     if rep.spikes:
-        rep.warnings.append(f"{rep.spikes} pico(s) de preço (retorno de 1 barra > {_SPIKE_Z:.0f} desvios robustos)")
+        rep.warnings.append(
+            f"{rep.spikes} pico(s) de preço (retorno de 1 barra > {_SPIKE_Z:.0f} desvios robustos)"
+        )
 
     rep.flat_pct = float((d["high"] == d["low"]).mean())
     if rep.flat_pct > _FLAT_WARN:
@@ -140,7 +155,9 @@ def format_report(rep: QualityReport) -> str:
     if rep.n_bars:
         lines[0] += f" | {rep.start:%Y-%m-%d} a {rep.end:%Y-%m-%d}"
     if rep.daily_breaks:
-        lines.append(f"   info: {rep.daily_breaks} pausa(s) diária(s) do mercado ignorada(s) como buraco")
+        lines.append(
+            f"   info: {rep.daily_breaks} pausa(s) diária(s) do mercado ignorada(s) como buraco"
+        )
     for e in rep.errors:
         lines.append(f"   erro: {e}")
     for w in rep.warnings:

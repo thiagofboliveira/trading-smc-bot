@@ -1,8 +1,9 @@
 """Download de histórico longo da Dukascopy, mês a mês, com retomada e repetição."""
+
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -23,7 +24,15 @@ class HistoryResult:
 
 def years_back_start(end: datetime, years: int) -> datetime:
     """Primeiro dia do mês de `end` menos `years` anos (alinhado para não gravar mês parcial no início)."""
-    return end.replace(year=end.year - years, month=end.month, day=1, hour=0, minute=0, second=0, microsecond=0)
+    return end.replace(
+        year=end.year - years,
+        month=end.month,
+        day=1,
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
 
 
 def fetch_history(

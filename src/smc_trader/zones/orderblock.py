@@ -138,7 +138,11 @@ def _lifetime(
         else:
             touched = high[start_idx:] >= zone_low
         hits = np.flatnonzero(touched)
-        mitigated = pd.Timestamp(close_time[start_idx + int(hits[0])]) if hits.size > 0 else None
+        mitigated = (
+            pd.Timestamp(close_time[start_idx + int(hits[0])])
+            if hits.size > 0
+            else None
+        )
     else:
         mitigated = None
 
@@ -146,7 +150,9 @@ def _lifetime(
     against_times = choch_index[against]
     if against_times.size > 0:
         c_idx = int(np.searchsorted(against_times, created_at, side="right"))
-        invalidated = pd.Timestamp(against_times[c_idx]) if c_idx < against_times.size else None
+        invalidated = (
+            pd.Timestamp(against_times[c_idx]) if c_idx < against_times.size else None
+        )
     else:
         invalidated = None
 
@@ -211,7 +217,9 @@ def build_zones(
         has_fvg = _has_fvg(fvg_index, event.direction, candle_time, event.time)
         if cfg.require_imbalance and not has_fvg:
             continue
-        discount = in_discount(direction, z_low, z_high, event.range_low, event.range_high)
+        discount = in_discount(
+            direction, z_low, z_high, event.range_low, event.range_high
+        )
         if cfg.require_discount and not discount:
             continue
         sweep_side = "low" if long else "high"

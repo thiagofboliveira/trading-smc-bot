@@ -58,14 +58,18 @@ def find_pivots(candles: pd.DataFrame, k: int) -> pd.DataFrame:
                     "time": candles.index[pos_sorted],
                     "kind": kind_all[order],
                     "price": price_all[order],
-                    "confirmed_at": candles["close_time"].iloc[pos_sorted + k].to_numpy(),
+                    "confirmed_at": candles["close_time"]
+                    .iloc[pos_sorted + k]
+                    .to_numpy(),
                 },
                 columns=COLUMNS,
             )
 
-    return pd.DataFrame({c: pd.Series(dtype="object") for c in COLUMNS}).astype(
-        {"price": float}
-    ).assign(
-        time=pd.Series(dtype="datetime64[ns, UTC]"),
-        confirmed_at=pd.Series(dtype="datetime64[ns, UTC]"),
-    )[COLUMNS]
+    return (
+        pd.DataFrame({c: pd.Series(dtype="object") for c in COLUMNS})
+        .astype({"price": float})
+        .assign(
+            time=pd.Series(dtype="datetime64[ns, UTC]"),
+            confirmed_at=pd.Series(dtype="datetime64[ns, UTC]"),
+        )[COLUMNS]
+    )

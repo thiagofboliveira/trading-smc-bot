@@ -13,7 +13,9 @@ class WalkForwardWindow:
     test_df: pd.DataFrame
 
 
-def split_is_oos(df: pd.DataFrame, is_ratio: float = 0.7) -> tuple[pd.DataFrame, pd.DataFrame]:
+def split_is_oos(
+    df: pd.DataFrame, is_ratio: float = 0.7
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Divide a série temporal estritamente em In-Sample (70%) e Out-of-Sample (30%)."""
     if df.empty:
         return df.copy(), df.copy()

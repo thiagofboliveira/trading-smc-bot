@@ -8,7 +8,10 @@ _DOWN = "#d6453d"
 _FVG_FILL = "rgba(70, 130, 220, 0.18)"
 _ZONE_FILL = {"long": "rgba(46, 158, 91, 0.25)", "short": "rgba(214, 69, 61, 0.25)"}
 _ZONE_LINE = {"long": _UP, "short": _DOWN}
-_BREAKER_FILL = {"long": "rgba(139, 92, 246, 0.22)", "short": "rgba(245, 158, 11, 0.22)"}
+_BREAKER_FILL = {
+    "long": "rgba(139, 92, 246, 0.22)",
+    "short": "rgba(245, 158, 11, 0.22)",
+}
 _BREAKER_LINE = {"long": "#8b5cf6", "short": "#f59e0b"}
 
 
@@ -79,6 +82,7 @@ def build_chart(candles: pd.DataFrame, analysis: Analysis, title: str) -> go.Fig
         )
 
     last_close = candles["close_time"].iloc[-1] if len(candles) else None
+
     def draw_zone(z, fill, color, label, dash=None):
         fig.add_shape(
             type="rect",
@@ -105,7 +109,9 @@ def build_chart(candles: pd.DataFrame, analysis: Analysis, title: str) -> go.Fig
     for z in analysis.zones:
         draw_zone(z, _ZONE_FILL[z.direction], _ZONE_LINE[z.direction], z.kind)
     for z in analysis.breakers:
-        draw_zone(z, _BREAKER_FILL[z.direction], _BREAKER_LINE[z.direction], "BB", "dash")
+        draw_zone(
+            z, _BREAKER_FILL[z.direction], _BREAKER_LINE[z.direction], "BB", "dash"
+        )
 
     fig.update_layout(
         title=title,

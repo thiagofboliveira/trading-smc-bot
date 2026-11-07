@@ -8,12 +8,14 @@ Gera:
    - Aba 1: 'Operações' (detalhamento linha por linha com status GAIN/STOP, saldo acumulado)
    - Aba 2: 'Análise Estatística & ROI' (taxa de acerto, expectativa, profit factor, drawdown, ROI)
 """
+
 from datetime import datetime
 import json
 from pathlib import Path
 import re
 from typing import Any
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -27,7 +29,9 @@ from smc_trader.analysis import Analysis
 from smc_trader.backtest.types import BacktestResult, Trade
 
 
-def _plot_candlesticks(ax, df: pd.DataFrame, up_color="#26a69a", down_color="#ef5350", width=0.6):
+def _plot_candlesticks(
+    ax, df: pd.DataFrame, up_color="#26a69a", down_color="#ef5350", width=0.6
+):
     """Desenha velas japonesas de forma eficiente no eixo matplotlib."""
     if df.empty:
         return
@@ -52,13 +56,21 @@ def _plot_candlesticks(ax, df: pd.DataFrame, up_color="#26a69a", down_color="#ef
     # Velas de alta
     if np.any(up):
         for xi, bl, bh in zip(x[up], body_low[up], body_height[up]):
-            rect = patches.Rectangle((xi - width / 2, bl), width, bh, facecolor=up_color, edgecolor=up_color)
+            rect = patches.Rectangle(
+                (xi - width / 2, bl), width, bh, facecolor=up_color, edgecolor=up_color
+            )
             ax.add_patch(rect)
 
     # Velas de baixa
     if np.any(down):
         for xi, bl, bh in zip(x[down], body_low[down], body_height[down]):
-            rect = patches.Rectangle((xi - width / 2, bl), width, bh, facecolor=down_color, edgecolor=down_color)
+            rect = patches.Rectangle(
+                (xi - width / 2, bl),
+                width,
+                bh,
+                facecolor=down_color,
+                edgecolor=down_color,
+            )
             ax.add_patch(rect)
 
 
@@ -92,7 +104,11 @@ def generate_trade_charts(
     for z in analysis.zones:
         if z.created_at <= t_end and (z.end_time is None or z.end_time >= t_start):
             x_start = time_map_m15.get(z.created_at, 0)
-            x_end = time_map_m15.get(z.end_time, len(sub_m15) - 1) if z.end_time else len(sub_m15) - 1
+            x_end = (
+                time_map_m15.get(z.end_time, len(sub_m15) - 1)
+                if z.end_time
+                else len(sub_m15) - 1
+            )
             if x_end >= x_start:
                 color = "#26a69a" if z.direction == "long" else "#ef5350"
                 rect = patches.Rectangle(
@@ -105,13 +121,24 @@ def generate_trade_charts(
                     alpha=0.18,
                 )
                 ax_m.add_patch(rect)
-                ax_m.text(x_start, z.high, f" {z.kind} ({z.direction})", color=color, fontsize=8, va="bottom")
+                ax_m.text(
+                    x_start,
+                    z.high,
+                    f" {z.kind} ({z.direction})",
+                    color=color,
+                    fontsize=8,
+                    va="bottom",
+                )
 
     # Desenhar Breakers na janela
     for b in analysis.breakers:
         if b.created_at <= t_end and (b.end_time is None or b.end_time >= t_start):
             x_start = time_map_m15.get(b.created_at, 0)
-            x_end = time_map_m15.get(b.end_time, len(sub_m15) - 1) if b.end_time else len(sub_m15) - 1
+            x_end = (
+                time_map_m15.get(b.end_time, len(sub_m15) - 1)
+                if b.end_time
+                else len(sub_m15) - 1
+            )
             if x_end >= x_start:
                 color = "#ab47bc" if b.direction == "long" else "#ffa726"
                 rect = patches.Rectangle(
@@ -125,7 +152,14 @@ def generate_trade_charts(
                     alpha=0.18,
                 )
                 ax_m.add_patch(rect)
-                ax_m.text(x_start, b.high, f" BB ({b.direction})", color=color, fontsize=8, va="bottom")
+                ax_m.text(
+                    x_start,
+                    b.high,
+                    f" BB ({b.direction})",
+                    color=color,
+                    fontsize=8,
+                    va="bottom",
+                )
 
     # Marcar a entrada e saída no gráfico macro
     closest_m15_entry = sub_m15.index.asof(trade.entry_time)
@@ -135,14 +169,30 @@ def generate_trade_charts(
         is_buy = trade.direction == "buy"
         marker = "^" if is_buy else "v"
         m_color = "#00e676" if is_buy else "#ff1744"
-        ax_m.scatter([idx_e], [trade.entry_price], marker=marker, color=m_color, s=150, zorder=5, label=f"Entrada {trade.direction.upper()}")
+        ax_m.scatter(
+            [idx_e],
+            [trade.entry_price],
+            marker=marker,
+            color=m_color,
+            s=150,
+            zorder=5,
+            label=f"Entrada {trade.direction.upper()}",
+        )
 
     if closest_m15_exit in time_map_m15:
         idx_x = time_map_m15[closest_m15_exit]
         is_gain = trade.r_multiple > 0
         x_marker = "*" if is_gain else "X"
         x_color = "#ffd700" if is_gain else "#ff5252"
-        ax_m.scatter([idx_x], [trade.exit_price], marker=x_marker, color=x_color, s=130, zorder=5, label=f"Saída ({trade.exit_reason.upper()})")
+        ax_m.scatter(
+            [idx_x],
+            [trade.exit_price],
+            marker=x_marker,
+            color=x_color,
+            s=130,
+            zorder=5,
+            label=f"Saída ({trade.exit_reason.upper()})",
+        )
 
     # Formatar eixos macro
     n_ticks = min(8, len(sub_m15))
@@ -164,7 +214,9 @@ def generate_trade_charts(
         fontweight="bold",
         pad=12,
     )
-    ax_m.legend(facecolor="#161b22", edgecolor="#30363d", labelcolor="#c9d1d9", loc="upper left")
+    ax_m.legend(
+        facecolor="#161b22", edgecolor="#30363d", labelcolor="#c9d1d9", loc="upper left"
+    )
     plt.tight_layout()
     macro_png = out_trade_dir / "01_macro_chart.png"
     fig_macro.savefig(macro_png, facecolor=fig_macro.get_facecolor(), edgecolor="none")
@@ -190,12 +242,36 @@ def generate_trade_charts(
     idx_exit = time_map_m1.get(trade.exit_time, len(sub_m1) - 1)
 
     # Linha de Entrada
-    ax_u.hlines(trade.entry_price, idx_entry, idx_exit, color="#58a6ff", linestyle="-", linewidth=1.5, label=f"Entrada: {trade.entry_price:.2f}")
+    ax_u.hlines(
+        trade.entry_price,
+        idx_entry,
+        idx_exit,
+        color="#58a6ff",
+        linestyle="-",
+        linewidth=1.5,
+        label=f"Entrada: {trade.entry_price:.2f}",
+    )
     # Linha de Stop Loss
-    ax_u.hlines(trade.stop_loss, idx_entry, idx_exit, color="#ff5252", linestyle="--", linewidth=1.5, label=f"Stop Loss: {trade.stop_loss:.2f}")
+    ax_u.hlines(
+        trade.stop_loss,
+        idx_entry,
+        idx_exit,
+        color="#ff5252",
+        linestyle="--",
+        linewidth=1.5,
+        label=f"Stop Loss: {trade.stop_loss:.2f}",
+    )
     # Linha de Take Profit
     if trade.take_profit:
-        ax_u.hlines(trade.take_profit, idx_entry, idx_exit, color="#00e676", linestyle="--", linewidth=1.5, label=f"Take Profit: {trade.take_profit:.2f}")
+        ax_u.hlines(
+            trade.take_profit,
+            idx_entry,
+            idx_exit,
+            color="#00e676",
+            linestyle="--",
+            linewidth=1.5,
+            label=f"Take Profit: {trade.take_profit:.2f}",
+        )
 
     # Marcador de Entrada Micro
     is_buy = trade.direction == "buy"
@@ -237,7 +313,9 @@ def generate_trade_charts(
         fontweight="bold",
         pad=12,
     )
-    ax_u.legend(facecolor="#161b22", edgecolor="#30363d", labelcolor="#c9d1d9", loc="upper left")
+    ax_u.legend(
+        facecolor="#161b22", edgecolor="#30363d", labelcolor="#c9d1d9", loc="upper left"
+    )
     plt.tight_layout()
     micro_png = out_trade_dir / "02_micro_chart.png"
     fig_micro.savefig(micro_png, facecolor=fig_micro.get_facecolor(), edgecolor="none")
@@ -253,8 +331,12 @@ def generate_trade_charts(
         f.write(f"Ativo:               {trade.symbol}\n")
         f.write(f"Direção:             {trade.direction.upper()}\n")
         f.write(f"Status Final:        {'GAIN ✅' if is_gain else 'STOP ❌'}\n")
-        f.write(f"Data/Hora Entrada:   {trade.entry_time.strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
-        f.write(f"Data/Hora Saída:     {trade.exit_time.strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
+        f.write(
+            f"Data/Hora Entrada:   {trade.entry_time.strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
+        )
+        f.write(
+            f"Data/Hora Saída:     {trade.exit_time.strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
+        )
         f.write(f"Preço de Entrada:    {trade.entry_price:.3f}\n")
         f.write(f"Stop Loss:           {trade.stop_loss:.3f}\n")
         f.write(f"Take Profit:         {tp_str}\n")
@@ -313,12 +395,18 @@ def export_backtest_package(
         f.write(f"  R Médio por Trade:         {metrics.get('avg_r', 0):+.2f}R\n")
         f.write(f"  Expectativa Matemática:    {metrics.get('expectancy', 0):+.2f}R\n")
         f.write(f"  Profit Factor:             {metrics.get('profit_factor', 0):.2f}\n")
-        f.write(f"  Drawdown Máximo (R):       {metrics.get('max_drawdown_r', 0):.2f}R\n")
-        f.write(f"  Lucro Líquido Total ($):   ${metrics.get('total_pnl', 0):+.2f} USD\n\n")
+        f.write(
+            f"  Drawdown Máximo (R):       {metrics.get('max_drawdown_r', 0):.2f}R\n"
+        )
+        f.write(
+            f"  Lucro Líquido Total ($):   ${metrics.get('total_pnl', 0):+.2f} USD\n\n"
+        )
         f.write("-" * 70 + "\n")
         f.write("DETALHAMENTO MENSAL:\n")
         for month, m_data in metrics.get("monthly", {}).items():
-            f.write(f"  Mês {month}: {m_data.get('trades')} trades | Taxa de Acerto: {m_data.get('win_rate', 0):.1f}% | R Total: {m_data.get('r_multiple', 0):+.2f}R\n")
+            f.write(
+                f"  Mês {month}: {m_data.get('trades')} trades | Taxa de Acerto: {m_data.get('win_rate', 0):.1f}% | R Total: {m_data.get('r_multiple', 0):+.2f}R\n"
+            )
         f.write("=" * 70 + "\n")
 
     # 3. Gerar Planilha Excel (.xlsx) com 2 Abas Profissionais
@@ -333,34 +421,40 @@ def export_backtest_package(
         cum_r += t.r_multiple
         status = "GAIN" if t.r_multiple > 0 else "STOP"
         t_folder_name = f"trade_{idx:03d}_{t.direction.upper()}_{status}"
-        trades_data.append({
-            "id": idx,
-            "trade_id": t.id,
-            "symbol": t.symbol,
-            "direction": t.direction,
-            "status": status,
-            "is_gain": t.r_multiple > 0,
-            "entry_time": t.entry_time.isoformat(),
-            "exit_time": t.exit_time.isoformat(),
-            "entry_price": round(t.entry_price, 3),
-            "stop_loss": round(t.stop_loss, 3),
-            "take_profit": round(t.take_profit, 3) if t.take_profit is not None else None,
-            "exit_price": round(t.exit_price, 3),
-            "exit_reason": t.exit_reason.upper(),
-            "r_multiple": round(t.r_multiple, 2),
-            "pnl": round(t.pnl, 2),
-            "costs": round(t.costs, 2),
-            "zone_kind": t.zone_kind,
-            "entry_mode": t.entry_mode,
-            "macro_img": f"/api/files/{folder_name}/trades/{t_folder_name}/01_macro_chart.png",
-            "micro_img": f"/api/files/{folder_name}/trades/{t_folder_name}/02_micro_chart.png",
-            "txt_url": f"/api/files/{folder_name}/trades/{t_folder_name}/trade_{idx:03d}_detalhes.txt",
-        })
-        equity_curve.append({
-            "time": t.exit_time.isoformat(),
-            "cum_r": round(cum_r, 2),
-            "pnl": round(t.pnl, 2),
-        })
+        trades_data.append(
+            {
+                "id": idx,
+                "trade_id": t.id,
+                "symbol": t.symbol,
+                "direction": t.direction,
+                "status": status,
+                "is_gain": t.r_multiple > 0,
+                "entry_time": t.entry_time.isoformat(),
+                "exit_time": t.exit_time.isoformat(),
+                "entry_price": round(t.entry_price, 3),
+                "stop_loss": round(t.stop_loss, 3),
+                "take_profit": round(t.take_profit, 3)
+                if t.take_profit is not None
+                else None,
+                "exit_price": round(t.exit_price, 3),
+                "exit_reason": t.exit_reason.upper(),
+                "r_multiple": round(t.r_multiple, 2),
+                "pnl": round(t.pnl, 2),
+                "costs": round(t.costs, 2),
+                "zone_kind": t.zone_kind,
+                "entry_mode": t.entry_mode,
+                "macro_img": f"/api/files/{folder_name}/trades/{t_folder_name}/01_macro_chart.png",
+                "micro_img": f"/api/files/{folder_name}/trades/{t_folder_name}/02_micro_chart.png",
+                "txt_url": f"/api/files/{folder_name}/trades/{t_folder_name}/trade_{idx:03d}_detalhes.txt",
+            }
+        )
+        equity_curve.append(
+            {
+                "time": t.exit_time.isoformat(),
+                "cum_r": round(cum_r, 2),
+                "pnl": round(t.pnl, 2),
+            }
+        )
 
     manifest = {
         "id": folder_name,
@@ -382,7 +476,7 @@ def export_backtest_package(
     print(f"📊 Planilha Excel gerada: {excel_path}")
     print(f"📝 Resumo TXT gerado: {txt_geral}")
     print(f"📑 Manifesto JSON gerado: {target_dir / 'audit_manifest.json'}")
-    print(f"✅ Pacote de validação concluído com sucesso!")
+    print("✅ Pacote de validação concluído com sucesso!")
     return target_dir
 
 
@@ -424,14 +518,23 @@ def load_or_create_manifest(target_dir: Path) -> dict[str, Any]:
         m_wr = re.search(r"Taxa de Acerto \(Win Rate\):\s+([\d\.]+)%", txt_content)
         m_exp = re.search(r"Expectativa Matemática:\s+([+-]?[\d\.]+)R", txt_content)
         m_pf = re.search(r"Profit Factor:\s+([\d\.]+)", txt_content)
-        m_pnl = re.search(r"Lucro Líquido Total \(\$\):\s+\$([+-]?[\d\.]+)", txt_content)
-        if m_tot: metrics["total_trades"] = int(m_tot.group(1))
-        if m_win: metrics["win_trades"] = int(m_win.group(1))
-        if m_loss: metrics["loss_trades"] = int(m_loss.group(1))
-        if m_wr: metrics["win_rate"] = float(m_wr.group(1))
-        if m_exp: metrics["expectancy"] = float(m_exp.group(1))
-        if m_pf: metrics["profit_factor"] = float(m_pf.group(1))
-        if m_pnl: metrics["total_pnl"] = float(m_pnl.group(1))
+        m_pnl = re.search(
+            r"Lucro Líquido Total \(\$\):\s+\$([+-]?[\d\.]+)", txt_content
+        )
+        if m_tot:
+            metrics["total_trades"] = int(m_tot.group(1))
+        if m_win:
+            metrics["win_trades"] = int(m_win.group(1))
+        if m_loss:
+            metrics["loss_trades"] = int(m_loss.group(1))
+        if m_wr:
+            metrics["win_rate"] = float(m_wr.group(1))
+        if m_exp:
+            metrics["expectancy"] = float(m_exp.group(1))
+        if m_pf:
+            metrics["profit_factor"] = float(m_pf.group(1))
+        if m_pnl:
+            metrics["total_pnl"] = float(m_pnl.group(1))
 
     # Coleta trades da pasta trades/
     trades_dir = target_dir / "trades"
@@ -464,7 +567,9 @@ def load_or_create_manifest(target_dir: Path) -> dict[str, Any]:
                 "entry_mode": "confirmation",
                 "macro_img": f"/api/files/{folder_name}/trades/{t_dir.name}/01_macro_chart.png",
                 "micro_img": f"/api/files/{folder_name}/trades/{t_dir.name}/02_micro_chart.png",
-                "txt_url": f"/api/files/{folder_name}/trades/{t_dir.name}/{t_txt[0].name}" if t_txt else "",
+                "txt_url": f"/api/files/{folder_name}/trades/{t_dir.name}/{t_txt[0].name}"
+                if t_txt
+                else "",
             }
 
             if t_txt:
@@ -475,29 +580,42 @@ def load_or_create_manifest(target_dir: Path) -> dict[str, Any]:
                     k, v = line.split(":", 1)
                     k = k.strip()
                     v = v.strip()
-                    if k == "Data/Hora Entrada": t_info["entry_time"] = v
-                    elif k == "Data/Hora Saída": t_info["exit_time"] = v
-                    elif k == "Preço de Entrada": t_info["entry_price"] = float(v) if v != "N/A" else 0.0
-                    elif k == "Stop Loss": t_info["stop_loss"] = float(v) if v != "N/A" else 0.0
-                    elif k == "Take Profit": t_info["take_profit"] = float(v) if v != "N/A" else None
-                    elif k == "Preço de Saída": t_info["exit_price"] = float(v) if v != "N/A" else 0.0
-                    elif k == "Motivo da Saída": t_info["exit_reason"] = v
+                    if k == "Data/Hora Entrada":
+                        t_info["entry_time"] = v
+                    elif k == "Data/Hora Saída":
+                        t_info["exit_time"] = v
+                    elif k == "Preço de Entrada":
+                        t_info["entry_price"] = float(v) if v != "N/A" else 0.0
+                    elif k == "Stop Loss":
+                        t_info["stop_loss"] = float(v) if v != "N/A" else 0.0
+                    elif k == "Take Profit":
+                        t_info["take_profit"] = float(v) if v != "N/A" else None
+                    elif k == "Preço de Saída":
+                        t_info["exit_price"] = float(v) if v != "N/A" else 0.0
+                    elif k == "Motivo da Saída":
+                        t_info["exit_reason"] = v
                     elif k == "Resultado (R)":
                         m_r = re.search(r"([+-]?[\d\.]+)R", v)
-                        if m_r: t_info["r_multiple"] = float(m_r.group(1))
+                        if m_r:
+                            t_info["r_multiple"] = float(m_r.group(1))
                     elif k == "Lucro/Prejuízo ($)":
                         m_p = re.search(r"\$([+-]?[\d\.]+)", v)
-                        if m_p: t_info["pnl"] = float(m_p.group(1))
-                    elif k == "Zona de Origem": t_info["zone_kind"] = v
-                    elif k == "Modo de Gatilho": t_info["entry_mode"] = v
+                        if m_p:
+                            t_info["pnl"] = float(m_p.group(1))
+                    elif k == "Zona de Origem":
+                        t_info["zone_kind"] = v
+                    elif k == "Modo de Gatilho":
+                        t_info["entry_mode"] = v
 
             cum_r += t_info["r_multiple"]
             trades_data.append(t_info)
-            equity_curve.append({
-                "time": t_info["exit_time"] or f"Trade {idx}",
-                "cum_r": round(cum_r, 2),
-                "pnl": round(t_info["pnl"], 2),
-            })
+            equity_curve.append(
+                {
+                    "time": t_info["exit_time"] or f"Trade {idx}",
+                    "cum_r": round(cum_r, 2),
+                    "pnl": round(t_info["pnl"], 2),
+                }
+            )
 
     if not metrics["total_trades"] and trades_data:
         metrics["total_trades"] = len(trades_data)
@@ -540,24 +658,32 @@ def list_audit_packages(base_dir: Path = Path("out/backtests")) -> list[dict[str
             continue
         manifest = load_or_create_manifest(folder)
         m = manifest.get("metrics", {})
-        results.append({
-            "id": manifest.get("id", folder.name),
-            "symbol": manifest.get("symbol", "UNKNOWN"),
-            "timestamp": manifest.get("timestamp", ""),
-            "created_at": manifest.get("created_at", ""),
-            "total_trades": m.get("total_trades", len(manifest.get("trades", []))),
-            "win_rate": m.get("win_rate", 0.0),
-            "expectancy": m.get("expectancy", 0.0),
-            "profit_factor": m.get("profit_factor", 0.0),
-            "total_pnl": m.get("total_pnl", 0.0),
-            "excel_url": manifest.get("excel_url", ""),
-            "txt_url": manifest.get("txt_url", ""),
-        })
+        results.append(
+            {
+                "id": manifest.get("id", folder.name),
+                "symbol": manifest.get("symbol", "UNKNOWN"),
+                "timestamp": manifest.get("timestamp", ""),
+                "created_at": manifest.get("created_at", ""),
+                "total_trades": m.get("total_trades", len(manifest.get("trades", []))),
+                "win_rate": m.get("win_rate", 0.0),
+                "expectancy": m.get("expectancy", 0.0),
+                "profit_factor": m.get("profit_factor", 0.0),
+                "total_pnl": m.get("total_pnl", 0.0),
+                "excel_url": manifest.get("excel_url", ""),
+                "txt_url": manifest.get("txt_url", ""),
+            }
+        )
 
     return results
 
 
-def _create_excel_report(excel_path: Path, symbol: str, trades: list[Trade], metrics: dict[str, Any], initial_capital: float):
+def _create_excel_report(
+    excel_path: Path,
+    symbol: str,
+    trades: list[Trade],
+    metrics: dict[str, Any],
+    initial_capital: float,
+):
     """Cria a planilha Excel com as duas abas estilizadas."""
     wb = openpyxl.Workbook()
     # Remove aba padrão inicial
@@ -589,7 +715,9 @@ def _create_excel_report(excel_path: Path, symbol: str, trades: list[Trade], met
     ]
 
     header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="1F2937", end_color="1F2937", fill_type="solid")
+    header_fill = PatternFill(
+        start_color="1F2937", end_color="1F2937", fill_type="solid"
+    )
     center_align = Alignment(horizontal="center", vertical="center")
     right_align = Alignment(horizontal="right", vertical="center")
     thin_border = Border(
@@ -610,8 +738,12 @@ def _create_excel_report(excel_path: Path, symbol: str, trades: list[Trade], met
     cum_r = 0.0
     cum_cash = initial_capital
 
-    gain_fill = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")  # Verde suave
-    stop_fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")  # Vermelho suave
+    gain_fill = PatternFill(
+        start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"
+    )  # Verde suave
+    stop_fill = PatternFill(
+        start_color="FEE2E2", end_color="FEE2E2", fill_type="solid"
+    )  # Vermelho suave
     gain_font = Font(name="Calibri", size=10, bold=True, color="166534")
     stop_font = Font(name="Calibri", size=10, bold=True, color="991B1B")
 
@@ -649,7 +781,11 @@ def _create_excel_report(excel_path: Path, symbol: str, trades: list[Trade], met
             c = ws_trades.cell(row=current_row, column=col_idx)
             c.border = thin_border
             c.font = Font(name="Calibri", size=10)
-            c.alignment = right_align if col_idx in [1, 8, 9, 10, 11, 14, 15, 16, 17, 18] else center_align
+            c.alignment = (
+                right_align
+                if col_idx in [1, 8, 9, 10, 11, 14, 15, 16, 17, 18]
+                else center_align
+            )
 
             # Colorir coluna de Status
             if col_idx == 12:
@@ -678,7 +814,9 @@ def _create_excel_report(excel_path: Path, symbol: str, trades: list[Trade], met
     total_trades = metrics.get("total_trades", len(trades))
     wins = metrics.get("win_trades", sum(1 for t in trades if t.r_multiple > 0))
     losses = metrics.get("loss_trades", sum(1 for t in trades if t.r_multiple <= 0))
-    win_rate = metrics.get("win_rate", (wins / total_trades * 100) if total_trades else 0)
+    win_rate = metrics.get(
+        "win_rate", (wins / total_trades * 100) if total_trades else 0
+    )
     total_pnl = metrics.get("total_pnl", sum(t.pnl for t in trades))
     final_capital = initial_capital + total_pnl
     roi_pct = ((final_capital - initial_capital) / initial_capital) * 100
@@ -728,7 +866,9 @@ def _create_excel_report(excel_path: Path, symbol: str, trades: list[Trade], met
             ws_stats.cell(row=r, column=1).fill = sec_fill
             ws_stats.cell(row=r, column=2).fill = sec_fill
         elif item[0] != "":
-            ws_stats.cell(row=r, column=1).font = Font(name="Calibri", size=11, bold=True)
+            ws_stats.cell(row=r, column=1).font = Font(
+                name="Calibri", size=11, bold=True
+            )
             ws_stats.cell(row=r, column=2).font = Font(name="Calibri", size=11)
             ws_stats.cell(row=r, column=1).border = thin_border
             ws_stats.cell(row=r, column=2).border = thin_border

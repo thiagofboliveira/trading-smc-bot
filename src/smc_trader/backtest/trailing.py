@@ -1,5 +1,5 @@
 import math
-from typing import Any, Literal
+from typing import Literal
 import pandas as pd
 
 from smc_trader.backtest.types import Position
@@ -46,11 +46,19 @@ class TrailingManager:
             )
             has_new_bos = False
             if current_bos is not None:
-                if current_bos.kind == "BOS" and current_bos.direction == needed_dir and pos.entry_time < current_bos.time <= t:
+                if (
+                    current_bos.kind == "BOS"
+                    and current_bos.direction == needed_dir
+                    and pos.entry_time < current_bos.time <= t
+                ):
                     has_new_bos = True
             elif bos_events:
                 for e in bos_events:
-                    if e.kind == "BOS" and e.direction == needed_dir and pos.entry_time < e.time <= t:
+                    if (
+                        e.kind == "BOS"
+                        and e.direction == needed_dir
+                        and pos.entry_time < e.time <= t
+                    ):
                         has_new_bos = True
                         break
 

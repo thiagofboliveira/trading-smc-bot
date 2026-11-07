@@ -27,7 +27,9 @@ class BacktestEngine:
         self.limits_tracker = DailyLimitsTracker(config.limits)
         self.confluence_eval = ConfluenceEvaluator(config.confluence)
 
-    def _prepare_ma_series(self, candles_m1: pd.DataFrame, tf: str, kind: str, period: int) -> np.ndarray:
+    def _prepare_ma_series(
+        self, candles_m1: pd.DataFrame, tf: str, kind: str, period: int
+    ) -> np.ndarray:
         if tf == "M1":
             s = candles_m1["close"]
             ma = calculate_ema(s, period) if kind == "ema" else calculate_sma(s, period)
@@ -51,7 +53,9 @@ class BacktestEngine:
     ) -> BacktestResult:
         """Executa a simulação cronológica sobre candles M1."""
         if candles_m1.empty:
-            return BacktestResult(trades=[], metrics=calculate_metrics([]), config=self.config)
+            return BacktestResult(
+                trades=[], metrics=calculate_metrics([]), config=self.config
+            )
 
         # Z-10: recria limits_tracker a cada execução para não vazar estado entre chamadas
         self.limits_tracker = DailyLimitsTracker(self.config.limits)
@@ -60,16 +64,16 @@ class BacktestEngine:
         if precomputed_m1 is not None and "events" in precomputed_m1:
             events_m1 = precomputed_m1["events"]
             m1_chochs = precomputed_m1["chochs"]
-            m1_bos = precomputed_m1.get("bos", {(e.direction, e.time): e for e in events_m1 if e.kind == "BOS"})
+            m1_bos = precomputed_m1.get(
+                "bos", {(e.direction, e.time): e for e in events_m1 if e.kind == "BOS"}
+            )
         else:
             pivots_m1 = find_pivots(candles_m1, k=2)
             events_m1 = detect_structure(candles_m1, pivots_m1)
             m1_chochs = {
                 (e.direction, e.time): e for e in events_m1 if e.kind == "CHoCH"
             }
-            m1_bos = {
-                (e.direction, e.time): e for e in events_m1 if e.kind == "BOS"
-            }
+            m1_bos = {(e.direction, e.time): e for e in events_m1 if e.kind == "BOS"}
 
         # 2. Indicadores de confluência
         c_cfg = self.config.confluence
@@ -91,7 +95,9 @@ class BacktestEngine:
         # 3. Indicadores de trailing stop
         t_cfg = self.config.trailing
         trailing_ema_vals = (
-            self._prepare_ma_series(candles_m1, t_cfg.timeframe, "ema", t_cfg.ema_period)
+            self._prepare_ma_series(
+                candles_m1, t_cfg.timeframe, "ema", t_cfg.ema_period
+            )
             if t_cfg.mode == "ema"
             else None
         )
@@ -140,7 +146,10 @@ class BacktestEngine:
             c_close = float(close[i])
 
             # Adiciona zonas que nasceram até o momento t
-            while zone_cursor < len(zones_sorted) and zones_sorted[zone_cursor].created_at <= t:
+            while (
+                zone_cursor < len(zones_sorted)
+                and zones_sorted[zone_cursor].created_at <= t
+            ):
                 active_zones.append(zones_sorted[zone_cursor])
                 zone_cursor += 1
 
@@ -194,10 +203,25 @@ class BacktestEngine:
                     # Avalia trailing stop se ativo
                     trailing_exit = False
                     if trailing_mgr is not None:
-                        tr_ema = trailing_ema_vals[i] if trailing_ema_vals is not None else None
-                        curr_bos = m1_bos.get(("up" if current_pos.direction == "long" else "down", t))
-                        should_tr_exit, tr_price, tr_reason = trailing_mgr.check_and_update(
-                            current_pos, c_open, c_high, c_low, c_close, t, tr_ema, current_bos=curr_bos
+                        tr_ema = (
+                            trailing_ema_vals[i]
+                            if trailing_ema_vals is not None
+                            else None
+                        )
+                        curr_bos = m1_bos.get(
+                            ("up" if current_pos.direction == "long" else "down", t)
+                        )
+                        should_tr_exit, tr_price, tr_reason = (
+                            trailing_mgr.check_and_update(
+                                current_pos,
+                                c_open,
+                                c_high,
+                                c_low,
+                                c_close,
+                                t,
+                                tr_ema,
+                                current_bos=curr_bos,
+                            )
                         )
                         if should_tr_exit:
                             trailing_exit = True
@@ -226,7 +250,12 @@ class BacktestEngine:
                                 current_pos.direction, c_close, symbol
                             )
                             trade = self._create_closed_trade(
-                                current_pos, t, exit_price, "session_close", exit_cost, trade_counter
+                                current_pos,
+                                t,
+                                exit_price,
+                                "session_close",
+                                exit_cost,
+                                trade_counter,
                             )
                             trade_counter += 1
                             closed_trades.append(trade)
@@ -274,7 +303,9 @@ class BacktestEngine:
                                 z_info["state"] = "CONSUMED"
                                 if allowed_session and allowed_limits:
                                     nominal_entry = (
-                                        min(c_open, zone.high) if long else max(c_open, zone.low)
+                                        min(c_open, zone.high)
+                                        if long
+                                        else max(c_open, zone.low)
                                     )
                                     current_pos = self._open_position(
                                         zone, nominal_entry, t, symbol, "touch"
@@ -282,35 +313,59 @@ class BacktestEngine:
                                     if current_pos is not None:
                                         entered = True
                                         # Z-02: checar stop no candle de entrada
-                                        hit_sl_entry = (c_low <= current_pos.stop_loss) if long else (c_high >= current_pos.stop_loss)
+                                        hit_sl_entry = (
+                                            (c_low <= current_pos.stop_loss)
+                                            if long
+                                            else (c_high >= current_pos.stop_loss)
+                                        )
                                         if hit_sl_entry:
-                                            exit_price, exit_cost = self.costs_calc.get_exit_price(
-                                                current_pos.direction, current_pos.stop_loss, symbol
+                                            exit_price, exit_cost = (
+                                                self.costs_calc.get_exit_price(
+                                                    current_pos.direction,
+                                                    current_pos.stop_loss,
+                                                    symbol,
+                                                )
                                             )
                                             trade = self._create_closed_trade(
-                                                current_pos, t, exit_price, "sl", exit_cost, trade_counter
+                                                current_pos,
+                                                t,
+                                                exit_price,
+                                                "sl",
+                                                exit_cost,
+                                                trade_counter,
                                             )
                                             trade_counter += 1
                                             closed_trades.append(trade)
-                                            self.limits_tracker.record_trade(t, trade.r_multiple)
+                                            self.limits_tracker.record_trade(
+                                                t, trade.r_multiple
+                                            )
                                             current_pos = None
                                             trailing_mgr = None
                                             just_closed = True
                                         else:
                                             trailing_mgr = TrailingManager(
-                                                self.config.trailing, current_pos.stop_loss
+                                                self.config.trailing,
+                                                current_pos.stop_loss,
                                             )
                             elif self.config.entry_mode == "hybrid":
                                 # Confluência técnica no momento do toque
-                                touch_p = min(c_open, zone.high) if long else max(c_open, zone.low)
-                                ema80_v = ema80_vals[i] if ema80_vals is not None else None
-                                sma200_v = sma200_vals[i] if sma200_vals is not None else None
+                                touch_p = (
+                                    min(c_open, zone.high)
+                                    if long
+                                    else max(c_open, zone.low)
+                                )
+                                ema80_v = (
+                                    ema80_vals[i] if ema80_vals is not None else None
+                                )
+                                sma200_v = (
+                                    sma200_vals[i] if sma200_vals is not None else None
+                                )
                                 has_confluence = self.confluence_eval.has_confluence(
                                     zone,
                                     touch_price=touch_p,
                                     last_closed_ema80=ema80_v,
                                     last_closed_sma200=sma200_v,
-                                    )
+                                )
                                 if confluence_fn is not None:
                                     has_confluence = has_confluence or confluence_fn(
                                         zone, t, candles_m1.iloc[i]
@@ -324,23 +379,39 @@ class BacktestEngine:
                                         if current_pos is not None:
                                             entered = True
                                             # Z-02: checar stop no candle de entrada
-                                            hit_sl_entry = (c_low <= current_pos.stop_loss) if long else (c_high >= current_pos.stop_loss)
+                                            hit_sl_entry = (
+                                                (c_low <= current_pos.stop_loss)
+                                                if long
+                                                else (c_high >= current_pos.stop_loss)
+                                            )
                                             if hit_sl_entry:
-                                                exit_price, exit_cost = self.costs_calc.get_exit_price(
-                                                    current_pos.direction, current_pos.stop_loss, symbol
+                                                exit_price, exit_cost = (
+                                                    self.costs_calc.get_exit_price(
+                                                        current_pos.direction,
+                                                        current_pos.stop_loss,
+                                                        symbol,
+                                                    )
                                                 )
                                                 trade = self._create_closed_trade(
-                                                    current_pos, t, exit_price, "sl", exit_cost, trade_counter
+                                                    current_pos,
+                                                    t,
+                                                    exit_price,
+                                                    "sl",
+                                                    exit_cost,
+                                                    trade_counter,
                                                 )
                                                 trade_counter += 1
                                                 closed_trades.append(trade)
-                                                self.limits_tracker.record_trade(t, trade.r_multiple)
+                                                self.limits_tracker.record_trade(
+                                                    t, trade.r_multiple
+                                                )
                                                 current_pos = None
                                                 trailing_mgr = None
                                                 just_closed = True
                                             else:
                                                 trailing_mgr = TrailingManager(
-                                                    self.config.trailing, current_pos.stop_loss
+                                                    self.config.trailing,
+                                                    current_pos.stop_loss,
                                                 )
                                 else:
                                     z_info["state"] = "ARMED"
@@ -370,7 +441,9 @@ class BacktestEngine:
                                 z_info["state"] = "CONSUMED"
                                 if allowed_session and allowed_limits:
                                     m1_swing = (
-                                        choch_event.range_low if long else choch_event.range_high
+                                        choch_event.range_low
+                                        if long
+                                        else choch_event.range_high
                                     )
                                     current_pos = self._open_position(
                                         zone,
@@ -400,7 +473,12 @@ class BacktestEngine:
                 current_pos.direction, last_close, symbol
             )
             trade = self._create_closed_trade(
-                current_pos, t_last, exit_price, "session_close", exit_cost, trade_counter
+                current_pos,
+                t_last,
+                exit_price,
+                "session_close",
+                exit_cost,
+                trade_counter,
             )
             closed_trades.append(trade)
 
@@ -417,7 +495,9 @@ class BacktestEngine:
         m1_swing: float | None = None,
     ) -> Position | None:
         long = zone.direction == "long"
-        entry_price, _ = self.costs_calc.get_entry_price(zone.direction, nominal_entry, symbol)
+        entry_price, _ = self.costs_calc.get_entry_price(
+            zone.direction, nominal_entry, symbol
+        )
 
         # Stop loss
         if self.config.stop_mode == "m1_swing" and m1_swing is not None:
@@ -429,7 +509,9 @@ class BacktestEngine:
 
         # Sanidade: preço de execução já além do stop (gap através da zona) não é
         # um setup válido — o stop seria "atingido" com lucro no mesmo candle.
-        if (long and entry_price <= stop_loss) or (not long and entry_price >= stop_loss):
+        if (long and entry_price <= stop_loss) or (
+            not long and entry_price >= stop_loss
+        ):
             return None
 
         # Z-07: Risco mínimo. Rejeita setups com risco degenerado
@@ -484,7 +566,7 @@ class BacktestEngine:
         r_multiple = pnl / pos.initial_risk if pos.initial_risk > 0 else 0.0
 
         return Trade(
-            id=f"trade-{trade_num+1}",
+            id=f"trade-{trade_num + 1}",
             symbol=pos.symbol,
             direction=pos.direction,
             zone_kind=pos.zone_kind,

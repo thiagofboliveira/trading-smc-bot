@@ -28,7 +28,9 @@ class _Level:
             for row in ordered.itertuples(index=False)
         ]
         self._next = 0
-        self.current: tuple[pd.Timestamp, float, int] | None = None  # (time, price, pos)
+        self.current: tuple[pd.Timestamp, float, int] | None = (
+            None  # (time, price, pos)
+        )
         self.consumed = False
 
     def activate(self, open_time: pd.Timestamp) -> None:
@@ -43,7 +45,9 @@ class _Level:
         return None if self.consumed else self.current
 
 
-def detect_structure(candles: pd.DataFrame, pivots: pd.DataFrame) -> list[StructureEvent]:
+def detect_structure(
+    candles: pd.DataFrame, pivots: pd.DataFrame
+) -> list[StructureEvent]:
     """BOS/CHoCH por fechamento além do último pivô confirmado (sem look-ahead).
 
     Um pivô só fica ativo para candles com abertura >= `confirmed_at`.

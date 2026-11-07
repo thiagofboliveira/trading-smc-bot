@@ -1,4 +1,5 @@
 """Cálculo dinâmico de tamanho de lote (Position Sizing) para ordens no MetaTrader 5."""
+
 import math
 from smc_trader.execution.types import SymbolInfo
 

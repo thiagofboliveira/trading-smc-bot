@@ -1,6 +1,6 @@
 """Tipos e estruturas de dados para execução ao vivo em produção no MetaTrader 5."""
+
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any, Literal
 import pandas as pd
 

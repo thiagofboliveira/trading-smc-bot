@@ -5,6 +5,7 @@ leitor detecta separador, decimal e nomes de coluna. O que NÃO dá para detecta
 é se o horário de cada candle é o de abertura ou o de fechamento: isso é
 `bar_label` e muda o resultado do backtest (lookahead se estiver errado).
 """
+
 import csv
 import io
 import re
@@ -49,7 +50,9 @@ def _to_number(series: pd.Series) -> pd.Series:
     text = series.astype(str).str.strip()
     # Vírgula presente => formato pt-BR: ponto é milhar e vírgula é decimal.
     br = text.str.contains(",", regex=False)
-    text = text.where(~br, text.str.replace(".", "", regex=False).str.replace(",", ".", regex=False))
+    text = text.where(
+        ~br, text.str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
+    )
     return pd.to_numeric(text, errors="coerce")
 
 

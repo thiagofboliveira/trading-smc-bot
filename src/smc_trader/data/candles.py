@@ -13,7 +13,9 @@ TF_MINUTES: dict[str, int] = {
 
 def tf_minutes(tf: str) -> int:
     if tf not in TF_MINUTES:
-        raise ValueError(f"Timeframe desconhecido {tf!r}; válidos: {sorted(TF_MINUTES)}")
+        raise ValueError(
+            f"Timeframe desconhecido {tf!r}; válidos: {sorted(TF_MINUTES)}"
+        )
     return TF_MINUTES[tf]
 
 

@@ -70,9 +70,13 @@ class ContractSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    spread: float = Field(gt=0.0)  # spread típico em preço; dados bid => custo de entrada e de saída
+    spread: float = Field(
+        gt=0.0
+    )  # spread típico em preço; dados bid => custo de entrada e de saída
     tick_size: float | None = Field(default=None, gt=0.0)
-    point_value: float | None = Field(default=None, gt=0.0)  # moeda por ponto, por contrato/lote
+    point_value: float | None = Field(
+        default=None, gt=0.0
+    )  # moeda por ponto, por contrato/lote
     commission_per_unit: float = Field(0.0, ge=0.0)
     slippage: float = Field(0.0, ge=0.0)
     note: str = ""

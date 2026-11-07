@@ -43,7 +43,5 @@ def find_fvgs(candles: pd.DataFrame, min_size: float = 0.0) -> list[FVG]:
             direction, lo, hi = "up", float(h0[idx]), float(l2[idx])
         else:
             direction, lo, hi = "down", float(h2[idx]), float(l0[idx])
-        fvgs.append(
-            FVG(direction, lo, hi, index[idx], pd.Timestamp(close_time[i]))
-        )
+        fvgs.append(FVG(direction, lo, hi, index[idx], pd.Timestamp(close_time[i])))
     return fvgs

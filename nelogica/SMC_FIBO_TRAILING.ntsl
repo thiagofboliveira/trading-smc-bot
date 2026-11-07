@@ -1,8 +1,9 @@
 // ==============================================================================
-// PLAYBOOK OFICIAL SMC-FIBO-TRAILING UNIVERSAL (NTSL / PROFIT / RICO TRADER)
+// PLAYBOOK OFICIAL SMC-FIBO-TRAILING LIMPO (NTSL / PROFIT / RICO TRADER)
 // ==============================================================================
 // Estratégia: SMC Fibonacci OTE (Optimal Trade Entry) + Condução Livre MME 8
-// Versão: 2.2 — AUTO-ESCALA + FILTRO DE RISCO + PLOT DE LINHAS (ENTRADA / STOP / GAIN)
+// Versão: 2.3 — SEM SUB-JANELAS + DESTAQUE VISUAL DA PERNA DO BOS (AMARELO)
+// Compatível com: Mini-Índice (WIN), Mini-Dólar (WDO), Ações (PETR4, VALE3), BDRs, Cripto
 // ==============================================================================
 
 Parametro
@@ -41,22 +42,14 @@ Var
   nivelStop         : Real;
 
 Inicio
-  // 1. Configuração Visual das Linhas no Gráfico
-  SetPlotColor(1, clAmarelo);   // Linha 1: Preço de Entrada (Amarelo)
-  SetPlotColor(2, clVermelho);  // Linha 2: Stop Loss (Vermelho)
-  SetPlotColor(3, clVerde);     // Linha 3: Alvo de Gain (Verde)
-  SetPlotWidth(1, 2);
-  SetPlotWidth(2, 2);
-  SetPlotWidth(3, 2);
-
-  // 2. Cálculo da MME de Condução
+  // 1. Cálculo da MME de Condução
   mme8 := MediaExp(PeriodoMME, Fechamento);
 
-  // 3. Cálculo Universal de Volatilidade
+  // 2. Cálculo Universal de Volatilidade
   rangeMedio   := Media(PeriodoVolatilidade, Maxima - Minima);
   filtroMinimo := rangeMedio * MultVolatilidade;
 
-  // 4. Detecção de Swings Fractais (Atraso de 2 barras para confirmação sem repintura)
+  // 3. Detecção de Swings Fractais (Atraso de 2 barras para confirmação sem repintura)
   topoFractal := (Maxima[2] > Maxima[1]) e (Maxima[2] > Maxima[0]) e 
                  (Maxima[2] > Maxima[3]) e (Maxima[2] > Maxima[4]);
                  
@@ -69,10 +62,10 @@ Inicio
   Se fundoFractal Entao
     ultimoFundo := Minima[2];
 
-  // 5. Detecção de Quebra de Estrutura (BOS - Break of Structure)
+  // 4. Detecção de Quebra de Estrutura (BOS - Break of Structure)
   Se (Not HasPosition) e (emOperacao = 0) Entao
   Inicio
-    // BOS de Alta
+    // BOS de Alta: Rompimento do topo institucional
     Se (ultimoTopo > 0) e (ultimoFundo > 0) e (Fechamento > ultimoTopo) e (Fechamento[1] <= ultimoTopo) Entao
     Inicio
       diffPernada := Maxima - ultimoFundo;
@@ -82,10 +75,11 @@ Inicio
         pernadaBaixaAtiva := Falso;
         refTopo           := Maxima;
         refFundo          := ultimoFundo;
+        PaintBar(clAmarelo); // Destaca a barra do BOS para você saber de onde puxar o Fibo!
       Fim;
     Fim;
 
-    // BOS de Baixa
+    // BOS de Baixa: Perda do fundo institucional
     Se (ultimoTopo > 0) e (ultimoFundo > 0) e (Fechamento < ultimoFundo) e (Fechamento[1] >= ultimoFundo) Entao
     Inicio
       diffPernada := ultimoTopo - Minima;
@@ -95,6 +89,7 @@ Inicio
         pernadaAltaAtiva  := Falso;
         refTopo           := ultimoTopo;
         refFundo          := Minima;
+        PaintBar(clAmarelo); // Destaca a barra do BOS para você saber de onde puxar o Fibo!
       Fim;
     Fim;
   Fim;
@@ -106,7 +101,7 @@ Inicio
   Se pernadaBaixaAtiva e (Minima < refFundo) Entao
     refFundo := Minima;
 
-  // 6. Execução de Entrada com Filtro de Risco
+  // 5. Execução de Entrada com Filtro de Risco
   Se (Not HasPosition) e (emOperacao = 0) Entao
   Inicio
     // Entrada Comprada
@@ -156,13 +151,13 @@ Inicio
     Fim;
   Fim;
 
-  // 7. Gestão Ativa da Posição (Condução 100% Livre pela MME 8)
+  // 6. Gestão Ativa da Posição (Condução 100% Livre pela MME 8)
   Se HasPosition ou (emOperacao <> 0) Entao
   Inicio
     // GESTÃO DA COMPRA
     Se (IsBought) ou (emOperacao = 1) Entao
     Inicio
-      PaintBar(clVerde);
+      PaintBar(clVerde); // Coloração verde durante toda a compra
 
       // Stop Loss Original
       Se (Minima <= precoStop) Entao
@@ -190,7 +185,7 @@ Inicio
     // GESTÃO DA VENDA
     Se (IsSold) ou (emOperacao = -1) Entao
     Inicio
-      PaintBar(clVermelho);
+      PaintBar(clVermelho); // Coloração vermelha durante toda a venda
 
       // Stop Loss Original
       Se (Maxima >= precoStop) Entao
@@ -214,26 +209,6 @@ Inicio
         emOperacao := 0;
       Fim;
     Fim;
-  Fim;
-
-  // 8. PLOT DAS LINHAS NO GRÁFICO (Entrada, Stop Loss e Alvo Gain)
-  Se HasPosition ou (emOperacao <> 0) Entao
-  Inicio
-    Plot(precoEntrada); // Linha Amarela no preço exato de entrada
-    Plot2(precoStop);   // Linha Vermelha no nível de Stop Loss
-    Plot3(precoAlvo);   // Linha Verde no nível do Alvo de Gain
-  Fim
-  Senao Se pernadaAltaAtiva ou pernadaBaixaAtiva Entao
-  Inicio
-    Plot(nivelEntrada); // Mostra onde está armada a entrada pendente
-    Plot2(nivelStop);   // Mostra onde ficará o stop pendente
-    Se pernadaAltaAtiva Entao Plot3(refTopo) Senao Plot3(refFundo);
-  Fim
-  Senao
-  Inicio
-    NoPlot(1);
-    NoPlot(2);
-    NoPlot(3);
   Fim;
 
 Fim;

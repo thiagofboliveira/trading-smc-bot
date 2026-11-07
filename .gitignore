@@ -5,6 +5,6 @@ __pycache__/
 .superpowers/
 .worktrees/
 *.pdf
-.env
-.env.*
-!test.env
+*.env
+.env*
+!*.env.example

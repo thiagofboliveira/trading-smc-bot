@@ -113,6 +113,11 @@ def eval_config(data, tf, entry, stop, exit_m, sess):
     dd = cum - cum.cummax()
     mdd = abs(dd.min())
 
+    t_min = df_sorted["time"].min()
+    t_max = df_sorted["time"].max()
+    days = (t_max - t_min).total_seconds() / 86400.0 if not df_sorted.empty else 0.0
+    years = (days / 365.25) if days > 0 else 1.0
+
     return {
         "tf": tf,
         "entry": entry,
@@ -122,7 +127,7 @@ def eval_config(data, tf, entry, stop, exit_m, sess):
         "trades": n,
         "wr": round(wr, 1),
         "total_r": round(r_total, 1),
-        "r_year": round(r_total / 2.0, 1),
+        "r_year": round(r_total / years, 1) if years > 0 else 0.0,
         "pf": round(pf, 2),
         "mdd": round(mdd, 1),
         "payoff": round(payoff, 2)

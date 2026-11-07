@@ -12,7 +12,7 @@ dukascopy:
     US30: "E_D&J-Ind"
     NAS100: "E_NQ-100"
     BRENT: "E_Brent"
-    DAX40: "DEU.IDX/EUR"
+    DAX40: "E_DAAX"
     USDJPY: "USD/JPY"
 structure:
   pivot_k_htf: 3
@@ -71,3 +71,25 @@ backtest:
     timeframe: M1
     activation: either
     r_threshold: 1.0
+
+# Especificação e custos por ativo (D-05). Fonte única do spread usado pelo fibo-backtest.
+# Spread = valor típico em preço, SUPOSIÇÃO a validar contra o spread real (M-07), não medição.
+contracts:
+  XAUUSD: {spread: 0.30}
+  NAS100: {spread: 1.50}
+  US30:   {spread: 2.00}
+  DAX40:  {spread: 1.50}
+  BRENT:  {spread: 0.04}
+  EURUSD: {spread: 0.00015}
+  GBPUSD: {spread: 0.00020}
+  USDJPY: {spread: 0.018}
+  WIN:
+    spread: 5.0            # 1 tick
+    tick_size: 5.0
+    point_value: 0.2       # R$ por ponto, por contrato
+    note: "valores de tick/ponto de memória: confirmar com a corretora; somar corretagem e emolumentos"
+  WDO:
+    spread: 0.5            # 1 tick
+    tick_size: 0.5
+    point_value: 10.0
+    note: "valores de tick/ponto de memória: confirmar com a corretora; somar corretagem e emolumentos"

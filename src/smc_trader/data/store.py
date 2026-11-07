@@ -7,7 +7,7 @@ from smc_trader.data.candles import tf_minutes, with_close_time
 from smc_trader.data.resample import resample_ohlc
 
 
-SOURCES = ("dukascopy", "mt5")
+SOURCES = ("dukascopy", "mt5", "profit")
 
 
 def _path(root: Path, symbol: str, source: str) -> Path:
@@ -29,6 +29,15 @@ def save_m1(root: Path, symbol: str, df: pd.DataFrame, source: str = "dukascopy"
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+def existing_months(root: Path, symbol: str, source: str = "dukascopy") -> set[str]:
+    """Meses ("AAAA-MM", UTC) que têm ao menos um candle M1 gravado."""
+    path = _path(root, symbol, source)
+    if not path.exists():
+        return set()
+    index = pd.read_parquet(path, columns=["close"]).index
+    return set(index.strftime("%Y-%m"))
 
 
 def load_candles(

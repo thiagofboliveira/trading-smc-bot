@@ -13,7 +13,10 @@ from smc_trader.backtest.exporter import export_backtest_package
 from smc_trader.backtest.runner import run_grid
 from smc_trader.config import Config, ZoneConfig, load_config
 from smc_trader.data.dukascopy_source import fetch_m1
+from smc_trader.data.history import fetch_history, years_back_start
 from smc_trader.data.mt5_bridge import import_mt5_csv
+from smc_trader.data.profit_import import import_profit_csv
+from smc_trader.data.quality import check_quality, format_report
 from smc_trader.data.resample import resample_ohlc
 from smc_trader.data.store import load_candles, save_m1
 from smc_trader.viz.chart import build_chart
@@ -29,8 +32,14 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     fetch = sub.add_parser("fetch", help="baixa M1 da Dukascopy e grava em Parquet")
     fetch.add_argument("symbol")
-    fetch.add_argument("--from", dest="start", type=_utc, required=True)
-    fetch.add_argument("--to", dest="end", type=_utc, required=True)
+    fetch.add_argument("--from", dest="start", type=_utc, default=None)
+    fetch.add_argument("--to", dest="end", type=_utc, default=None, help="padrão com --years: hoje (UTC)")
+    fetch.add_argument(
+        "--years",
+        type=int,
+        default=None,
+        help="baixa os últimos N anos mês a mês, com retomada (alternativa a --from)",
+    )
     fetch.add_argument("--config", type=Path, default=Path("config/default.yaml"))
     fetch.add_argument("--data-root", type=Path, default=None)
 
@@ -49,11 +58,25 @@ def _build_parser() -> argparse.ArgumentParser:
         help="tipos de bloco a mostrar, separados por vírgula: OB, FVOB, BB (sobrescreve a config)",
     )
 
-    imp = sub.add_parser("import-csv", help="importa CSV M1 exportado do MT5")
+    imp = sub.add_parser("import-csv", help="importa CSV M1 exportado do MT5 ou do Profit")
     imp.add_argument("csv", type=Path)
     imp.add_argument("--symbol", required=True)
+    imp.add_argument("--format", choices=["mt5", "profit"], default="mt5", help="origem do arquivo")
+    imp.add_argument(
+        "--bar-label",
+        choices=["open", "close"],
+        default="open",
+        help="(profit) horário do arquivo é o de abertura ou de fechamento do candle",
+    )
     imp.add_argument("--config", type=Path, default=Path("config/default.yaml"))
     imp.add_argument("--data-root", type=Path, default=None)
+
+    chk = sub.add_parser("check-data", help="valida a qualidade dos candles M1 gravados (buracos, picos, fuso)")
+    chk.add_argument("symbols", nargs="+", help="símbolos, ou 'all' para todos os arquivos da fonte")
+    chk.add_argument("--source", choices=["dukascopy", "mt5", "profit"], default=None, help="padrão: profit p/ WIN/WDO, senão dukascopy")
+    chk.add_argument("--max-gap", type=int, default=60, help="minutos sem barra a partir dos quais é buraco")
+    chk.add_argument("--config", type=Path, default=Path("config/default.yaml"))
+    chk.add_argument("--data-root", type=Path, default=None)
 
     bt = sub.add_parser("backtest", help="executa backtest orientado a eventos no M1")
     bt.add_argument("symbol")
@@ -103,10 +126,29 @@ def _cmd_fetch(args: argparse.Namespace, cfg: Config) -> int:
     if instrument is None:
         print(f"Símbolo sem mapeamento Dukascopy na config: {args.symbol}", file=sys.stderr)
         return 2
+    root = args.data_root if args.data_root is not None else cfg.data.root
+    if args.years is not None:
+        if args.start is not None or args.years < 1:
+            print("use --years N (N >= 1) sozinho, sem --from", file=sys.stderr)
+            return 2
+        end = args.end or datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        start = years_back_start(end, args.years)
+        print(f"{args.symbol}: baixando {start:%Y-%m-%d} a {end:%Y-%m-%d} (mês a mês, retoma de onde parou)")
+        res = fetch_history(args.symbol, instrument, start, end, cfg.dukascopy.offer_side, root, fetcher=fetch_m1)
+        print(
+            f"{args.symbol}: {res.rows_saved:,} candles novos | meses: {len(res.saved_months)} baixados, "
+            f"{len(res.skipped_months)} já existiam, {len(res.empty_months)} vazios, {len(res.failed_months)} falharam"
+        )
+        if res.failed_months:
+            print(f"meses com falha (rode de novo para repetir): {', '.join(res.failed_months)}", file=sys.stderr)
+            return 1
+        return 0
+    if args.start is None or args.end is None:
+        print("informe --years N ou --from e --to", file=sys.stderr)
+        return 2
     if args.start >= args.end:
         print("--from deve ser anterior a --to", file=sys.stderr)
         return 2
-    root = args.data_root if args.data_root is not None else cfg.data.root
     df = fetch_m1(instrument, args.start, args.end, cfg.dukascopy.offer_side)
     if df.empty:
         print(
@@ -117,6 +159,41 @@ def _cmd_fetch(args: argparse.Namespace, cfg: Config) -> int:
     save_m1(root, args.symbol, df, source="dukascopy")
     print(f"{args.symbol}: {len(df)} candles M1 gravados em {root}")
     return 0
+
+
+_B3_SYMBOLS = ("WIN", "WDO")
+_B3_HOURS_UTC = set(range(12, 22))  # pregão 09:00-18:xx em São Paulo (UTC-3)
+
+
+def _cmd_check_data(args: argparse.Namespace, cfg: Config) -> int:
+    root = args.data_root if args.data_root is not None else cfg.data.root
+    sources = [args.source] if args.source else ["dukascopy", "profit"]
+    targets: list[tuple[str, str]] = []
+    for sym in args.symbols:
+        if sym == "all":
+            for src in sources:
+                for f in sorted(Path(root).glob(f"*_M1_{src}.parquet")):
+                    targets.append((f.name.split("_M1_")[0], src))
+        else:
+            src = args.source or ("profit" if sym in _B3_SYMBOLS else "dukascopy")
+            targets.append((sym, src))
+
+    if not targets:
+        print(f"Nenhum dado encontrado em {root}", file=sys.stderr)
+        return 2
+    exit_code = 0
+    for sym, src in targets:
+        try:
+            df = load_candles(root, sym, "M1", source=src)
+        except FileNotFoundError as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        hours = _B3_HOURS_UTC if sym in _B3_SYMBOLS else None
+        rep = check_quality(df, sym, max_gap_minutes=args.max_gap, expected_hours=hours)
+        print(format_report(rep))
+        if not rep.ok:
+            exit_code = 1
+    return exit_code
 
 
 def _cmd_chart(args: argparse.Namespace, cfg: Config) -> int:
@@ -150,9 +227,17 @@ def _cmd_chart(args: argparse.Namespace, cfg: Config) -> int:
 
 def _cmd_import_csv(args: argparse.Namespace, cfg: Config) -> int:
     root = args.data_root if args.data_root is not None else cfg.data.root
-    df = import_mt5_csv(args.csv, cfg.data)
-    save_m1(root, args.symbol, df, source="mt5")
-    print(f"{args.symbol}: {len(df)} candles M1 importados em {root}")
+    if args.format == "profit":
+        df = import_profit_csv(args.csv, bar_label=args.bar_label)
+        source = "profit"
+    else:
+        df = import_mt5_csv(args.csv, cfg.data)
+        source = "mt5"
+    save_m1(root, args.symbol, df, source=source)
+    print(f"{args.symbol}: {len(df)} candles M1 importados em {root} (fonte {source})")
+    if len(df):
+        first = df.index[0].tz_convert("America/Sao_Paulo") if source == "profit" else df.index[0]
+        print(f"  período: {df.index[0]} a {df.index[-1]} | primeira barra: {first}")
     return 0
 
 
@@ -421,24 +506,38 @@ def _cmd_live(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+_FIBO_ALL = ("BRENT", "XAUUSD", "NAS100", "DAX40", "EURUSD", "GBPUSD", "USDJPY")
+
+
+def _spread_for(symbol: str, cfg: Config) -> float:
+    """Spread do ativo vindo de `contracts` na config. Sem contrato, falha: um spread
+    inventado (antes: 1.0) distorce o resultado sem avisar."""
+    spec = cfg.contracts.get(symbol)
+    if spec is None:
+        raise KeyError(f"{symbol}: sem entrada em 'contracts' no config/default.yaml")
+    return spec.spread
+
+
 def _cmd_fibo_backtest(args: argparse.Namespace, cfg: Config) -> int:
     import pandas as pd
     from smc_trader.strategies.fibo_ote import FiboOTEConfig, FiboOTEStrategy
-    spreads = {
-        "BRENT": 0.04, "XAUUSD": 0.30, "NAS100": 1.50, "DAX40": 1.50,
-        "EURUSD": 0.00015, "GBPUSD": 0.00020, "USDJPY": 0.018
-    }
-    symbols = list(spreads.keys()) if args.symbol == "all" else [args.symbol]
+    if args.symbol == "all":
+        symbols = list(_FIBO_ALL)  # B3 só quando pedido explicitamente
+    else:
+        symbols = [args.symbol]
     strat = FiboOTEStrategy(FiboOTEConfig(target_mode=args.target))
     print(f"\n🚀 Executando SMC Fibonacci OTE (M5 | Alvo {args.target}) para: {symbols}\n")
     tot_r = 0.0
     for sym in symbols:
-        p = Path(f"data/{sym}_M1_dukascopy.parquet")
+        p = next(
+            (c for c in (Path(f"data/{sym}_M1_{src}.parquet") for src in ("dukascopy", "profit")) if c.exists()),
+            Path(f"data/{sym}_M1_dukascopy.parquet"),
+        )
         if not p.exists():
             print(f"⚠️ [{sym}] Dados não encontrados em {p}")
             continue
         df = pd.read_parquet(p)
-        trades = strat.run_backtest(df, sym, spreads.get(sym, 1.0))
+        trades = strat.run_backtest(df, sym, _spread_for(sym, cfg))
         if not trades:
             print(f"[{sym}] Nenhum trade.")
             continue
@@ -453,6 +552,7 @@ def _cmd_fibo_backtest(args: argparse.Namespace, cfg: Config) -> int:
 
 _COMMANDS = {
     "fetch": _cmd_fetch,
+    "check-data": _cmd_check_data,
     "chart": _cmd_chart,
     "import-csv": _cmd_import_csv,
     "backtest": _cmd_backtest,

@@ -65,6 +65,19 @@ class CostsConfig(BaseModel):
     slippage_points: float = Field(0.0, ge=0.0)
 
 
+class ContractSpec(BaseModel):
+    """Especificação e custos de um ativo, na unidade de preço do próprio ativo."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    spread: float = Field(gt=0.0)  # spread típico em preço; dados bid => custo de entrada e de saída
+    tick_size: float | None = Field(default=None, gt=0.0)
+    point_value: float | None = Field(default=None, gt=0.0)  # moeda por ponto, por contrato/lote
+    commission_per_unit: float = Field(0.0, ge=0.0)
+    slippage: float = Field(0.0, ge=0.0)
+    note: str = ""
+
+
 class SessionWindow(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -141,6 +154,7 @@ class Config(BaseModel):
     structure: StructureConfig
     zones: ZoneConfig
     backtest: BacktestConfig = Field(default_factory=BacktestConfig)
+    contracts: dict[str, ContractSpec] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _symbols_have_dukascopy_instrument(self) -> Self:

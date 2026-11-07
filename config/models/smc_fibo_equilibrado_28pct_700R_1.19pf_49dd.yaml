@@ -1,0 +1,52 @@
+# ===================================================================
+# PLAYBOOK OFICIAL — MODELO EQUILIBRADO AUDITADO (ALVO FIXO 3R)
+# ===================================================================
+# Nomenclatura Padrão: <nome>_<acerto>_<retorno>_<pf>_<maxdd>
+# Modelo: smc_fibo_equilibrado_28pct_700R_1.19pf_49dd
+# ===================================================================
+# Execução: 100% Auditada contra viés intrabar (Sem imunidade de mesma barra)
+# Conceito: Entrada 61.8% com Stop 79.0% e Alvo Fixo de 3.0 R (Payoff 3:1)
+# Retorno Anual: +700.0 R / ano (+1.400 R em 2 anos)
+# Taxa de Acerto: 28.4% | Profit Factor: 1.19 | Max Drawdown: -49.0 R
+# ===================================================================
+
+model:
+  id: "smc_fibo_equilibrado_28pct_700R_1.19pf_49dd"
+  name: "SMC-Fibo-Equilibrado_28pct_700R_1.19pf_49dd"
+  version: "2.0.0"
+  description: "Modelo Equilibrado com Alvo Fixo de 3R e Payoff 3:1 (28.4% Acerto, +700R/ano, PF 1.19)"
+
+metrics:
+  win_rate_pct: 28.4
+  annual_return_r: 700.0
+  two_year_return_r: 1400.0
+  profit_factor: 1.19
+  max_drawdown_r: 49.0
+  payoff: 3.00
+  total_trades_2y: 10364
+
+timeframes:
+  operational: "M5"
+
+fibonacci:
+  entry_level: 0.618
+  stop_level: 0.790
+  origin_level: 1.000
+  target_mode: "3R"             # Alvo fixo de 3R (Payoff 3.0 : 1)
+  target_r: 3.0
+  pivot_k: 2
+  max_holding_candles: 60
+  enable_reentry_79: false
+
+trailing:
+  mode: "none"
+
+risk_management:
+  risk_pct_per_trade: 1.0
+  max_open_trades_total: 4
+  max_trades_per_day: 5
+  max_stops_per_day: 2
+
+session:
+  mode: "24h"
+  force_close_time: "21:30"

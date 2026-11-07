@@ -1,0 +1,55 @@
+# ===================================================================
+# PLAYBOOK OFICIAL — MODELO CAMPEÃO SUPREMO DE CONSISTÊNCIA AUDITADO
+# ===================================================================
+# Nomenclatura Padrão: <nome>_<acerto>_<retorno>_<pf>_<maxdd>
+# Modelo: smc_fibo_estrutural_68pct_809R_1.48pf_30dd
+# ===================================================================
+# Execução: 100% Auditada contra viés intrabar (Sem imunidade de mesma barra)
+# Conceito: Entrada 61.8% com Stop Estrutural SMC (100% - Fundo/Topo do BOS)
+# Condução: Trailing Stop dinâmico na MME 8 (apenas no lucro)
+# Retorno Anual: +808.6 R / ano (+1.617 R em 2 anos)
+# Taxa de Acerto: 68.3% | Profit Factor: 1.48 | Max Drawdown: -29.8 R
+# ===================================================================
+
+model:
+  id: "smc_fibo_estrutural_68pct_809R_1.48pf_30dd"
+  name: "SMC-Fibo-Estrutural_68pct_809R_1.48pf_30dd"
+  version: "2.0.0"
+  description: "Modelo Campeão Institucional com Stop na Invalidação Estrutural e Condução MME 8 (68.3% Acerto, +809R/ano, PF 1.48)"
+
+metrics:
+  win_rate_pct: 68.3
+  annual_return_r: 808.6
+  two_year_return_r: 1617.1
+  profit_factor: 1.48
+  max_drawdown_r: 29.8
+  payoff: 0.69
+  total_trades_2y: 10565
+
+timeframes:
+  operational: "M5"
+
+fibonacci:
+  entry_level: 0.618            # Entrada institucional clássica no Golden Ratio
+  stop_level: 1.000             # Invalidação Estrutural Real do SMC (Fundo/Topo do BOS)
+  origin_level: 1.000
+  target_mode: "0_percent"      # Alvo estrutural máximo no topo/fundo
+  pivot_k: 2                    # Confirmação fractal sem lookahead
+  max_holding_candles: 60
+  enable_reentry_79: false
+
+trailing:
+  mode: "moving_average"
+  ma_type: "ema8"               # MME 8 (Média Móvel Exponencial de 8 períodos)
+  exit_on_close_cross: true     # Encerra quando o candle fecha cruzando a MME 8
+  profit_only: true             # Apenas encerra por trailing se estiver no lucro
+
+risk_management:
+  risk_pct_per_trade: 1.0
+  max_open_trades_total: 4
+  max_trades_per_day: 5
+  max_stops_per_day: 2
+
+session:
+  mode: "24h"
+  force_close_time: "21:30"

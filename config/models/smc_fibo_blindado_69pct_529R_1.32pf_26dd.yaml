@@ -1,0 +1,59 @@
+# ===================================================================
+# PLAYBOOK OFICIAL — MODELO BLINDADO AUDITADO (MENOR DRAWDOWN DO PROJETO)
+# ===================================================================
+# Nomenclatura Padrão: <nome>_<acerto>_<retorno>_<pf>_<maxdd>
+# Modelo: smc_fibo_blindado_69pct_529R_1.32pf_26dd
+# ===================================================================
+# Execução: 100% Auditada contra viés intrabar (Sem imunidade de mesma barra)
+# Conceito: Entrada 61.8% com Stop 100% + Trava 2:1 (+2R trava +1R) + MME 8
+# Retorno Anual: +528.7 R / ano (+1.057 R em 2 anos)
+# Taxa de Acerto: 69.0% | Profit Factor: 1.32 | Max Drawdown: apenas -26.2 R
+# ===================================================================
+
+model:
+  id: "smc_fibo_blindado_69pct_529R_1.32pf_26dd"
+  name: "SMC-Fibo-Blindado_69pct_529R_1.32pf_26dd"
+  version: "2.0.0"
+  description: "Modelo Blindado com Trava 2:1 e Stop Estrutural (69.0% Acerto, +529R/ano, PF 1.32, MaxDD -26R)"
+
+metrics:
+  win_rate_pct: 69.0
+  annual_return_r: 528.7
+  two_year_return_r: 1057.4
+  profit_factor: 1.32
+  max_drawdown_r: 26.2
+  payoff: 0.59
+  total_trades_2y: 10648
+
+timeframes:
+  operational: "M5"
+
+fibonacci:
+  entry_level: 0.618
+  stop_level: 1.000
+  origin_level: 1.000
+  target_mode: "0_percent"
+  pivot_k: 2
+  max_holding_candles: 60
+  enable_reentry_79: false
+
+lock_2to1:
+  enabled: true
+  trigger_r: 2.0                # Ao atingir +2.0R a favor
+  guarantee_r: 1.0              # Trava o stop garantindo +1.0R líquido no bolso
+
+trailing:
+  mode: "moving_average"
+  ma_type: "ema8"
+  exit_on_close_cross: true
+  profit_only: true
+
+risk_management:
+  risk_pct_per_trade: 1.0
+  max_open_trades_total: 4
+  max_trades_per_day: 5
+  max_stops_per_day: 2
+
+session:
+  mode: "24h"
+  force_close_time: "21:30"

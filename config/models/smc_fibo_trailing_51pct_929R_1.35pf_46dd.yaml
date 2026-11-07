@@ -1,0 +1,54 @@
+# ===================================================================
+# PLAYBOOK OFICIAL — MODELO CAMPEÃO DE RETORNO BRUTO AUDITADO
+# ===================================================================
+# Nomenclatura Padrão: <nome>_<acerto>_<retorno>_<pf>_<maxdd>
+# Modelo: smc_fibo_trailing_51pct_929R_1.35pf_46dd
+# ===================================================================
+# Execução: 100% Auditada contra viés intrabar (Sem imunidade de mesma barra)
+# Conceito: Entrada 61.8% com Stop Curto no 79.0% e Condução Livre MME 8
+# Retorno Anual: +928.6 R / ano (+1.857 R em 2 anos) — Maior R acumulado
+# Taxa de Acerto: 51.4% | Profit Factor: 1.35 | Max Drawdown: -46.3 R
+# ===================================================================
+
+model:
+  id: "smc_fibo_trailing_51pct_929R_1.35pf_46dd"
+  name: "SMC-Fibo-Trailing_51pct_929R_1.35pf_46dd"
+  version: "2.0.0"
+  description: "Modelo Campeão de Retorno com Entrada 61.8%, Stop 79% e Condução MME 8 (51.4% Acerto, +929R/ano, PF 1.35)"
+
+metrics:
+  win_rate_pct: 51.4
+  annual_return_r: 928.6
+  two_year_return_r: 1857.3
+  profit_factor: 1.35
+  max_drawdown_r: 46.3
+  payoff: 1.28
+  total_trades_2y: 11004
+
+timeframes:
+  operational: "M5"
+
+fibonacci:
+  entry_level: 0.618
+  stop_level: 0.790
+  origin_level: 1.000
+  target_mode: "0_percent"
+  pivot_k: 2
+  max_holding_candles: 60
+  enable_reentry_79: false
+
+trailing:
+  mode: "moving_average"
+  ma_type: "ema8"
+  exit_on_close_cross: true
+  profit_only: true
+
+risk_management:
+  risk_pct_per_trade: 1.0
+  max_open_trades_total: 4
+  max_trades_per_day: 5
+  max_stops_per_day: 2
+
+session:
+  mode: "24h"
+  force_close_time: "21:30"

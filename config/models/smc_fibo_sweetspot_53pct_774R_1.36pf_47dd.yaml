@@ -1,0 +1,54 @@
+# ===================================================================
+# PLAYBOOK OFICIAL — MODELO SWEET SPOT INSTITUCIONAL AUDITADO
+# ===================================================================
+# Nomenclatura Padrão: <nome>_<acerto>_<retorno>_<pf>_<maxdd>
+# Modelo: smc_fibo_sweetspot_53pct_774R_1.36pf_47dd
+# ===================================================================
+# Execução: 100% Auditada contra viés intrabar (Sem imunidade de mesma barra)
+# Conceito: Entrada 70.5% (Sweet Spot ICT) com Stop no 88.6% e MME 8
+# Retorno Anual: +774.2 R / ano (+1.548 R em 2 anos)
+# Taxa de Acerto: 53.3% | Profit Factor: 1.36 | Max Drawdown: -46.9 R
+# ===================================================================
+
+model:
+  id: "smc_fibo_sweetspot_53pct_774R_1.36pf_47dd"
+  name: "SMC-Fibo-SweetSpot_53pct_774R_1.36pf_47dd"
+  version: "2.0.0"
+  description: "Modelo Sweet Spot 70.5% com Stop no 88.6% e Condução MME 8 (53.3% Acerto, +774R/ano, PF 1.36)"
+
+metrics:
+  win_rate_pct: 53.3
+  annual_return_r: 774.2
+  two_year_return_r: 1548.5
+  profit_factor: 1.36
+  max_drawdown_r: 46.9
+  payoff: 1.19
+  total_trades_2y: 9198
+
+timeframes:
+  operational: "M5"
+
+fibonacci:
+  entry_level: 0.705            # Sweet Spot ICT
+  stop_level: 0.886             # Stop no nível harmônico 88.6% (evita violinadas no 79%)
+  origin_level: 1.000
+  target_mode: "0_percent"
+  pivot_k: 2
+  max_holding_candles: 60
+  enable_reentry_79: false
+
+trailing:
+  mode: "moving_average"
+  ma_type: "ema8"
+  exit_on_close_cross: true
+  profit_only: true
+
+risk_management:
+  risk_pct_per_trade: 1.0
+  max_open_trades_total: 4
+  max_trades_per_day: 5
+  max_stops_per_day: 2
+
+session:
+  mode: "24h"
+  force_close_time: "21:30"

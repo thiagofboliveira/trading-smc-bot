@@ -1,0 +1,56 @@
+# ===================================================================
+# PLAYBOOK OFICIAL — MODELO CONSERVADOR AUDITADO (SESSÃO LONDRES/NY)
+# ===================================================================
+# Nomenclatura Padrão: <nome>_<acerto>_<retorno>_<pf>_<maxdd>
+# Modelo: smc_fibo_conservador_66pct_337R_1.31pf_28dd
+# ===================================================================
+# Execução: 100% Auditada contra viés intrabar (Sem imunidade de mesma barra)
+# Conceito: Entrada 61.8% com Stop 100% e Filtro de Horário Nobre (07:00 às 18:00 UTC)
+# Retorno Anual: +337.3 R / ano (+674 R em 2 anos)
+# Taxa de Acerto: 65.8% | Profit Factor: 1.31 | Max Drawdown: apenas -28.4 R
+# ===================================================================
+
+model:
+  id: "smc_fibo_conservador_66pct_337R_1.31pf_28dd"
+  name: "SMC-Fibo-Conservador_66pct_337R_1.31pf_28dd"
+  version: "2.0.0"
+  description: "Modelo Conservador com Filtro de Sessão Nobre e Stop Estrutural (65.8% Acerto, +337R/ano, PF 1.31, MaxDD -28R)"
+
+metrics:
+  win_rate_pct: 65.8
+  annual_return_r: 337.3
+  two_year_return_r: 674.5
+  profit_factor: 1.31
+  max_drawdown_r: 28.4
+  payoff: 0.68
+  total_trades_2y: 6371
+
+timeframes:
+  operational: "M5"
+
+fibonacci:
+  entry_level: 0.618
+  stop_level: 1.000
+  origin_level: 1.000
+  target_mode: "0_percent"
+  pivot_k: 2
+  max_holding_candles: 60
+  enable_reentry_79: false
+
+trailing:
+  mode: "moving_average"
+  ma_type: "ema8"
+  exit_on_close_cross: true
+  profit_only: true
+
+risk_management:
+  risk_pct_per_trade: 1.0
+  max_open_trades_total: 4
+  max_trades_per_day: 5
+  max_stops_per_day: 2
+
+session:
+  mode: "session_filter"
+  start_hour_utc: 7
+  end_hour_utc: 18
+  force_close_time: "21:30"

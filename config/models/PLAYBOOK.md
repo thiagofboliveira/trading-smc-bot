@@ -123,7 +123,7 @@ Estes dois perfis operam a retração de Fibonacci no gráfico de **M5** sem ord
 | **Zona de Retração** | `fibo_entry: 0.500` até `fibo_rejection_max: 0.790` | `fibo_entry: 0.500` até `fibo_rejection_max: 0.790` |
 | **Confluência e Regime** | Toque na `EMA 80` (`confluence_ma: ema80`) + fechamento a favor da `EMA 80` (`trend_ma: ema80`) | Toque na `EMA 80` (`confluence_ma: ema80`) + fechamento a favor da `EMA 80` (`trend_ma: ema80`) |
 | **Filtro de Pavio** | `rejection_min_wick_ratio: 0.50` ($\ge 50\%$ do range da barra `i`) | `rejection_min_wick_ratio: 0.0` (sem exigência de pavio mínimo) |
-| **Execução e Stop/Alvo** | Entrada em `open[i + 1]`, Stop em `0.886`, Alvo fixo `2.0R` | Entrada em `open[i + 1]`, Stop em `0.886`, Alvo fixo `2.0R` |
+| **Execução e Condução Padrão** | Entrada em `open[i + 1]`, Stop `0.886`, Trava `+1R` em `1,618R` + BOS a BOS (`bos_swing_trailing: true`) até **`4,0R`** | Entrada em `open[i + 1]`, Stop `0.886`, Condução BOS a BOS (`bos_swing_trailing: true`) até **`5,0R`** |
 
 ### Protocolo de Validação Anti-Viés (`AGENTS.md` — Seção 2)
 

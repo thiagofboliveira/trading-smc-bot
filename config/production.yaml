@@ -79,7 +79,7 @@ models:
     session_windows: [["07:00", "18:00"]]
     status: "approved"
 
-  # Modelo 5: Zona [50%-79%] + Toque/Rejeição EMA80 + Pavio >= 50% (Candidato preliminar: +30.7R em backtest, 161 trades)
+  # Modelo 5: Zona [50%-79%] + Toque/Rejeição EMA80 + Pavio >= 50% + Trava 1.618R + BOS-a-BOS 4R (Candidato preliminar: +38.4R em backtest, 159 trades)
   smc_fibo_rejeicao_ema80_pavio:
     name: "SMC-Fibo-Rejeicao-EMA80-Pavio"
     strategy: "fibo_ote"
@@ -91,16 +91,20 @@ models:
     stop_mode: "fibo"
     rejection_min_wick_ratio: 0.50
     target_mode: "3R"
-    target_r: 2.0
+    target_r: 4.0
     pivot_k: 2
     trailing_exit_ma: null
     trend_ma: "ema80"
     confluence_ma: "ema80"
+    bos_swing_trailing: true
+    profit_lock:
+      trigger_r: 1.618
+      lock_r: 1.0
     session_filter: true
     session_windows: [["07:00", "18:00"]]
     status: "candidate"
 
-  # Modelo 6: Zona [50%-79%] + Toque/Rejeição EMA80 sem filtro de pavio (Candidato preliminar: +40.3R em backtest, 414 trades)
+  # Modelo 6: Zona [50%-79%] + Toque/Rejeição EMA80 + BOS-a-BOS 5R (Candidato preliminar: +66.6R em backtest, 413 trades)
   smc_fibo_rejeicao_ema80_zona:
     name: "SMC-Fibo-Rejeicao-EMA80-Zona"
     strategy: "fibo_ote"
@@ -112,11 +116,12 @@ models:
     stop_mode: "fibo"
     rejection_min_wick_ratio: 0.0
     target_mode: "3R"
-    target_r: 2.0
+    target_r: 5.0
     pivot_k: 2
     trailing_exit_ma: null
     trend_ma: "ema80"
     confluence_ma: "ema80"
+    bos_swing_trailing: true
     session_filter: true
     session_windows: [["07:00", "18:00"]]
     status: "candidate"

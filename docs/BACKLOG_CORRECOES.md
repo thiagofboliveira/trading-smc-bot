@@ -45,7 +45,7 @@ Esforço: **P** ≤ 0,5 dia · **M** 1–2 dias · **G** 3–5 dias.
 
 | ID | Item | Prioridade | Esforço | Status |
 |---|---|---|---|---|
-| B0-1 | Motor Fibo único; scripts deixam de ter simuladores próprios | P0 | M | Pendente |
+| B0-1 | Motor Fibo único; scripts deixam de ter simuladores próprios | P0 | M | **Concluído** |
 | B0-2 | Refatorar `fibo_ote.py` (long/short unificados, estado tipado) | P0 | M | **Concluído** |
 | B0-3 | Suíte de testes anti-viés com candles sintéticos | P0 | M | **Concluído** |
 | B0-4 | Teste de invariância de prefixo (detector genérico de lookahead) | P0 | P | **Concluído** |
@@ -70,10 +70,10 @@ Esforço: **P** ≤ 0,5 dia · **M** 1–2 dias · **G** 3–5 dias.
 | Z-08 | Zonas não acompanhadas durante posição aberta | P2 | M | Pendente |
 | Z-09 | Confirmação CHoCH usa candle seguinte; perde sinal em gaps | P2 | P | Pendente |
 | Z-10 | Estado de limites vaza entre `run()`; off-by-one em breakers; hook com candle completo | P2 | P | **Concluído** |
-| M-01 | Estratégia campeã escolhida pelo OOS | P0 | P | Pendente |
-| M-02 | Walk-forward de verdade (otimiza no treino, testa na janela seguinte) | P0 | M | Pendente |
-| M-03 | Recalcular e renomear todos os modelos oficiais | P0 | M | Pendente |
-| M-04 | Anualização pelo período real dos dados | P1 | P | Pendente |
+| M-01 | Estratégia campeã escolhida pelo OOS | P0 | P | **Concluído** |
+| M-02 | Walk-forward de verdade (otimiza no treino, testa na janela seguinte) | P0 | M | **Concluído** |
+| M-03 | Recalcular e renomear todos os modelos oficiais | P0 | M | **Concluído** |
+| M-04 | Anualização pelo período real dos dados | P1 | P | **Concluído** |
 | M-05 | Métricas de portfólio realistas (sobreposição, % de equity) | P1 | M | Pendente |
 | M-06 | Controle de múltiplos testes e robustez estatística | P1 | M | Pendente |
 | M-07 | Spread real com candles bid **e** ask da Dukascopy | P1 | M | Pendente |
@@ -100,12 +100,12 @@ Esforço: **P** ≤ 0,5 dia · **M** 1–2 dias · **G** 3–5 dias.
 | D-03 | Histórico mais longo para os ativos Dukascopy (≥ 5 anos) | P1 | P | **Concluído** |
 | D-04 | Validação de qualidade dos dados (buracos, duplicatas, fuso, sessão) | P1 | P | **Concluído** |
 | D-05 | Custos e especificação dos contratos B3 por símbolo | P1 | P | **Concluído** |
-| H-01 | Credenciais em `test.env` versionadas | P0 | P | Pendente |
+| H-01 | Credenciais em `test.env` versionadas | P0 | P | **Concluído** |
 | H-02 | Teste quebrado: instrumento DAX40 (`DEU.IDX/EUR`) | P1 | P | **Concluído** |
-| H-03 | Documentação afirma "100% auditado" e métricas não reproduzíveis | P1 | P | Pendente |
-| H-04 | CI com testes, lint e tipos | P1 | P | Pendente |
-| H-05 | Arquivar relatórios gerados pelo motor enviesado | P2 | P | Pendente |
-| H-06 | Pequenos ajustes (UI path check, nomes de scripts, imports) | P2 | P | Pendente |
+| H-03 | Documentação afirma "100% auditado" e métricas não reproduzíveis | P1 | P | **Concluído** |
+| H-04 | CI com testes, lint e tipos | P1 | P | **Concluído** |
+| H-05 | Arquivar relatórios gerados pelo motor enviesado | P2 | P | **Concluído** |
+| H-06 | Pequenos ajustes (UI path check, nomes de scripts, imports) | P2 | P | **Concluído** |
 
 ---
 

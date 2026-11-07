@@ -81,8 +81,8 @@ Esforço: **P** ≤ 0,5 dia · **M** 1–2 dias · **G** 3–5 dias.
 | M-09 | Versionar dados e reprodutibilidade dos relatórios | P2 | P | Pendente |
 | L-01 | Modo `live` usa `MockMT5Client` | P0 | G | Pendente |
 | L-02 | Live executa a estratégia de zonas, não a Fibo; params ignorados | P0 | G | Pendente |
-| L-03 | Decisões tomadas no candle M1 ainda em formação | P0 | P | Pendente |
-| L-04 | Sizing: `tick_value` por point e lote mínimo acima do risco | P0 | P | Pendente |
+| L-03 | Decisões tomadas no candle M1 ainda em formação | P0 | P | **Concluído** |
+| L-04 | Sizing: `tick_value` por point e lote mínimo acima do risco | P0 | P | **Concluído** |
 | L-05 | Limites diários não recebem stops/gains reais | P1 | P | Pendente |
 | L-06 | Entrada a mercado no close em vez de ordem limite no nível | P1 | M | Pendente |
 | L-07 | Estado só em memória; sem reconciliação nem idempotência | P1 | M | Pendente |

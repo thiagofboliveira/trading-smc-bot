@@ -188,6 +188,9 @@ class LiveTradingEngine:
                     confluence_ma=(
                         model_def.confluence_ma if model_def else None
                     ),
+                    bos_swing_trailing=(
+                        model_def.bos_swing_trailing if model_def else False
+                    ),
                 )
                 self.fibo_evaluators[sym] = FiboLiveEvaluator(fibo_cfg)
 

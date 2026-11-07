@@ -449,4 +449,45 @@ def test_f14_zona_50_79_aguarda_toque_e_rejeicao_na_ema80():
     assert t.r_multiple == pytest.approx(2.0)
 
 
+def test_f15_bos_swing_trailing_respeita_f03_e_move_stop_para_swing_confirmado():
+    """Valida condução BOS a BOS (bos_swing_trailing=True) sem lookahead (F-01 e F-03):
+    1. A barra que confirma o BOS não pode ser protegida pelo novo stop na própria barra (F-03).
+    2. A partir da barra seguinte ao BOS, o stop sobe para o fundo fractal confirmado.
+    """
+    # Barra 9 entra comprado (entry ~98.935, stop original = 97.73, topo da perna = 108.0).
+    # Cenário A (F-03): barra 10 fura o stop original (low 97.0 <= 97.73) E fecha acima de 108 (109.0).
+    # Deve estopar em -1R (97.73) porque o stop vigente no início da barra 10 era 97.73.
+    trades_f03 = run(
+        long_entry_scenario([(99.5, 109.5, 97.0, 109.0)]),
+        bos_swing_trailing=True,
+        target_mode="3R",
+        target_r=4.0,
+    )
+    assert len(trades_f03) == 1
+    assert trades_f03[0].exit_reason == "STOP_LOSS"
+    assert trades_f03[0].r_multiple == pytest.approx(-1.0)
+
+    # Cenário B: barra 9 tem mínima 98.5 (que vira swing low confirmado na barra 11 com k=2).
+    # Barra 10 e 11 sobem sem tocar 98.5; barra 11 confirma o swing low da barra 9 (98.5) e fecha em 108.5 (> 108.0 = BOS!).
+    # Barra 12 cai até 98.0 (abaixo de 98.5, mas acima do stop original 97.73).
+    # Com bos_swing_trailing=True, a barra 12 sai em LOCK_PROFIT_SL no novo stop (98.5)!
+    extra = [
+        (99.5, 103.0, 99.0, 102.5),  # 10
+        (102.5, 109.0, 101.0, 108.5),  # 11: confirma swing low da 9 (98.5) e fecha > 108.0 (BOS)
+        (108.5, 108.6, 98.0, 98.2),  # 12: toca o novo stop em 98.5
+    ]
+    trades_bos = run(
+        long_entry_scenario(extra),
+        bos_swing_trailing=True,
+        target_mode="3R",
+        target_r=10.0,
+    )
+    t = trades_bos[0]
+    assert t.entry_time == bar_time(9)
+    assert t.exit_reason == "LOCK_PROFIT_SL"
+    assert t.exit_time == bar_time(12)
+    assert t.stop_loss == pytest.approx(98.5)
+
+
+
 

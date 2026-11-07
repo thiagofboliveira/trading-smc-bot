@@ -145,3 +145,18 @@ Estes dois perfis operam a retração de Fibonacci no gráfico de **M5** sem ord
 | **GBPUSD** | `13` trades \| WR `30,8%` \| **`-1,0R`** (`-0,077R/tr`) | `41` trades \| WR `39,0%` \| **`+7,0R`** (`+0,171R/tr`) |
 | **TOTAL (7,5 meses)** | **`161` trades \| WR `39,8%` \| `+30,7R` (`+0,191R ± 0,116R/tr`) \| MaxDD `9,0R`** | **`414` trades \| WR `36,5%` \| `+40,3R` (`+0,097R ± 0,071R/tr`) \| MaxDD `21,8R`** |
 
+### Condução Estrutural de BOS em BOS (`bos_swing_trailing: true`) e Alvos Estendidos (`3R` a `6R`)
+
+O motor suporta conduzir o stop estruturalmente de BOS em BOS (`bos_swing_trailing: true`), movendo o stop para o último fundo/topo fractal confirmado (`pivot_k: 2`, respeitando **F-01** e **F-03**) sempre que o preço fecha rompendo a estrutura a favor da operação:
+
+| Variante de Condução (`backtest` M1 $\to$ M5, `01/03/2026` a `16/10/2026`, com spreads) | Trades ($N$) | Acerto (WR) | Trades $\ge 4R$ / $\ge 5R$ | Saldo ($R$) | Expectativa ($R$/tr ± EP) | 1ª / 2ª Metade (IS / OOS) | Ativos + |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Perfil Seletivo (`Pavio >= 50%`) — Fixo `1,618R`** | `161` | `46,0%` | `0` / `0` | `+32,5R` | `+0,202R` (`±0,103`) | `+0,119R` / `+0,328R` | `5/6` |
+| **Perfil Seletivo (`Pavio >= 50%`) — Trava `+1R` em `1,618R` + BOS $\to$ Swing (Alvo `4R`)** | `159` | `45,9%` | `14` / `0` | **`+38,4R`** | **`+0,242R` (`±0,122`)** | `+0,183R` / `+0,335R` | `6/6` |
+| **Perfil Seletivo (`Pavio >= 50%`) — Trava `+1R` em `1,618R` + BOS $\to$ Swing (Alvo `5R`)** | `159` | `45,9%` | `8` / `8` | `+36,8R` | `+0,231R` (`±0,125`) | `+0,162R` / `+0,339R` | `6/6` |
+| **Perfil Frequente (`Sem filtro pavio`) — Todo BOS $\to$ Fundo do BOS (Alvo `4R`)** | `414` | `37,7%` | `45` / `1` | **`+62,3R`** | **`+0,151R` (`±0,083`)** | `+0,207R` / `+0,085R` | `5/6` |
+| **Perfil Frequente (`Sem filtro pavio`) — Todo BOS $\to$ Fundo do BOS (Alvo `5R`)** | `413` | `37,5%` | `32` / `30` | **`+66,6R`** | **`+0,161R` (`±0,087`)** | `+0,192R` / `+0,129R` | `4/6` |
+| **Perfil Frequente (`Sem filtro pavio`) — Todo BOS $\to$ Fundo do BOS (Alvo `6R`)** | `413` | `37,5%` | `26` / `22` | **`+71,0R`** | **`+0,172R` (`±0,091`)** | `+0,186R` / `+0,161R` | `4/6` |
+| **Perfil Frequente (`Sem filtro pavio`) — Todo BOS $\to$ Fundo do BOS (Sem alvo fixo)** | `412` | `37,6%` | `20` / `12` | `+48,1R` | `+0,117R` (`±0,086`) | `+0,124R` / `+0,113R` | `4/6` |
+
+

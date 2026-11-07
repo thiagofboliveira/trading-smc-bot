@@ -199,6 +199,7 @@ class FiboModelConfig(BaseModel):
     trend_ma: str | None = None
     trend_ma_slope: bool = False
     confluence_ma: str | None = None
+    bos_swing_trailing: bool = False
     profit_lock: ProfitLockConfig | None = None
     blocks_filter: list[str] | None = None
     require_sweep: bool | None = None

@@ -70,6 +70,9 @@ class FiboOTEConfig:
     profit_lock_guarantee_r: float = (
         0.0  # Novo stop garantido em R (0.0 = breakeven, 1.0 = lock)
     )
+    bos_swing_trailing: bool = (
+        False  # Condução estrutural: a cada BOS a favor, move stop p/ o swing confirmado (F-01/F-03)
+    )
     partial_exit_trigger_r: float | None = (
         None  # Gatilho de realização parcial em R (ex: 1.0, 1.5, 2.0)
     )
@@ -163,6 +166,7 @@ class _PendingOpenEntry:
     extreme: float
     risk_ref: float
     bos_idx: int
+    rej_extreme: float = 0.0
 
 
 @dataclass
@@ -177,6 +181,8 @@ class _Position:
     pending_ma_exit: bool = False
     partial_taken: bool = False
     realized_r: float = 0.0
+    bos_ref: float = 0.0
+    rej_extreme: float = 0.0
 
 
 def _fractal_swings(
@@ -458,7 +464,22 @@ class FiboOTEStrategy:
             else:  # "0_percent"
                 target = leg.extreme
             return _Position(
-                d=d, entry_idx=i, entry_price=entry, stop=stop, target=target, risk=risk
+                d=d,
+                entry_idx=i,
+                entry_price=entry,
+                stop=stop,
+                target=target,
+                risk=risk,
+                bos_ref=leg.extreme,
+                rej_extreme=(
+                    lows[i]
+                    if d == 1
+                    else (
+                        ask_highs[i]
+                        if (ask_highs is not None and i < len(ask_highs))
+                        else highs[i] + spread
+                    )
+                ),
             )
 
         trades: list[FiboTrade] = []
@@ -554,6 +575,8 @@ class FiboOTEStrategy:
                             stop=po.stop,
                             target=target_px,
                             risk=risk_px,
+                            bos_ref=po.extreme,
+                            rej_extreme=po.rej_extreme,
                         )
 
             # 2. Gerenciamento da posição aberta (barras posteriores à entrada)
@@ -686,8 +709,58 @@ class FiboOTEStrategy:
                             d * (favorable - (pos.entry_price + d * pos.risk * trig_r))
                             >= 0
                         ):
-                            pos.stop = pos.entry_price + d * pos.risk * guar_r
+                            new_lock_stop = pos.entry_price + d * pos.risk * guar_r
+                            if d * (new_lock_stop - pos.stop) > 0:
+                                pos.stop = new_lock_stop
                             pos.locked = True
+
+                    # Condução estrutural BOS a BOS (F-01 e F-03: swing confirmado com atraso k;
+                    # stop atualizado no fechamento de i só passa a valer em i+1).
+                    if cfg.bos_swing_trailing:
+                        if (
+                            d == 1
+                            and last_sh_idx is not None
+                            and last_sh_idx >= pos.entry_idx
+                            and last_sh_price is not None
+                            and last_sh_price > pos.bos_ref
+                        ):
+                            pos.bos_ref = last_sh_price
+                        elif (
+                            d == -1
+                            and last_sl_idx is not None
+                            and last_sl_idx >= pos.entry_idx
+                            and last_sl_price is not None
+                            and last_sl_price < pos.bos_ref
+                        ):
+                            pos.bos_ref = last_sl_price
+
+                        if pos.bos_ref > 0 and d * (closes[i] - pos.bos_ref) > 0:
+                            pos.bos_ref = highs[i] if d == 1 else lows[i]
+                            swing_stop = None
+                            if (
+                                d == 1
+                                and last_sl_price is not None
+                                and last_sl_idx is not None
+                                and last_sl_idx >= pos.entry_idx - k
+                            ):
+                                swing_stop = last_sl_price
+                            elif (
+                                d == -1
+                                and last_sh_price is not None
+                                and last_sh_idx is not None
+                                and last_sh_idx >= pos.entry_idx - k
+                            ):
+                                swing_stop = last_sh_price + spread
+                            cand_stop = (
+                                swing_stop
+                                if swing_stop is not None
+                                else (
+                                    pos.rej_extreme if pos.rej_extreme > 0 else pos.stop
+                                )
+                            )
+                            if d * (cand_stop - pos.stop) > 0:
+                                pos.stop = cand_stop
+                                pos.locked = True
                 continue
 
             # 3. Nova perna por quebra de estrutura (BOS), confirmada no fechamento de i
@@ -810,6 +883,15 @@ class FiboOTEStrategy:
                             cfg.target_mode in ("trailing_only", "3R")
                             or d * (leg.extreme - c_ref) > 0
                         ):
+                            rej_ext = (
+                                lows[i]
+                                if d == 1
+                                else (
+                                    ask_highs[i]
+                                    if (ask_highs is not None and i < len(ask_highs))
+                                    else highs[i] + spread
+                                )
+                            )
                             pending_open = _PendingOpenEntry(
                                 d=d,
                                 stop=stop_px,
@@ -817,6 +899,7 @@ class FiboOTEStrategy:
                                 extreme=leg.extreme,
                                 risk_ref=risk_ref,
                                 bos_idx=leg.bos_idx,
+                                rej_extreme=rej_ext,
                             )
                     leg = None
                     continue

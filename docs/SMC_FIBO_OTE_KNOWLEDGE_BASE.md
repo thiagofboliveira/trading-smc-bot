@@ -1,10 +1,9 @@
 # 📚 BASE DE CONHECIMENTO OFICIAL: ESTRATÉGIA QUANTITATIVA SMC-FIBO-OTE
 
-> **Documento de Referência Institucional e Playbook Operacional**  
-> **Data de Validação:** Novembro de 2026  
-> **Ambiente de Teste:** 1 Ano Real de Dados Históricos M1 (Dukascopy: 01/11/2025 a 04/11/2026 — 2,48 milhões de candles)  
-> **Fricção de Mercado:** Spreads e comissões reais aplicados em 100% das ordens  
-> **Validação Estatística:** Walk-Forward Split (6 Meses In-Sample / 6 Meses Out-of-Sample Cego)
+> [!WARNING]
+> **AVISO CRÍTICO PÓS-AUDITORIA DE REALISMO (Novembro de 2026):**  
+> Os retornos históricos citados originalmente nas seções preliminares deste documento (+809R a +2.101R no ano) foram decorrentes de vieses de antecipação intrabar no simulador legado (F-01: entrada na mesma barra do BOS; F-02: omissão de spread na saída de shorts).  
+> Com o motor unificado e auditado (`FiboOTEStrategy`), a expectativa real na configuração padrão M5 mostrou-se negativa nos ativos testados. Consulte [`docs/BACKLOG_CORRECOES.md`](BACKLOG_CORRECOES.md) para o status completo das correções e novos direcionamentos quantitativos.
 
 ---
 

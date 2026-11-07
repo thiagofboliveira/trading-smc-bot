@@ -1,8 +1,7 @@
 """Motor de Execução Autônoma em Tempo Real (Live Trading Engine) para MetaTrader 5."""
+
 import logging
-import time
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any, Callable
 import pandas as pd
 
@@ -32,7 +31,9 @@ class SymbolRuntimeState:
     require_sweep: bool = False
     blocks_filter: list[str] = field(default_factory=lambda: ["OB"])
     active_zones: list[Zone] = field(default_factory=list)
-    zone_states: dict[tuple[pd.Timestamp, pd.Timestamp], dict[str, Any]] = field(default_factory=dict)
+    zone_states: dict[tuple[pd.Timestamp, pd.Timestamp], dict[str, Any]] = field(
+        default_factory=dict
+    )
     trailing_mgr: TrailingManager | None = None
     current_position: LivePosition | None = None
     last_processed_m1_time: pd.Timestamp | None = None
@@ -87,7 +88,9 @@ class LiveTradingEngine:
             self.session_mgrs[sym] = SessionManager(cfg.session)
             self.limits_trackers[sym] = DailyLimitsTracker(cfg.limits)
 
-    def process_symbol_tick(self, symbol: str, now_utc: pd.Timestamp | None = None) -> None:
+    def process_symbol_tick(
+        self, symbol: str, now_utc: pd.Timestamp | None = None
+    ) -> None:
         """Executa um ciclo completo de análise e decisão para um ativo."""
         if symbol not in self.runtimes:
             return
@@ -99,7 +102,9 @@ class LiveTradingEngine:
 
         # 1. Obtém candles recentes de M1 (suficientes para cálculo de H1/M15 e médias)
         candles_count = 2000 if state.macro_tf in ("H1", "H4") else 450
-        candles_m1 = self.client.get_candles(symbol, timeframe="M1", count=candles_count)
+        candles_m1 = self.client.get_candles(
+            symbol, timeframe="M1", count=candles_count
+        )
         if candles_m1.empty or len(candles_m1) < 50:
             return
 
@@ -107,7 +112,9 @@ class LiveTradingEngine:
         now = now_utc or last_time
 
         # 2. Sincroniza posições abertas no MT5 com o estado interno
-        open_positions = self.client.get_open_positions(symbol=symbol, magic=state.magic)
+        open_positions = self.client.get_open_positions(
+            symbol=symbol, magic=state.magic
+        )
         if open_positions:
             state.current_position = open_positions[0]
         else:
@@ -120,7 +127,9 @@ class LiveTradingEngine:
 
             # A. Fechamento forçado de fim de sessão (ex: 21:00 UTC)
             if session_mgr.should_force_close(now):
-                self.notify(f"⏰ [{symbol}] Fechamento forçado de sessão às {now.strftime('%H:%M UTC')}. Encerrando posição #{pos.ticket}.")
+                self.notify(
+                    f"⏰ [{symbol}] Fechamento forçado de sessão às {now.strftime('%H:%M UTC')}. Encerrando posição #{pos.ticket}."
+                )
                 self.client.close_position(pos.ticket)
                 limits_tracker.record_trade(now, r_multiple=0.0)
                 state.current_position = None
@@ -131,25 +140,47 @@ class LiveTradingEngine:
                 pivots_m1 = find_pivots(candles_m1, k=2)
                 events_m1 = detect_structure(candles_m1, pivots_m1)
                 needed_dir = "up" if pos.direction == "long" else "down"
-                curr_bos = next((e for e in reversed(events_m1) if e.kind == "BOS" and e.direction == needed_dir), None)
+                curr_bos = next(
+                    (
+                        e
+                        for e in reversed(events_m1)
+                        if e.kind == "BOS" and e.direction == needed_dir
+                    ),
+                    None,
+                )
 
                 if state.trailing_mgr is None:
                     state.trailing_mgr = TrailingManager(cfg.trailing, pos.stop_loss)
 
                 c_curr = candles_m1.iloc[-1]
                 should_exit, new_sl_price, reason = state.trailing_mgr.check_and_update(
-                    pos, c_curr["open"], c_curr["high"], c_curr["low"], c_curr["close"], now, current_bos=curr_bos
+                    pos,
+                    c_curr["open"],
+                    c_curr["high"],
+                    c_curr["low"],
+                    c_curr["close"],
+                    now,
+                    current_bos=curr_bos,
                 )
 
                 # Se o trailing gerou um novo nível de stop loss protetor, atualiza no MT5!
-                if state.trailing_mgr.current_stop != pos.stop_loss and state.trailing_mgr.current_stop is not None:
+                if (
+                    state.trailing_mgr.current_stop != pos.stop_loss
+                    and state.trailing_mgr.current_stop is not None
+                ):
                     updated_sl = state.trailing_mgr.current_stop
                     sym_info = self.client.get_symbol_info(symbol)
                     updated_sl = round(updated_sl, sym_info.digits)
                     if updated_sl != pos.stop_loss:
-                        success = self.client.modify_position(pos.ticket, stop_loss=updated_sl, take_profit=pos.take_profit)
+                        success = self.client.modify_position(
+                            pos.ticket,
+                            stop_loss=updated_sl,
+                            take_profit=pos.take_profit,
+                        )
                         if success:
-                            self.notify(f"🛡️ [{symbol}] Trailing Stop atualizado para {updated_sl} (Ticket #{pos.ticket})")
+                            self.notify(
+                                f"🛡️ [{symbol}] Trailing Stop atualizado para {updated_sl} (Ticket #{pos.ticket})"
+                            )
                             pos.stop_loss = updated_sl
 
             return
@@ -182,7 +213,12 @@ class LiveTradingEngine:
 
         # B. Avalia toque e gatilho no candle M1 atual
         c_last = candles_m1.iloc[-1]
-        c_open, c_high, c_low, c_close = float(c_last["open"]), float(c_last["high"]), float(c_last["low"]), float(c_last["close"])
+        _, c_high, c_low, c_close = (
+            float(c_last["open"]),
+            float(c_last["high"]),
+            float(c_last["low"]),
+            float(c_last["close"]),
+        )
 
         pivots_m1 = find_pivots(candles_m1, k=2)
         events_m1 = detect_structure(candles_m1, pivots_m1)
@@ -204,12 +240,16 @@ class LiveTradingEngine:
                     if cfg.entry_mode == "touch":
                         # Entrada imediata a mercado no toque
                         z_info["state"] = "CONSUMED"
-                        self._trigger_entry(symbol, zone, c_close, now, entry_mode="touch")
+                        self._trigger_entry(
+                            symbol, zone, c_close, now, entry_mode="touch"
+                        )
                         return
                     else:
                         # Arma a zona para confirmação M1 (CHoCH)
                         z_info["state"] = "ARMED"
-                        self.notify(f"🎯 [{symbol}] Zona {zone.kind} {zone.direction.upper()} armada no toque ({zone.low} - {zone.high}). Aguardando confirmação M1...")
+                        self.notify(
+                            f"🎯 [{symbol}] Zona {zone.kind} {zone.direction.upper()} armada no toque ({zone.low} - {zone.high}). Aguardando confirmação M1..."
+                        )
 
             # 2. Confirmação por Micro-CHoCH M1
             elif z_info["state"] == "ARMED":
@@ -218,7 +258,14 @@ class LiveTradingEngine:
                 if choch is not None and (zone.low <= c_close <= zone.high):
                     z_info["state"] = "CONSUMED"
                     m1_swing = choch.range_low if long else choch.range_high
-                    self._trigger_entry(symbol, zone, c_close, now, entry_mode="confirmation", m1_swing=m1_swing)
+                    self._trigger_entry(
+                        symbol,
+                        zone,
+                        c_close,
+                        now,
+                        entry_mode="confirmation",
+                        m1_swing=m1_swing,
+                    )
                     return
 
     def _trigger_entry(
@@ -245,14 +292,20 @@ class LiveTradingEngine:
             stop_loss = zone.low if long else zone.high
 
         # Verificação de sanidade
-        if (long and entry_price <= stop_loss) or (not long and entry_price >= stop_loss):
-            logger.warning(f"[{symbol}] Entrada inválida: preço {entry_price} além do stop {stop_loss}")
+        if (long and entry_price <= stop_loss) or (
+            not long and entry_price >= stop_loss
+        ):
+            logger.warning(
+                f"[{symbol}] Entrada inválida: preço {entry_price} além do stop {stop_loss}"
+            )
             return None
 
         # 2. Posicionamento do Take Profit (Fixo 1:3 R:R)
         risk = abs(entry_price - stop_loss)
         target_r = cfg.target_r if cfg.target_r > 0 else 3.0
-        take_profit = entry_price + (target_r * risk) if long else entry_price - (target_r * risk)
+        take_profit = (
+            entry_price + (target_r * risk) if long else entry_price - (target_r * risk)
+        )
 
         # Formata preços conforme dígitos do ativo
         entry_price = round(entry_price, sym_info.digits)
@@ -288,9 +341,13 @@ class LiveTradingEngine:
 
         result = self.client.send_order(order_req)
         if result.success:
-            self.notify(f"✅ [{symbol}] Ordem executada com sucesso! Ticket: #{result.ticket} @ {result.price}")
+            self.notify(
+                f"✅ [{symbol}] Ordem executada com sucesso! Ticket: #{result.ticket} @ {result.price}"
+            )
             state.trailing_mgr = TrailingManager(cfg.trailing, stop_loss)
         else:
-            self.notify(f"❌ [{symbol}] Falha ao executar ordem: {result.comment} (Código: {result.error_code})")
+            self.notify(
+                f"❌ [{symbol}] Falha ao executar ordem: {result.comment} (Código: {result.error_code})"
+            )
 
         return result

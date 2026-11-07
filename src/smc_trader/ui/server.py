@@ -1,6 +1,5 @@
 import json
 import mimetypes
-import os
 import urllib.parse
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -20,9 +19,7 @@ from smc_trader.config import (
     BacktestConfig,
     ConfluenceConfig,
     Config,
-    CostsConfig,
     LimitsConfig,
-    SessionConfig,
     TrailingConfig,
     ZoneConfig,
 )
@@ -82,7 +79,11 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
         """Retorna os dados completos, trades e caminhos de imagens de um teste salvo."""
         target_dir = (Path("out/backtests") / run_id).resolve()
         base_dir = Path("out/backtests").resolve()
-        if not str(target_dir).startswith(str(base_dir)) or not target_dir.exists() or not target_dir.is_dir():
+        if (
+            not target_dir.is_relative_to(base_dir)
+            or not target_dir.exists()
+            or not target_dir.is_dir()
+        ):
             self._send_json({"error": "Backtest não encontrado"}, status=404)
             return
 
@@ -95,13 +96,19 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
         base_dir = Path("out/backtests").resolve()
         target = (base_dir / clean_rel).resolve()
 
-        if not str(target).startswith(str(base_dir)) or not target.exists() or not target.is_file():
+        if (
+            not target.is_relative_to(base_dir)
+            or not target.exists()
+            or not target.is_file()
+        ):
             self.send_error(HTTPStatus.NOT_FOUND, "Arquivo não encontrado")
             return
 
         content_type, _ = mimetypes.guess_type(target.name)
         if target.suffix.lower() == ".xlsx":
-            content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            content_type = (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
         elif target.suffix.lower() == ".txt":
             content_type = "text/plain; charset=utf-8"
         elif target.suffix.lower() == ".png":
@@ -117,14 +124,18 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Access-Control-Allow-Origin", "*")
         if target.suffix.lower() == ".xlsx":
-            self.send_header("Content-Disposition", f'attachment; filename="{target.name}"')
+            self.send_header(
+                "Content-Disposition", f'attachment; filename="{target.name}"'
+            )
         self.end_headers()
         self.wfile.write(data)
 
     def do_POST(self) -> None:
         path = self.path.split("?")[0]
         content_len = int(self.headers.get("Content-Length", 0))
-        post_data = self.rfile.read(content_len).decode("utf-8") if content_len > 0 else "{}"
+        post_data = (
+            self.rfile.read(content_len).decode("utf-8") if content_len > 0 else "{}"
+        )
         try:
             payload = json.loads(post_data) if post_data else {}
         except json.JSONDecodeError:
@@ -198,7 +209,9 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
             return
 
         if c_m1.empty:
-            self._send_json({"error": "Nenhum candle M1 encontrado para o intervalo"}, status=400)
+            self._send_json(
+                {"error": "Nenhum candle M1 encontrado para o intervalo"}, status=400
+            )
             return
 
         # Montar configurações
@@ -258,7 +271,9 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
 
         # Montar Curva de Patrimônio padrão
         cum_r = 0.0
-        equity_curve: list[dict[str, Any]] = [{"time": c_m1.index[0].isoformat(), "cum_r": 0.0, "pnl": 0.0}]
+        equity_curve: list[dict[str, Any]] = [
+            {"time": c_m1.index[0].isoformat(), "cum_r": 0.0, "pnl": 0.0}
+        ]
         trades_list: list[dict[str, Any]] = []
 
         for idx, t in enumerate(result.trades, 1):
@@ -325,7 +340,9 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
                 "folder_id": audit_manifest["id"],
                 "excel_url": audit_manifest["excel_url"],
                 "txt_url": audit_manifest["txt_url"],
-            } if audit_manifest else None,
+            }
+            if audit_manifest
+            else None,
         }
 
         self._send_json(response_payload)
@@ -439,10 +456,10 @@ def run_ui_server(
     SMCRequestHandler.data_root = Path(root)
 
     server = ThreadingHTTPServer((host, port), SMCRequestHandler)
-    print(f"\n==================================================")
-    print(f"🚀 Assistente SMC UI iniciado com sucesso!")
+    print("\n==================================================")
+    print("🚀 Assistente SMC UI iniciado com sucesso!")
     print(f"🔗 Acesse no navegador: http://{host}:{port}")
-    print(f"==================================================\n")
+    print("==================================================\n")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

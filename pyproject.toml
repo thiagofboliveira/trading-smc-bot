@@ -19,7 +19,7 @@ dependencies = [
 smc = "smc_trader.cli:main"
 
 [dependency-groups]
-dev = ["pytest"]
+dev = ["pytest", "ruff", "mypy"]
 
 [build-system]
 requires = ["hatchling"]

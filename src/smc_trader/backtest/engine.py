@@ -181,11 +181,13 @@ class BacktestEngine:
                 sl = current_pos.stop_loss
                 tp = current_pos.take_profit
 
+                sp = self.costs_calc.get_spread(symbol)
                 if long:
                     hit_sl = c_low <= sl
                     hit_tp = (tp is not None) and (c_high >= tp)
                 else:
-                    hit_sl = c_high >= sl
+                    # F-02/Z-04: Short compra para encerrar (Ask = c_high + spread)
+                    hit_sl = (c_high + sp) >= sl
                     hit_tp = (tp is not None) and (c_low <= tp)
 
                 # Z-04: Stop loss tem prioridade absoluta sobre trailing e sessão
@@ -331,10 +333,11 @@ class BacktestEngine:
                                     entered = True
                                     can_enter = False
                                     # Z-02: checar stop no candle de entrada
+                                    sp_entry = self.costs_calc.get_spread(symbol)
                                     hit_sl_entry = (
                                         (c_low <= current_pos.stop_loss)
                                         if long
-                                        else (c_high >= current_pos.stop_loss)
+                                        else ((c_high + sp_entry) >= current_pos.stop_loss)
                                     )
                                     if hit_sl_entry:
                                         exit_price, exit_cost = (
@@ -398,10 +401,11 @@ class BacktestEngine:
                                         entered = True
                                         can_enter = False
                                         # Z-02: checar stop no candle de entrada
+                                        sp_entry = self.costs_calc.get_spread(symbol)
                                         hit_sl_entry = (
                                             (c_low <= current_pos.stop_loss)
                                             if long
-                                            else (c_high >= current_pos.stop_loss)
+                                            else ((c_high + sp_entry) >= current_pos.stop_loss)
                                         )
                                         if hit_sl_entry:
                                             exit_price, exit_cost = (

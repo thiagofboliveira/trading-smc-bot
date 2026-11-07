@@ -26,7 +26,7 @@ jobs:
         run: uv sync --all-groups
 
       - name: Lint with ruff
-        run: uv run ruff check src/smc_trader/
+        run: uv run ruff check src/ tests/
 
       - name: Run Pytest Test Suite
-        run: uv run pytest tests/test_fibo_ote.py tests/test_zones_biases.py tests/test_prefix_invariance.py tests/test_validation_methodology.py
+        run: uv run pytest

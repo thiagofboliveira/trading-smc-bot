@@ -199,6 +199,8 @@ class FiboModelConfig(BaseModel):
     require_sweep: bool | None = None
     entry_mode: str | None = None
     stop_mode: str | None = None
+    status: Literal["approved", "paper_only", "reproved", "candidate"] = "candidate"
+    session_filter: bool = False
 
 
 class TradingProductionConfig(BaseModel):
@@ -234,6 +236,7 @@ class ProductionSymbolConfig(BaseModel):
     description: str = ""
     macro_tf: str = "M5"
     order_type: Literal["market", "limit"] = "limit"
+    enabled: bool = True
 
 
 class ProductionConfig(BaseModel):

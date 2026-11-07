@@ -500,6 +500,11 @@ class BridgeMT5Client(BaseMT5Client):
                 if cmd_id in self.server.command_results:
                     return self.server.command_results.pop(cmd_id)
             time.sleep(0.05)
+        # Timeout: remove da fila para evitar execução atrasada pelo EA
+        with self.server.lock:
+            self.server.command_queue = [
+                c for c in self.server.command_queue if c.get("cmd_id") != cmd_id
+            ]
         return None
 
     def send_order(self, order: OrderRequest) -> OrderResult:

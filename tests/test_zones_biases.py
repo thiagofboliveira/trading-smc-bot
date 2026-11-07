@@ -281,3 +281,33 @@ def test_z09_confirmacao_choch_indexado_pelo_candle_de_confirmacao():
     # Entrada deve ocorrer exatamente no candle 2 (t_choch)
     assert result.trades[0].entry_time == t_choch
 
+
+def test_z04_short_stop_considers_spread():
+    """Z-04: Em posições vendidas, a compra para encerrar (Ask) inclui o spread na checagem de Stop."""
+    now = pd.Timestamp("2026-10-18 10:00:00", tz="UTC")
+    # Zona de venda (short) entre 100 e 110. SL no high (110.0), TP em 80.0
+    zone = make_zone(direction="short", high=110.0, low=100.0, t=now)
+
+    # Candle 0 entra a 100.0.
+    # Candle 1 tem c_high = 109.8 (abaixo de 110.0 no Bid), mas com spread de 0.5 o Ask vai a 110.3!
+    c_m1 = candles_from_ohlc(
+        [
+            (99.0, 101.0, 98.0, 100.5),    # toca zone.low (100) e entra short
+            (100.5, 109.8, 99.0, 102.0),   # high é 109.8; com spread 0.5, Ask = 110.3 >= 110.0 => STOP!
+        ],
+        tf="M1",
+        start=now,
+    )
+
+    # Sem spread (spread=0): não deve bater stop no candle 1
+    cfg_zero = BacktestConfig(entry_mode="touch", stop_mode="ob", costs=CostsConfig(spread_pips={"XAUUSD": 0.0}))
+    res_zero = BacktestEngine(cfg_zero).run(c_m1, [zone], symbol="XAUUSD")
+    # Posição permanece aberta até o final (fechada compulsoriamente no fim do teste)
+    assert res_zero.trades[0].exit_reason == "session_close"
+
+    # Com spread de 0.5: deve bater stop no candle 1 por causa do Ask
+    cfg_spread = BacktestConfig(entry_mode="touch", stop_mode="ob", costs=CostsConfig(spread_pips={"XAUUSD": 0.5}))
+    res_spread = BacktestEngine(cfg_spread).run(c_m1, [zone], symbol="XAUUSD")
+    assert res_spread.trades[0].exit_reason == "sl"
+
+

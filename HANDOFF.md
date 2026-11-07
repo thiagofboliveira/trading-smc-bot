@@ -3,8 +3,8 @@
 **Data:** 07 de Novembro de 2026  
 **Repositório Remoto:** `git@github.com:thiagofboliveira/trading-smc-bot.git`  
 **Branch Principal de Trabalho:** `feat/backtest-engine`  
-**Status do Backlog de Auditoria (`docs/BACKLOG_CORRECOES.md`):** **61 de 61 itens concluídos (100%)**  
-**Suíte de Testes:** **604 testes passando (`uv run pytest`)** · **0 erros de linting (`uv run ruff check`)**
+**Status da Auditoria e Correções:** **Totalmente auditado e revisado (`docs/REVISAO_IMPLEMENTACAO_BACKLOG.md`)**  
+**Suíte de Testes:** **609 testes passando (`uv run pytest`)** · **0 erros de linting (`uv run ruff check src/ tests/`)**
 
 ---
 
@@ -139,6 +139,10 @@ uv run smc fibo-backtest --symbol XAUUSD
 ```bash
 uv run smc live --config config/production.yaml
 ```
+> [!IMPORTANT]
+> Em `config/production.yaml`, os símbolos vêm com `enabled: false` por padrão (fail-closed).
+> Modelos genéricos de 24h sem filtro de horário apresentaram expectativa negativa após remoção dos vieses.
+> Para operar, selecione um modelo calibrado com expectativa positiva comprovada (ex: `smc_fibo_gold_session` em XAUUSD na sessão Londres/NY) e ative conscientemente `enabled: true`.
 
 ---
 
@@ -147,10 +151,10 @@ uv run smc live --config config/production.yaml
 1. **Nunca quebre o teste de Invariância de Prefixo (`tests/test_prefix_invariance.py`):**
    Qualquer decisão tomada no instante $t$ não pode depender de candles posteriores a $t$. Se o teste falhar, há lookahead.
 2. **Short SEMPRE paga spread na saída:**
-   Vendas entram no Bid e recompram no Ask. Nunca compare stop ou alvo de short diretamente com a série Bid sem adicionar o spread.
+   Vendas entram no Bid e recompram no Ask (`c_high + spread >= sl`). Nunca compare stop ou alvo de short diretamente com a série Bid sem adicionar o spread.
 3. **Respeite o Fail-Closed em Produção:**
-   Nunca permita bypass de validações financeiras (`KillSwitch`, sizing de risco, confirmação de lotes mínimos).
-4. **Mantenha os 604 testes verdes:**
-   Antes de submeter qualquer commit, garanta que `uv run pytest` e `uv run ruff check` passem sem nenhum erro.
+   Nunca permita bypass de validações financeiras (`KillSwitch`, sizing de risco, confirmação de lotes mínimos, `enabled: false`).
+4. **Mantenha os 609 testes verdes:**
+   Antes de submeter qualquer commit, garanta que `uv run pytest` e `uv run ruff check src/ tests/` passem sem nenhum erro.
 5. **Preserve a Especificação Unificada:**
    Qualquer mudança na lógica de entrada ou saída deve ser primeiramente refletida em [`docs/SPEC_SMC_FIBO.md`](docs/SPEC_SMC_FIBO.md) e mantida em sincronia entre Python, MQL5 e NTSL.

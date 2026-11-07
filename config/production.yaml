@@ -22,7 +22,7 @@ kill_switch:
   max_data_delay_seconds: 180   # Bloqueia ordens se último candle for mais velho que 3 min
 
 models:
-  # Modelo 1: Fibo Trailing Stop por MME8
+  # Modelo 1: Fibo Trailing Stop por MME8 (REPROVADO NA AUDITORIA: -483R)
   smc_fibo_trailing:
     name: "SMC-Fibo-Trailing"
     strategy: "fibo_ote"
@@ -33,8 +33,9 @@ models:
     target_r: 3.0
     pivot_k: 3
     trailing_exit_ma: "ema8"
+    status: "reproved"
 
-  # Modelo 2: Fibo Blindado (Trava 2:1 -> Stop em +1R)
+  # Modelo 2: Fibo Blindado (REPROVADO NA AUDITORIA: -478R)
   smc_fibo_blindado:
     name: "SMC-Fibo-Blindado"
     strategy: "fibo_ote"
@@ -45,11 +46,12 @@ models:
     target_r: 3.0
     pivot_k: 3
     trailing_exit_ma: "ema8"
+    status: "reproved"
     profit_lock:
       trigger_r: 2.0
       lock_r: 1.0
 
-  # Modelo 3: Fibo Estrutural (Stop em 100% da perna / invalidação)
+  # Modelo 3: Fibo Estrutural Clássico (REPROVADO NA AUDITORIA: -270R)
   smc_fibo_estrutural:
     name: "SMC-Fibo-Estrutural"
     strategy: "fibo_ote"
@@ -60,46 +62,72 @@ models:
     target_r: 3.0
     pivot_k: 3
     trailing_exit_ma: "ema8"
+    status: "reproved"
 
+  # Modelo 4: Fibo Ouro Sessão Londres/NY (+9.9R auditado, PF 1.05, WR 40.1%)
+  smc_fibo_gold_session:
+    name: "SMC-Fibo-Gold-Session"
+    strategy: "fibo_ote"
+    timeframe: "M5"
+    fibo_entry: 0.618
+    fibo_stop: 1.000
+    target_mode: "0_percent"
+    target_r: 3.0
+    pivot_k: 2
+    trailing_exit_ma: null
+    session_filter: true
+    status: "approved"
+
+# ===================================================================
+# SÍMBOLOS: Todos desativados por padrão (fail-closed contra risco real).
+# Apenas ative 'enabled: true' conscientemente após validação em paper trading.
+# ===================================================================
 symbols:
   XAUUSD:
-    model: "smc_fibo_trailing"
-    description: "Ouro — SMC-Fibo-Trailing M5"
+    model: "smc_fibo_gold_session"
+    description: "Ouro — SMC-Fibo-Gold Sessão Londres/NY M5"
     macro_tf: "M5"
     order_type: "limit"
+    enabled: false
 
   NAS100:
     model: "smc_fibo_trailing"
-    description: "Nasdaq 100 — SMC-Fibo-Trailing M5"
+    description: "Nasdaq 100 — SMC-Fibo-Trailing M5 (Reprovado)"
     macro_tf: "M5"
     order_type: "limit"
+    enabled: false
 
   DAX40:
     model: "smc_fibo_trailing"
-    description: "DAX 40 — SMC-Fibo-Trailing M5"
+    description: "DAX 40 — SMC-Fibo-Trailing M5 (Reprovado)"
     macro_tf: "M5"
     order_type: "limit"
+    enabled: false
 
   BRENT:
     model: "smc_fibo_trailing"
-    description: "Petróleo Brent — SMC-Fibo-Trailing M5"
+    description: "Petróleo Brent — SMC-Fibo-Trailing M5 (Reprovado)"
     macro_tf: "M5"
     order_type: "limit"
+    enabled: false
 
   USDJPY:
     model: "smc_fibo_trailing"
-    description: "USD/JPY — SMC-Fibo-Trailing M5"
+    description: "USD/JPY — SMC-Fibo-Trailing M5 (Reprovado)"
     macro_tf: "M5"
     order_type: "limit"
+    enabled: false
 
   EURUSD:
     model: "smc_fibo_trailing"
-    description: "EUR/USD — SMC-Fibo-Trailing M5"
+    description: "EUR/USD — SMC-Fibo-Trailing M5 (Reprovado)"
     macro_tf: "M5"
     order_type: "limit"
+    enabled: false
 
   GBPUSD:
     model: "smc_fibo_trailing"
-    description: "GBP/USD — SMC-Fibo-Trailing M5"
+    description: "GBP/USD — SMC-Fibo-Trailing M5 (Reprovado)"
     macro_tf: "M5"
     order_type: "limit"
+    enabled: false

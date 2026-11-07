@@ -101,6 +101,13 @@ class LiveTradingEngine:
         self.limits_trackers: dict[str, DailyLimitsTracker] = {}
         self.fibo_evaluators: dict[str, FiboLiveEvaluator] = {}
 
+        self.production_config = production_config
+        try:
+            from smc_trader.config import load_config
+            self.contracts = load_config().contracts
+        except Exception:
+            self.contracts = {}
+
         if production_config is not None:
             self.risk_pct = production_config.trading.risk_pct_per_trade
             self.max_open_trades_total = (
@@ -110,6 +117,12 @@ class LiveTradingEngine:
             for idx, (sym, sym_cfg) in enumerate(
                 production_config.symbols.items(), start=1
             ):
+                if not getattr(sym_cfg, "enabled", True):
+                    logger.info(
+                        "⏭️ [%s] Símbolo desativado em production.yaml (aguardando calibração OOS).",
+                        sym,
+                    )
+                    continue
                 magic = magic_base + idx
                 model_def = production_config.models.get(sym_cfg.model)
                 strategy_type = model_def.strategy if model_def else "fibo_ote"
@@ -287,7 +300,13 @@ class LiveTradingEngine:
 
         # L-10: Verificação de anomalia de spread (pico de notícias / baixa liquidez)
         sym_info = self.client.get_symbol_info(symbol)
-        typical_spread = sym_info.spread if sym_info.spread > 0 else sym_info.point * 10
+        contract_spec = self.contracts.get(symbol) if hasattr(self, "contracts") else None
+        if contract_spec is not None and contract_spec.spread > 0:
+            typical_spread = contract_spec.spread
+        elif sym_info.spread > 0:
+            typical_spread = sym_info.spread
+        else:
+            typical_spread = sym_info.point * 10 if sym_info.point > 0 else 0.0001
         current_spread = sym_info.ask - sym_info.bid
         spread_hit, spread_msg = self.kill_switch.check_spread(current_spread, typical_spread)
         if spread_hit:

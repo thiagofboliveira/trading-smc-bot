@@ -1,8 +1,8 @@
 // ==============================================================================
-// PLAYBOOK OFICIAL SMC-FIBO-TRAILING LIMPO (NTSL / PROFIT / RICO TRADER)
+// PLAYBOOK OFICIAL SMC-FIBO-TRAILING (NTSL / PROFIT / RICO TRADER)
 // ==============================================================================
 // Estratégia: SMC Fibonacci OTE (Optimal Trade Entry) + Condução Livre MME 8
-// Versão: 2.3 — SEM SUB-JANELAS + DESTAQUE VISUAL DA PERNA DO BOS (AMARELO)
+// Versão: 2.4 — PLOT VISUAL DE TOPO E FUNDO CONSIDERADOS NO GRÁFICO
 // Compatível com: Mini-Índice (WIN), Mini-Dólar (WDO), Ações (PETR4, VALE3), BDRs, Cripto
 // ==============================================================================
 
@@ -16,6 +16,9 @@ Parametro
   // FILTROS DE RISCO (Em Pontos do Ativo)
   MaxStopPontos(250.0);     // STOP MÁXIMO: WIN sugerido 200-250 | WDO sugerido 8-10 (0 desativa)
   MinStopPontos(50.0);      // STOP MÍNIMO: WIN sugerido 50-60   | WDO sugerido 3-4  (0 desativa)
+  
+  // EXIBIÇÃO VISUAL
+  ExibirTopoFundo(Verdadeiro); // Plota as linhas de Topo e Fundo no Gráfico Principal
 
 Var
   mme8              : Real;
@@ -41,15 +44,24 @@ Var
   nivelEntrada      : Real;
   nivelStop         : Real;
 
+  topoExibicao      : Real;
+  fundoExibicao     : Real;
+
 Inicio
-  // 1. Cálculo da MME de Condução
+  // 1. Configuração Visual das Linhas de Topo e Fundo
+  SetPlotColor(1, clAqua);    // Linha 1: Topo Considerado (Ciano / Azul Claro)
+  SetPlotColor(2, clFuchsia); // Linha 2: Fundo Considerado (Magenta / Fúcsia)
+  SetPlotWidth(1, 2);
+  SetPlotWidth(2, 2);
+
+  // 2. Cálculo da MME de Condução
   mme8 := MediaExp(PeriodoMME, Fechamento);
 
-  // 2. Cálculo Universal de Volatilidade
+  // 3. Cálculo Universal de Volatilidade
   rangeMedio   := Media(PeriodoVolatilidade, Maxima - Minima);
   filtroMinimo := rangeMedio * MultVolatilidade;
 
-  // 3. Detecção de Swings Fractais (Atraso de 2 barras para confirmação sem repintura)
+  // 4. Detecção de Swings Fractais (Atraso de 2 barras para confirmação sem repintura)
   topoFractal := (Maxima[2] > Maxima[1]) e (Maxima[2] > Maxima[0]) e 
                  (Maxima[2] > Maxima[3]) e (Maxima[2] > Maxima[4]);
                  
@@ -62,7 +74,7 @@ Inicio
   Se fundoFractal Entao
     ultimoFundo := Minima[2];
 
-  // 4. Detecção de Quebra de Estrutura (BOS - Break of Structure)
+  // 5. Detecção de Quebra de Estrutura (BOS - Break of Structure)
   Se (Not HasPosition) e (emOperacao = 0) Entao
   Inicio
     // BOS de Alta: Rompimento do topo institucional
@@ -75,7 +87,7 @@ Inicio
         pernadaBaixaAtiva := Falso;
         refTopo           := Maxima;
         refFundo          := ultimoFundo;
-        PaintBar(clAmarelo); // Destaca a barra do BOS para você saber de onde puxar o Fibo!
+        PaintBar(clAmarelo); // Destaca a barra do BOS para visualização imediata
       Fim;
     Fim;
 
@@ -89,7 +101,7 @@ Inicio
         pernadaAltaAtiva  := Falso;
         refTopo           := ultimoTopo;
         refFundo          := Minima;
-        PaintBar(clAmarelo); // Destaca a barra do BOS para você saber de onde puxar o Fibo!
+        PaintBar(clAmarelo); // Destaca a barra do BOS para visualização imediata
       Fim;
     Fim;
   Fim;
@@ -101,7 +113,7 @@ Inicio
   Se pernadaBaixaAtiva e (Minima < refFundo) Entao
     refFundo := Minima;
 
-  // 5. Execução de Entrada com Filtro de Risco
+  // 6. Execução de Entrada com Filtro de Risco
   Se (Not HasPosition) e (emOperacao = 0) Entao
   Inicio
     // Entrada Comprada
@@ -151,7 +163,7 @@ Inicio
     Fim;
   Fim;
 
-  // 6. Gestão Ativa da Posição (Condução 100% Livre pela MME 8)
+  // 7. Gestão Ativa da Posição (Condução 100% Livre pela MME 8)
   Se HasPosition ou (emOperacao <> 0) Entao
   Inicio
     // GESTÃO DA COMPRA
@@ -209,6 +221,29 @@ Inicio
         emOperacao := 0;
       Fim;
     Fim;
+  Fim;
+
+  // 8. PLOT VISUAL DO TOPO E FUNDO CONSIDERADOS NO GRÁFICO
+  Se (pernadaAltaAtiva) ou (pernadaBaixaAtiva) ou (HasPosition) ou (emOperacao <> 0) Entao
+  Inicio
+    topoExibicao  := refTopo;
+    fundoExibicao := refFundo;
+  Fim
+  Senao
+  Inicio
+    topoExibicao  := ultimoTopo;
+    fundoExibicao := ultimoFundo;
+  Fim;
+
+  Se ExibirTopoFundo Entao
+  Inicio
+    Se topoExibicao > 0 Entao Plot(topoExibicao) Senao NoPlot(1);
+    Se fundoExibicao > 0 Entao Plot2(fundoExibicao) Senao NoPlot(2);
+  Fim
+  Senao
+  Inicio
+    NoPlot(1);
+    NoPlot(2);
   Fim;
 
 Fim;

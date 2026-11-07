@@ -669,6 +669,15 @@ class FiboOTEStrategy:
                     w_start <= t_str < w_end for w_start, w_end in cfg.session_windows
                 ):
                     return None
+            if (
+                cfg.trend_filter_80_200
+                and emas80 is not None
+                and smas200 is not None
+            ):
+                if leg.d == 1 and emas80[n - 1] <= smas200[n - 1]:
+                    return None
+                if leg.d == -1 and emas80[n - 1] >= smas200[n - 1]:
+                    return None
             # a próxima barra incrementa `candles` antes de testar a validade
             if leg.candles + 1 > cfg.max_holding_candles:
                 return None

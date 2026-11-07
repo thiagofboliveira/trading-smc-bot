@@ -49,6 +49,7 @@ class FiboLiveEvaluator:
         self.spread = spread
         self.k = config.pivot_k
         self.profit_lock_applied = False
+        self.profit_lock_ticket: int | None = None
         self.last_processed_m5_time: pd.Timestamp | None = None
         self.evaluated = False  # True quando a última chamada avaliou uma barra nova
         self._strategy = FiboOTEStrategy(config)
@@ -84,6 +85,7 @@ class FiboLiveEvaluator:
             )
 
         self.profit_lock_applied = False
+        self.profit_lock_ticket = None
         setup = self._strategy.pending_setup(df_m5, self.spread)
         if setup is None:
             return []
@@ -145,6 +147,10 @@ class FiboLiveEvaluator:
         if open_time is not None and df_m5.index[-1] <= open_time:
             return []
 
+        if self.profit_lock_ticket is not None and self.profit_lock_ticket != ticket:
+            self.profit_lock_applied = False
+            self.profit_lock_ticket = None
+
         d = 1 if direction == "long" else -1
         risk = abs(open_price - stop_loss)
         c_high, c_low, c_close = float(last["high"]), float(last["low"]), float(last["close"])
@@ -163,6 +169,7 @@ class FiboLiveEvaluator:
             favorable = c_high if d == 1 else c_low + adj
             if d * (favorable - (open_price + d * risk * trigger_r)) >= 0:
                 self.profit_lock_applied = True
+                self.profit_lock_ticket = ticket
                 actions.append(
                     FiboLiveAction(
                         action_type="MODIFY_STOP",

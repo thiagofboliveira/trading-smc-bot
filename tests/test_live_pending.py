@@ -209,3 +209,104 @@ def test_fibo_live_session_close_action():
     assert actions[0].reason == "SESSION_CLOSE"
 
 
+def test_pending_setup_respeita_trend_filter_80_200():
+    """pending_setup aplica trend_filter_80_200 antes de devolver o setup."""
+    df = synthetic_m1(n=3000, seed=7)
+    strat = FiboOTEStrategy(FiboOTEConfig(**KW))
+    setup_idx = None
+    base_setup = None
+    for i in range(500, 1000):
+        s = strat.pending_setup(df.iloc[:i], SPREAD)
+        if s is not None:
+            setup_idx = i
+            base_setup = s
+            break
+    assert setup_idx is not None and base_setup is not None
+
+    # Prepend histórico extremo contrário à direção do setup para forçar bloqueio pelo filtro 80/200
+    extreme_val = 99999.0 if base_setup.direction == "long" else 1.0
+    prefix_df = pd.DataFrame(
+        {
+            "open": extreme_val,
+            "high": extreme_val + 1.0,
+            "low": extreme_val - 1.0,
+            "close": extreme_val,
+            "volume": 100,
+        },
+        index=pd.date_range(
+            end=df.index[0] - pd.Timedelta(minutes=1),
+            periods=1500,
+            freq="1min",
+            tz=df.index.tz,
+        ),
+    )
+    df_with_contrary_ma = pd.concat([prefix_df, df.iloc[:setup_idx]])
+    strat_filtered = FiboOTEStrategy(
+        FiboOTEConfig(**KW, trend_filter_80_200=True)
+    )
+    assert strat_filtered.pending_setup(df_with_contrary_ma, SPREAD) is None
+
+
+def test_profit_lock_resets_when_ticket_changes():
+    """FiboLiveEvaluator reavalia trava 2:1 quando o ticket da posição muda."""
+    from smc_trader.execution.fibo_live import FiboLiveEvaluator
+
+    cfg = FiboOTEConfig(**KW, use_lock_2to1=True, lock_trigger_r=2.0, lock_guarantee_r=1.0)
+    evaluator = FiboLiveEvaluator(cfg, spread=0.0)
+    times = pd.date_range("2026-11-07 10:00:00", periods=25, freq="5min", tz="UTC")
+    df_m5 = pd.DataFrame(
+        {"open": 2000.0, "high": 2025.0, "low": 1998.0, "close": 2020.0, "volume": 100},
+        index=times,
+    )
+
+    # Ticket 101 atinge 2R (open=2000, sl=1990 -> risk=10 -> trigger=2020)
+    act1 = evaluator.process_closed_m5(
+        df_m5=df_m5.iloc[:20],
+        is_positioned=True,
+        current_pos_direction="long",
+        current_pos_open_price=2000.0,
+        current_pos_stop_loss=1990.0,
+        current_pos_ticket=101,
+        current_pos_open_time=times[0],
+    )
+    assert any(a.action_type == "MODIFY_STOP" and a.ticket == 101 for a in act1)
+    assert evaluator.profit_lock_applied is True
+    assert evaluator.profit_lock_ticket == 101
+
+    # Nova posição com ticket 102 na barra seguinte (sem passar por is_positioned=False)
+    act2 = evaluator.process_closed_m5(
+        df_m5=df_m5.iloc[:21],
+        is_positioned=True,
+        current_pos_direction="long",
+        current_pos_open_price=2000.0,
+        current_pos_stop_loss=1990.0,
+        current_pos_ticket=102,
+        current_pos_open_time=times[1],
+    )
+    assert any(a.action_type == "MODIFY_STOP" and a.ticket == 102 for a in act2)
+    assert evaluator.profit_lock_ticket == 102
+
+
+def test_reconcile_startup_state_restores_pending_order_ticket(tmp_path):
+    """LiveTradingEngine restaura pending_order_ticket e pending_order_price no startup."""
+    client = MockMT5Client(initial_balance=10_000.0)
+    client.connect()
+    eng = _engine(tmp_path, client)
+    eng.state_store.save(
+        {
+            "XAUUSD": {
+                "current_position_ticket": None,
+                "pending_order_ticket": 777,
+                "pending_order_price": 2645.50,
+                "last_processed_m1_time": None,
+            }
+        }
+    )
+    eng.reconcile_startup_state()
+    state = eng.runtimes["XAUUSD"]
+    assert state.current_position is None
+    assert state.pending_order_ticket == 777
+    assert state.pending_order_price == 2645.50
+
+
+

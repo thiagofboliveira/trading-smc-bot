@@ -228,9 +228,14 @@ class LiveTradingEngine:
             )
             state.current_position = reconciled_pos
             if reconciled_pos:
+                state.pending_order_ticket = None
+                state.pending_order_price = None
                 self.notify(
                     f"🔄 [{sym}] Monitorando posição reconciliada #{reconciled_pos.ticket} ({reconciled_pos.direction.upper()})"
                 )
+            else:
+                state.pending_order_ticket = sym_persisted.get("pending_order_ticket")
+                state.pending_order_price = sym_persisted.get("pending_order_price")
 
     def _sync_deals_and_limits(self, symbol: str, now: pd.Timestamp) -> None:
         """Sincroniza histórico de negócios do broker e alimenta o DailyLimitsTracker (L-05)."""
@@ -658,6 +663,7 @@ class LiveTradingEngine:
                 state.current_position.ticket if state.current_position else None
             ),
             "pending_order_ticket": state.pending_order_ticket,
+            "pending_order_price": state.pending_order_price,
             "last_processed_m1_time": (
                 state.last_processed_m1_time.isoformat()
                 if state.last_processed_m1_time

@@ -115,6 +115,27 @@ class FiboLiveEvaluator:
         if open_time is not None and df_m5.index[-1] <= open_time:
             return []
 
+        # F-08: controle de sessão / fim de semana (zeragem compulsória)
+        if cfg.session_filter:
+            cur_ts = df_m5.index[-1]
+            is_friday = cur_ts.weekday() == 4
+            t_str = cur_ts.strftime("%H:%M")
+            force_close = False
+            if (
+                is_friday
+                and cfg.close_on_friday
+                and t_str >= cfg.friday_close_time
+            ) or (cfg.force_close_time and t_str >= cfg.force_close_time):
+                force_close = True
+            if force_close:
+                return [
+                    FiboLiveAction(
+                        action_type="CLOSE_POSITION",
+                        ticket=ticket,
+                        reason="SESSION_CLOSE",
+                    )
+                ]
+
         d = 1 if direction == "long" else -1
         risk = abs(open_price - stop_loss)
         c_high, c_low, c_close = float(last["high"]), float(last["low"]), float(last["close"])

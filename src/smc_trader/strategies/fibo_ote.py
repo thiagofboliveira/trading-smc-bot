@@ -402,11 +402,13 @@ class FiboOTEStrategy:
             risk = d * (entry - stop)
             if risk <= curr_spread * 1.5:
                 return None
-            if cfg.target_mode == "3R":
+            if cfg.target_mode == "trailing_only":
+                target = 0.0
+            elif cfg.target_mode == "3R":
                 target = entry + d * risk * cfg.target_r
             elif cfg.target_mode == "proj_618":
                 target = leg.extreme + 0.618 * (leg.extreme - level)
-            else:  # "0_percent" e "trailing_only" (neste, o alvo não é usado)
+            else:  # "0_percent"
                 target = leg.extreme
             return _Position(
                 d=d, entry_idx=i, entry_price=entry, stop=stop, target=target, risk=risk
@@ -654,10 +656,19 @@ class FiboOTEStrategy:
         if live:
             if pos is not None or leg is None or leg.touched or n < 1:
                 return None
-            # F-08: filtro de sessão para novas ordens limite pendentes
+            # F-08: filtro de sessão para novas ordens limite pendentes na barra seguinte (n)
             if cfg.session_filter and cfg.session_windows:
-                cur_ts = ts[-1]
-                t_str = cur_ts.strftime("%H:%M")
+                if len(ts) >= 2:
+                    bar_delta = ts[-1] - ts[-2]
+                else:
+                    bar_mins = (
+                        15
+                        if cfg.timeframe in ("M15", "15min", "15m")
+                        else (60 if cfg.timeframe in ("H1", "1h", "60min") else 5)
+                    )
+                    bar_delta = pd.Timedelta(minutes=bar_mins)
+                next_ts = ts[-1] + bar_delta
+                t_str = next_ts.strftime("%H:%M")
                 if not any(
                     w_start <= t_str < w_end for w_start, w_end in cfg.session_windows
                 ):

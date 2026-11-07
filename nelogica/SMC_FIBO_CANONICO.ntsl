@@ -116,7 +116,7 @@ Inicio
       pernadaBaixaAtiva := Falso;
     Fim;
 
-    Se UsarTrava2para1 e (Not travaAtivada) e (riscoInicial > 0) Entao
+    Se UsarTrava2para1 e (barraAtual > barraEntrada) e (Not travaAtivada) e (riscoInicial > 0) Entao
     Inicio
       Se IsBought e ((Maxima - precoEntrada) >= 2.0 * riscoInicial) Entao
       Inicio

@@ -150,3 +150,50 @@ def test_pending_setup_respeita_filtro_de_sessao():
     assert s_allowed is not None
     assert s_allowed.direction in ("long", "short")
 
+
+def test_pending_setup_trailing_only_sem_alvo_fixo():
+    """L-02: target_mode='trailing_only' deve retornar take_profit=0.0 no PendingSetup."""
+    df = synthetic_m1(n=3000, seed=7)
+    kw = {**KW, "target_mode": "trailing_only"}
+    strat_trailing = FiboOTEStrategy(FiboOTEConfig(**kw))
+    setup = None
+    for i in range(500, 1000):
+        s = strat_trailing.pending_setup(df.iloc[:i], SPREAD)
+        if s is not None:
+            setup = s
+            break
+    assert setup is not None
+    assert setup.take_profit == 0.0
+
+
+def test_fibo_live_session_close_action():
+    """F-08: FiboLiveEvaluator emite CLOSE_POSITION com motivo SESSION_CLOSE no force_close_time."""
+    from smc_trader.execution.fibo_live import FiboLiveEvaluator
+
+    cfg = FiboOTEConfig(
+        **KW,
+        session_filter=True,
+        force_close_time="17:00",
+    )
+    evaluator = FiboLiveEvaluator(cfg, spread=SPREAD)
+    times = pd.date_range("2026-11-07 16:00:00", periods=20, freq="5min", tz="UTC")
+    df_m5 = pd.DataFrame(
+        {"open": 2000.0, "high": 2005.0, "low": 1995.0, "close": 2002.0, "volume": 100},
+        index=times,
+    )
+    # 17:00 é times[12] (16:00 + 12*5m = 17:00)
+    actions = evaluator.process_closed_m5(
+        df_m5=df_m5.iloc[:13],  # último candle tem timestamp 17:00
+        is_positioned=True,
+        current_pos_direction="long",
+        current_pos_open_price=2000.0,
+        current_pos_stop_loss=1990.0,
+        current_pos_ticket=999,
+        current_pos_open_time=times[0],
+    )
+    assert len(actions) == 1
+    assert actions[0].action_type == "CLOSE_POSITION"
+    assert actions[0].ticket == 999
+    assert actions[0].reason == "SESSION_CLOSE"
+
+

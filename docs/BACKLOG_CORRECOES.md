@@ -9,14 +9,18 @@
 
 Os resultados que sustentam os modelos oficiais (+809R/ano, 68% de acerto, PF 1,48) vêm de vieses do simulador, não de vantagem real da estratégia. O modo `live` também não envia ordens reais.
 
-Evidências medidas com os dados locais (`data/`, M1 Dukascopy de mar a out/2026, 5 ativos) e o código atual:
+Evidências medidas com os dados locais (`data/`, M1 Dukascopy de mar a out/2026, 6 ativos) com o motor corrigido (`scripts/compare_fibo_engines.py`):
 
-| Medição | Original | Corrigido | Diferença |
+| Medição | Antigo | Corrigido | Diferença |
 |---|---|---|---|
-| Modelo `estrutural` (61,8% / stop 100%), proibindo entrada na barra do BOS | +404R | −53R | −457R |
-| Modelo de produção `trailing` (70,5% / 79%), proibindo entrada na barra do BOS | +61R | −166R | −227R |
-| Spread não cobrado na saída dos shorts (5 ativos, 7 meses) | — | — | ≈ +230R indevidos |
-| NTSL × Python | "reproduz exatamente" (HANDOFF) | regras divergem em 7 pontos | — |
+| Modelo `estrutural` (61,8% / stop 100% / MME8) | +411.8R | −300.2R | −712.0R |
+| Modelo `trailing` (61,8% / stop 79% / MME8) | +296.8R | −610.1R | −906.9R |
+| Modelo `blindado` (61,8% / stop 100% / trava 2:1) | +362.4R | −300.2R | −662.6R |
+
+**Status atual do backlog:**
+- **25 de 61 itens concluídos (~41%)**
+- **9 de 22 P0s concluídos (41%)**
+- Todos os vieses críticos dos motores Fibo (F-01 a F-10) e zonas SMC (Z-01 a Z-07, Z-10) corrigidos e cobertos por 571 testes automatizados (18 testes anti-viés Fibo, 7 testes invariância de prefixo, 7 testes anti-viés zonas).
 
 **Conclusão:** primeiro corrigir o simulador e revalidar. Só depois investir em execução ao vivo. Pode ser que, sem os vieses, a estratégia não tenha vantagem. Esse resultado também é valioso, porque evita perder dinheiro real.
 
@@ -39,69 +43,69 @@ Evidências medidas com os dados locais (`data/`, M1 Dukascopy de mar a out/2026
 Prioridade: **P0** = bloqueia qualquer conclusão ou uso real · **P1** = necessário para realismo · **P2** = qualidade e evolução.
 Esforço: **P** ≤ 0,5 dia · **M** 1–2 dias · **G** 3–5 dias.
 
-| ID | Item | Prioridade | Esforço |
-|---|---|---|---|
-| B0-1 | Motor Fibo único; scripts deixam de ter simuladores próprios | P0 | M |
-| B0-2 | Refatorar `fibo_ote.py` (long/short unificados, estado tipado) | P0 | M |
-| B0-3 | Suíte de testes anti-viés com candles sintéticos | P0 | M |
-| B0-4 | Teste de invariância de prefixo (detector genérico de lookahead) | P0 | P |
-| F-01 | Entrada na própria barra que confirma o BOS | P0 | P |
-| F-02 | Spread dos shorts não cobrado nas saídas | P0 | P |
-| F-03 | Trava 2:1 assume máxima antes da mínima | P0 | P |
-| F-04 | Expansão da perna e entrada na mesma barra | P0 | P |
-| F-05 | Gap além do stop preenchido no preço do stop | P1 | P |
-| F-06 | Saída por MME executada no próprio fechamento | P1 | P |
-| F-07 | `max_holding_candles` não limita a posição; trades abertos descartados | P1 | P |
-| F-08 | Sem controle de sessão/fim de semana no motor Fibo | P1 | P |
-| F-09 | R-múltiplo fixo (−1,0 / 3,0) em vez de calculado por preço | P2 | P |
-| F-10 | Spread/slippage/comissão hardcoded na CLI e nos scripts | P1 | P |
-| F-11 | Empate em swings (`==max`) diverge do NTSL | P2 | P |
-| Z-01 | Médias M5/M15 vazam o fechamento do bucket aberto | P0 | P |
-| Z-02 | Candle de entrada não checado contra stop/alvo | P0 | P |
-| Z-03 | Gap além do stop (engine e trailing) | P1 | P |
-| Z-04 | Saída por EMA/sessão tem prioridade sobre o stop tocado | P1 | P |
-| Z-05 | Saída e nova entrada no mesmo candle | P1 | P |
-| Z-06 | `commission_per_lot` ignorado | P1 | P |
-| Z-07 | Sem risco mínimo: R explode | P1 | P |
-| Z-08 | Zonas não acompanhadas durante posição aberta | P2 | M |
-| Z-09 | Confirmação CHoCH usa candle seguinte; perde sinal em gaps | P2 | P |
-| Z-10 | Estado de limites vaza entre `run()`; off-by-one em breakers; hook com candle completo | P2 | P |
-| M-01 | Estratégia campeã escolhida pelo OOS | P0 | P |
-| M-02 | Walk-forward de verdade (otimiza no treino, testa na janela seguinte) | P0 | M |
-| M-03 | Recalcular e renomear todos os modelos oficiais | P0 | M |
-| M-04 | Anualização pelo período real dos dados | P1 | P |
-| M-05 | Métricas de portfólio realistas (sobreposição, % de equity) | P1 | M |
-| M-06 | Controle de múltiplos testes e robustez estatística | P1 | M |
-| M-07 | Spread real com candles bid **e** ask da Dukascopy | P1 | M |
-| M-08 | Baseline de entradas aleatórias e alarmes de sanidade | P1 | P |
-| M-09 | Versionar dados e reprodutibilidade dos relatórios | P2 | P |
-| L-01 | Modo `live` usa `MockMT5Client` | P0 | G |
-| L-02 | Live executa a estratégia de zonas, não a Fibo; params ignorados | P0 | G |
-| L-03 | Decisões tomadas no candle M1 ainda em formação | P0 | P |
-| L-04 | Sizing: `tick_value` por point e lote mínimo acima do risco | P0 | P |
-| L-05 | Limites diários não recebem stops/gains reais | P1 | P |
-| L-06 | Entrada a mercado no close em vez de ordem limite no nível | P1 | M |
-| L-07 | Estado só em memória; sem reconciliação nem idempotência | P1 | M |
-| L-08 | Ponte HTTP sem autenticação; EA frágil (FOK, JSON manual) | P1 | M |
-| L-09 | Trailing EMA não implementado no live; `should_exit` ignorado | P1 | P |
-| L-10 | Kill switch e limites de perda de conta | P1 | M |
-| L-11 | Observabilidade e diário de trades | P2 | M |
-| N-01 | Stop no NTSL não é ordem real (só `ClosePosition` no candle) | P0 | P |
-| N-02 | Entrada NTSL a mercado; preço de entrada registrado errado | P0 | P |
-| N-03 | Especificação única + teste de paridade NTSL/Python | P1 | M |
-| N-04 | Day trade B3: horário de zeragem e custos reais | P1 | P |
-| N-05 | Perna NTSL nunca expira; `.txt` duplicados | P2 | P |
-| D-01 | Ingestão de dados B3 (WIN/WDO) por CSV do Profit ou MT5 de corretora | P0 | M |
-| D-02 | Série contínua de WIN/WDO com rolagem de contrato | P0 | M |
-| D-03 | Histórico mais longo para os ativos Dukascopy (≥ 5 anos) | P1 | P |
-| D-04 | Validação de qualidade dos dados (buracos, duplicatas, fuso, sessão) | P1 | P |
-| D-05 | Custos e especificação dos contratos B3 por símbolo | P1 | P |
-| H-01 | Credenciais em `test.env` versionadas | P0 | P |
-| H-02 | Teste quebrado: instrumento DAX40 (`DEU.IDX/EUR`) | P1 | P |
-| H-03 | Documentação afirma "100% auditado" e métricas não reproduzíveis | P1 | P |
-| H-04 | CI com testes, lint e tipos | P1 | P |
-| H-05 | Arquivar relatórios gerados pelo motor enviesado | P2 | P |
-| H-06 | Pequenos ajustes (UI path check, nomes de scripts, imports) | P2 | P |
+| ID | Item | Prioridade | Esforço | Status |
+|---|---|---|---|---|
+| B0-1 | Motor Fibo único; scripts deixam de ter simuladores próprios | P0 | M | Pendente |
+| B0-2 | Refatorar `fibo_ote.py` (long/short unificados, estado tipado) | P0 | M | **Concluído** |
+| B0-3 | Suíte de testes anti-viés com candles sintéticos | P0 | M | **Concluído** |
+| B0-4 | Teste de invariância de prefixo (detector genérico de lookahead) | P0 | P | **Concluído** |
+| F-01 | Entrada na própria barra que confirma o BOS | P0 | P | **Concluído** |
+| F-02 | Spread dos shorts não cobrado nas saídas | P0 | P | **Concluído** |
+| F-03 | Trava 2:1 assume máxima antes da mínima | P0 | P | **Concluído** |
+| F-04 | Expansão da perna e entrada na mesma barra | P0 | P | **Concluído** |
+| F-05 | Gap além do stop preenchido no preço do stop | P1 | P | **Concluído** |
+| F-06 | Saída por MME executada no próprio fechamento | P1 | P | **Concluído** |
+| F-07 | `max_holding_candles` não limita a posição; trades abertos descartados | P1 | P | **Concluído** |
+| F-08 | Sem controle de sessão/fim de semana no motor Fibo | P1 | P | **Concluído** |
+| F-09 | R-múltiplo fixo (−1,0 / 3,0) em vez de calculado por preço | P2 | P | **Concluído** |
+| F-10 | Spread/slippage/comissão hardcoded na CLI e nos scripts | P1 | P | **Concluído** |
+| F-11 | Empate em swings (`==max`) diverge do NTSL | P2 | P | Pendente |
+| Z-01 | Médias M5/M15 vazam o fechamento do bucket aberto | P0 | P | **Concluído** |
+| Z-02 | Candle de entrada não checado contra stop/alvo | P0 | P | **Concluído** |
+| Z-03 | Gap além do stop (engine e trailing) | P1 | P | **Concluído** |
+| Z-04 | Saída por EMA/sessão tem prioridade sobre o stop tocado | P1 | P | **Concluído** |
+| Z-05 | Saída e nova entrada no mesmo candle | P1 | P | **Concluído** |
+| Z-06 | `commission_per_lot` ignorado | P1 | P | **Concluído** |
+| Z-07 | Sem risco mínimo: R explode | P1 | P | **Concluído** |
+| Z-08 | Zonas não acompanhadas durante posição aberta | P2 | M | Pendente |
+| Z-09 | Confirmação CHoCH usa candle seguinte; perde sinal em gaps | P2 | P | Pendente |
+| Z-10 | Estado de limites vaza entre `run()`; off-by-one em breakers; hook com candle completo | P2 | P | **Concluído** |
+| M-01 | Estratégia campeã escolhida pelo OOS | P0 | P | Pendente |
+| M-02 | Walk-forward de verdade (otimiza no treino, testa na janela seguinte) | P0 | M | Pendente |
+| M-03 | Recalcular e renomear todos os modelos oficiais | P0 | M | Pendente |
+| M-04 | Anualização pelo período real dos dados | P1 | P | Pendente |
+| M-05 | Métricas de portfólio realistas (sobreposição, % de equity) | P1 | M | Pendente |
+| M-06 | Controle de múltiplos testes e robustez estatística | P1 | M | Pendente |
+| M-07 | Spread real com candles bid **e** ask da Dukascopy | P1 | M | Pendente |
+| M-08 | Baseline de entradas aleatórias e alarmes de sanidade | P1 | P | Pendente |
+| M-09 | Versionar dados e reprodutibilidade dos relatórios | P2 | P | Pendente |
+| L-01 | Modo `live` usa `MockMT5Client` | P0 | G | Pendente |
+| L-02 | Live executa a estratégia de zonas, não a Fibo; params ignorados | P0 | G | Pendente |
+| L-03 | Decisões tomadas no candle M1 ainda em formação | P0 | P | Pendente |
+| L-04 | Sizing: `tick_value` por point e lote mínimo acima do risco | P0 | P | Pendente |
+| L-05 | Limites diários não recebem stops/gains reais | P1 | P | Pendente |
+| L-06 | Entrada a mercado no close em vez de ordem limite no nível | P1 | M | Pendente |
+| L-07 | Estado só em memória; sem reconciliação nem idempotência | P1 | M | Pendente |
+| L-08 | Ponte HTTP sem autenticação; EA frágil (FOK, JSON manual) | P1 | M | Pendente |
+| L-09 | Trailing EMA não implementado no live; `should_exit` ignorado | P1 | P | Pendente |
+| L-10 | Kill switch e limites de perda de conta | P1 | M | Pendente |
+| L-11 | Observabilidade e diário de trades | P2 | M | Pendente |
+| N-01 | Stop no NTSL não é ordem real (só `ClosePosition` no candle) | P0 | P | Pendente |
+| N-02 | Entrada NTSL a mercado; preço de entrada registrado errado | P0 | P | Pendente |
+| N-03 | Especificação única + teste de paridade NTSL/Python | P1 | M | Pendente |
+| N-04 | Day trade B3: horário de zeragem e custos reais | P1 | P | Pendente |
+| N-05 | Perna NTSL nunca expira; `.txt` duplicados | P2 | P | Pendente |
+| D-01 | Ingestão de dados B3 (WIN/WDO) por CSV do Profit ou MT5 de corretora | P0 | M | Parcial |
+| D-02 | Série contínua de WIN/WDO com rolagem de contrato | P0 | M | Pendente |
+| D-03 | Histórico mais longo para os ativos Dukascopy (≥ 5 anos) | P1 | P | **Concluído** |
+| D-04 | Validação de qualidade dos dados (buracos, duplicatas, fuso, sessão) | P1 | P | **Concluído** |
+| D-05 | Custos e especificação dos contratos B3 por símbolo | P1 | P | **Concluído** |
+| H-01 | Credenciais em `test.env` versionadas | P0 | P | Pendente |
+| H-02 | Teste quebrado: instrumento DAX40 (`DEU.IDX/EUR`) | P1 | P | **Concluído** |
+| H-03 | Documentação afirma "100% auditado" e métricas não reproduzíveis | P1 | P | Pendente |
+| H-04 | CI com testes, lint e tipos | P1 | P | Pendente |
+| H-05 | Arquivar relatórios gerados pelo motor enviesado | P2 | P | Pendente |
+| H-06 | Pequenos ajustes (UI path check, nomes de scripts, imports) | P2 | P | Pendente |
 
 ---
 
@@ -139,20 +143,22 @@ Scripts afetados:
 
 **Aceite:** os testes de B0-3 passam; o arquivo cai para cerca de metade do tamanho.
 
-### B0-3 · Suíte de testes anti-viés (P0, M)
+### B0-3 · Suíte de testes anti-viés (P0, M) — CONCLUÍDO
 **Problema:** não existe nenhum teste para `fibo_ote.py`, o motor "oficial".
 
 **Correção:** criar `tests/test_fibo_ote.py` com candles sintéticos construídos à mão, um teste por regra:
-- [ ] Barra do BOS que toca 70,5% não gera trade (F-01).
-- [ ] Short paga spread na entrada **e** na saída, em todos os motivos de saída (F-02).
-- [ ] Barra que toca +2R e o stop original resulta em −1R (F-03).
-- [ ] Nova máxima e toque na entrada na mesma barra não usam a máxima nova (F-04).
-- [ ] Gap de abertura além do stop sai no `open` (F-05).
-- [ ] Saída por MME sai no `open` da barra seguinte (F-06).
-- [ ] Posição aberta no fim dos dados aparece como `END_OF_DATA` (F-07).
-- [ ] Simetria: espelhar os preços (x → −x) produz os mesmos R para long e short.
+- [x] Barra do BOS que toca 70,5% não gera trade (F-01).
+- [x] Short paga spread na entrada **e** na saída, em todos os motivos de saída (F-02).
+- [x] Barra que toca +2R e o stop original resulta em −1R (F-03).
+- [x] Nova máxima e toque na entrada na mesma barra não usam a máxima nova (F-04).
+- [x] Gap de abertura além do stop sai no `open` (F-05).
+- [x] Saída por MME sai no `open` da barra seguinte (F-06).
+- [x] Posição aberta no fim dos dados aparece como `END_OF_DATA` e tempo máximo de posição (F-07).
+- [x] Simetria: espelhar os preços (x → −x) produz os mesmos R para long e short.
 
-### B0-4 · Teste de invariância de prefixo (P0, P)
+**Status:** Implementado em `tests/test_fibo_ote.py` (18 testes passando em 0.8s).
+
+### B0-4 · Teste de invariância de prefixo (P0, P) — CONCLUÍDO
 **Ideia:** é o detector genérico de lookahead mais barato que existe.
 - Rode o backtest com os dados completos e com os dados truncados em vários instantes *t*.
 - Todo trade com `entry_time < t` precisa ter a mesma entrada nas duas execuções.
@@ -161,6 +167,7 @@ Scripts afetados:
 Aplicar aos dois motores (Fibo e zonas SMC).
 
 **Aceite:** o teste roda em CI com ≥ 20 cortes aleatórios sobre um ativo real.
+**Status:** Implementado em `tests/test_prefix_invariance.py` (7 testes paramétricos sobre dados sintéticos e reais XAUUSD/NAS100, todos verdes).
 
 ---
 

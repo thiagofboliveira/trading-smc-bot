@@ -30,14 +30,16 @@ class BacktestEngine:
     def _prepare_ma_series(self, candles_m1: pd.DataFrame, tf: str, kind: str, period: int) -> np.ndarray:
         if tf == "M1":
             s = candles_m1["close"]
+            ma = calculate_ema(s, period) if kind == "ema" else calculate_sma(s, period)
+            return ma.shift(1).to_numpy()
         else:
             agg = resample_ohlc(candles_m1, tf)
             s = agg["close"]
-        ma = calculate_ema(s, period) if kind == "ema" else calculate_sma(s, period)
-        if tf != "M1":
-            ma = ma.reindex(candles_m1.index, method="ffill")
-        # Shift 1 para garantir estritamente o último candle fechado antes do candle atual
-        return ma.shift(1).to_numpy()
+            ma = calculate_ema(s, period) if kind == "ema" else calculate_sma(s, period)
+            # Z-01: o fechamento do bucket só existe após o encerramento do bucket.
+            # Aplicar shift(1) na série agregada ANTES do ffill para M1!
+            ma_shifted = ma.shift(1).reindex(candles_m1.index, method="ffill")
+            return ma_shifted.to_numpy()
 
     def run(
         self,
@@ -50,6 +52,9 @@ class BacktestEngine:
         """Executa a simulação cronológica sobre candles M1."""
         if candles_m1.empty:
             return BacktestResult(trades=[], metrics=calculate_metrics([]), config=self.config)
+
+        # Z-10: recria limits_tracker a cada execução para não vazar estado entre chamadas
+        self.limits_tracker = DailyLimitsTracker(self.config.limits)
 
         # 1. Estrutura M1 (para confirmação e trailing BOS)
         if precomputed_m1 is not None and "events" in precomputed_m1:
@@ -139,21 +144,52 @@ class BacktestEngine:
                 active_zones.append(zones_sorted[zone_cursor])
                 zone_cursor += 1
 
+            just_closed = False
+
             # 1. Gerenciamento de posição aberta
             if current_pos is not None:
-                # Verifica fechamento forçado de sessão
-                if self.session_mgr.should_force_close(t):
+                long = current_pos.direction == "long"
+                sl = current_pos.stop_loss
+                tp = current_pos.take_profit
+
+                if long:
+                    hit_sl = c_low <= sl
+                    hit_tp = (tp is not None) and (c_high >= tp)
+                else:
+                    hit_sl = c_high >= sl
+                    hit_tp = (tp is not None) and (c_low <= tp)
+
+                # Z-04: Stop loss tem prioridade absoluta sobre trailing e sessão
+                # Z-03: Gap além do stop sai no c_open
+                if hit_sl:
+                    nominal_sl = min(c_open, sl) if long else max(c_open, sl)
                     exit_price, exit_cost = self.costs_calc.get_exit_price(
-                        current_pos.direction, c_close, symbol
+                        current_pos.direction, nominal_sl, symbol
                     )
                     trade = self._create_closed_trade(
-                        current_pos, t, exit_price, "session_close", exit_cost, trade_counter
+                        current_pos, t, exit_price, "sl", exit_cost, trade_counter
                     )
                     trade_counter += 1
                     closed_trades.append(trade)
                     self.limits_tracker.record_trade(t, trade.r_multiple)
                     current_pos = None
                     trailing_mgr = None
+                    just_closed = True
+                elif hit_tp:
+                    assert tp is not None
+                    nominal_tp = max(c_open, tp) if long else min(c_open, tp)
+                    exit_price, exit_cost = self.costs_calc.get_exit_price(
+                        current_pos.direction, nominal_tp, symbol
+                    )
+                    trade = self._create_closed_trade(
+                        current_pos, t, exit_price, "tp", exit_cost, trade_counter
+                    )
+                    trade_counter += 1
+                    closed_trades.append(trade)
+                    self.limits_tracker.record_trade(t, trade.r_multiple)
+                    current_pos = None
+                    trailing_mgr = None
+                    just_closed = True
                 else:
                     # Avalia trailing stop se ativo
                     trailing_exit = False
@@ -181,61 +217,26 @@ class BacktestEngine:
                             self.limits_tracker.record_trade(t, trade.r_multiple)
                             current_pos = None
                             trailing_mgr = None
+                            just_closed = True
 
+                    # Se não saiu por trailing, verifica fechamento forçado de sessão
                     if not trailing_exit and current_pos is not None:
-                        # Avalia Stop Loss e Take Profit normais
-                        long = current_pos.direction == "long"
-                        sl = current_pos.stop_loss
-                        tp = current_pos.take_profit
-
-                        if long:
-                            hit_sl = c_low <= sl
-                            hit_tp = (tp is not None) and (c_high >= tp)
-                        else:
-                            hit_sl = c_high >= sl
-                            hit_tp = (tp is not None) and (c_low <= tp)
-
-                        # Regra de ambiguidade intrabar: se ambos atingidos no mesmo candle M1, assume STOP
-                        if hit_sl and hit_tp:
+                        if self.session_mgr.should_force_close(t):
                             exit_price, exit_cost = self.costs_calc.get_exit_price(
-                                current_pos.direction, sl, symbol
+                                current_pos.direction, c_close, symbol
                             )
                             trade = self._create_closed_trade(
-                                current_pos, t, exit_price, "sl", exit_cost, trade_counter
+                                current_pos, t, exit_price, "session_close", exit_cost, trade_counter
                             )
                             trade_counter += 1
                             closed_trades.append(trade)
                             self.limits_tracker.record_trade(t, trade.r_multiple)
                             current_pos = None
                             trailing_mgr = None
-                        elif hit_sl:
-                            exit_price, exit_cost = self.costs_calc.get_exit_price(
-                                current_pos.direction, sl, symbol
-                            )
-                            trade = self._create_closed_trade(
-                                current_pos, t, exit_price, "sl", exit_cost, trade_counter
-                            )
-                            trade_counter += 1
-                            closed_trades.append(trade)
-                            self.limits_tracker.record_trade(t, trade.r_multiple)
-                            current_pos = None
-                            trailing_mgr = None
-                        elif hit_tp:
-                            assert tp is not None
-                            exit_price, exit_cost = self.costs_calc.get_exit_price(
-                                current_pos.direction, tp, symbol
-                            )
-                            trade = self._create_closed_trade(
-                                current_pos, t, exit_price, "tp", exit_cost, trade_counter
-                            )
-                            trade_counter += 1
-                            closed_trades.append(trade)
-                            self.limits_tracker.record_trade(t, trade.r_multiple)
-                            current_pos = None
-                            trailing_mgr = None
+                            just_closed = True
 
-            # 2. Avaliação de novas entradas (se não houver posição aberta)
-            if current_pos is None:
+            # 2. Avaliação de novas entradas (se não houver posição aberta e NÃO acabou de fechar uma no mesmo candle - Z-05)
+            if current_pos is None and not just_closed:
                 allowed_session = self.session_mgr.is_trade_allowed(t)
                 allowed_limits = self.limits_tracker.can_trade(t)
 
@@ -279,10 +280,26 @@ class BacktestEngine:
                                         zone, nominal_entry, t, symbol, "touch"
                                     )
                                     if current_pos is not None:
-                                        trailing_mgr = TrailingManager(
-                                            self.config.trailing, current_pos.stop_loss
-                                        )
                                         entered = True
+                                        # Z-02: checar stop no candle de entrada
+                                        hit_sl_entry = (c_low <= current_pos.stop_loss) if long else (c_high >= current_pos.stop_loss)
+                                        if hit_sl_entry:
+                                            exit_price, exit_cost = self.costs_calc.get_exit_price(
+                                                current_pos.direction, current_pos.stop_loss, symbol
+                                            )
+                                            trade = self._create_closed_trade(
+                                                current_pos, t, exit_price, "sl", exit_cost, trade_counter
+                                            )
+                                            trade_counter += 1
+                                            closed_trades.append(trade)
+                                            self.limits_tracker.record_trade(t, trade.r_multiple)
+                                            current_pos = None
+                                            trailing_mgr = None
+                                            just_closed = True
+                                        else:
+                                            trailing_mgr = TrailingManager(
+                                                self.config.trailing, current_pos.stop_loss
+                                            )
                             elif self.config.entry_mode == "hybrid":
                                 # Confluência técnica no momento do toque
                                 touch_p = min(c_open, zone.high) if long else max(c_open, zone.low)
@@ -293,7 +310,7 @@ class BacktestEngine:
                                     touch_price=touch_p,
                                     last_closed_ema80=ema80_v,
                                     last_closed_sma200=sma200_v,
-                                )
+                                    )
                                 if confluence_fn is not None:
                                     has_confluence = has_confluence or confluence_fn(
                                         zone, t, candles_m1.iloc[i]
@@ -305,10 +322,26 @@ class BacktestEngine:
                                             zone, touch_p, t, symbol, "hybrid"
                                         )
                                         if current_pos is not None:
-                                            trailing_mgr = TrailingManager(
-                                                self.config.trailing, current_pos.stop_loss
-                                            )
                                             entered = True
+                                            # Z-02: checar stop no candle de entrada
+                                            hit_sl_entry = (c_low <= current_pos.stop_loss) if long else (c_high >= current_pos.stop_loss)
+                                            if hit_sl_entry:
+                                                exit_price, exit_cost = self.costs_calc.get_exit_price(
+                                                    current_pos.direction, current_pos.stop_loss, symbol
+                                                )
+                                                trade = self._create_closed_trade(
+                                                    current_pos, t, exit_price, "sl", exit_cost, trade_counter
+                                                )
+                                                trade_counter += 1
+                                                closed_trades.append(trade)
+                                                self.limits_tracker.record_trade(t, trade.r_multiple)
+                                                current_pos = None
+                                                trailing_mgr = None
+                                                just_closed = True
+                                            else:
+                                                trailing_mgr = TrailingManager(
+                                                    self.config.trailing, current_pos.stop_loss
+                                                )
                                 else:
                                     z_info["state"] = "ARMED"
                                     remaining_active.append(zone)
@@ -399,9 +432,12 @@ class BacktestEngine:
         if (long and entry_price <= stop_loss) or (not long and entry_price >= stop_loss):
             return None
 
+        # Z-07: Risco mínimo. Rejeita setups com risco degenerado
         risk = abs(entry_price - stop_loss)
-        if risk == 0:
-            risk = 0.0001  # proteção contra divisão por zero
+        spread = self.costs_calc.get_spread(symbol)
+        min_risk = max(spread * 1.5, 1e-4)
+        if risk < min_risk:
+            return None
 
         if self.config.target_mode == "fixed_r":
             take_profit = (
@@ -440,6 +476,11 @@ class BacktestEngine:
         else:
             pnl = pos.entry_price - exit_price
 
+        # Z-06: Desconta comissão por lote configurada
+        comm = self.config.costs.commission_per_lot
+        pnl = pnl - comm
+        total_costs = exit_cost + comm
+
         r_multiple = pnl / pos.initial_risk if pos.initial_risk > 0 else 0.0
 
         return Trade(
@@ -457,6 +498,6 @@ class BacktestEngine:
             exit_reason=reason,
             r_multiple=round(r_multiple, 3),
             pnl=round(pnl, 4),
-            costs=round(exit_cost, 4),
+            costs=round(total_costs, 4),
             zone_created_at=pos.zone_created_at,
         )

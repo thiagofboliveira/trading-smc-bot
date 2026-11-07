@@ -98,10 +98,12 @@ class TrailingManager:
                             elif not long and e.range_high < self.current_stop:
                                 self.current_stop = e.range_high
 
-                # Verifica se o preço violou o novo stop
+                # Z-03: Verifica se o preço violou o novo stop (com gap no open)
                 if long and c_low <= self.current_stop:
-                    return True, self.current_stop, "trailing"
+                    exit_px = min(c_open, self.current_stop)
+                    return True, exit_px, "trailing"
                 elif not long and c_high >= self.current_stop:
-                    return True, self.current_stop, "trailing"
+                    exit_px = max(c_open, self.current_stop)
+                    return True, exit_px, "trailing"
 
         return False, 0.0, None

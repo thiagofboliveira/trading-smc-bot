@@ -472,13 +472,17 @@ class FiboOTEStrategy:
                 risk=risk,
                 bos_ref=leg.extreme,
                 rej_extreme=(
-                    lows[i]
-                    if d == 1
-                    else (
-                        ask_highs[i]
-                        if (ask_highs is not None and i < len(ask_highs))
-                        else highs[i] + spread
+                    (
+                        lows[i]
+                        if d == 1
+                        else (
+                            ask_highs[i]
+                            if (ask_highs is not None and i < len(ask_highs))
+                            else highs[i] + spread
+                        )
                     )
+                    if i < n
+                    else 0.0
                 ),
             )
 

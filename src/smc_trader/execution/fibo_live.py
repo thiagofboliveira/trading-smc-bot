@@ -18,7 +18,7 @@ from typing import Literal
 
 import pandas as pd
 
-from smc_trader.strategies.fibo_ote import FiboOTEConfig, FiboOTEStrategy
+from smc_trader.strategies.fibo_ote import FiboOTEConfig, FiboOTEStrategy, _fractal_swings
 
 
 @dataclass
@@ -89,6 +89,18 @@ class FiboLiveEvaluator:
         setup = self._strategy.pending_setup(df_m5, self.spread)
         if setup is None:
             return []
+        if self.config.entry_mode == "m5_close_rejection":
+            return [
+                FiboLiveAction(
+                    action_type="MARKET_ENTRY",
+                    direction=setup.direction,
+                    price=setup.entry_price,
+                    stop_loss=setup.stop_loss,
+                    take_profit=setup.take_profit,
+                    risk=setup.risk,
+                    reason=f"FIBO_OTE_REJECTION_MKT leg_bos={setup.bos_time.isoformat()}",
+                )
+            ]
         return [
             FiboLiveAction(
                 action_type="PLACE_LIMIT",
@@ -178,6 +190,82 @@ class FiboLiveEvaluator:
                         reason=f"PROFIT_LOCK_{trigger_r:g}to{lock_r:g}",
                     )
                 )
+
+        if cfg.bos_swing_trailing and len(df_m5) >= 2 * self.k + 1:
+            highs = df_m5["high"].to_numpy(dtype=float)
+            lows = df_m5["low"].to_numpy(dtype=float)
+            closes = df_m5["close"].to_numpy(dtype=float)
+            sh, sl = _fractal_swings(highs, lows, self.k)
+            n_bars = len(df_m5)
+            entry_idx = (
+                int(df_m5.index.searchsorted(open_time))
+                if open_time is not None
+                else max(self.k + 1, n_bars - 2)
+            )
+            entry_idx = max(self.k + 1, min(entry_idx, n_bars - 1))
+            lookback_start = max(0, entry_idx - cfg.max_holding_candles)
+            if entry_idx > lookback_start:
+                bos_ref = (
+                    float(highs[lookback_start:entry_idx].max())
+                    if d == 1
+                    else float(lows[lookback_start:entry_idx].min())
+                )
+            else:
+                bos_ref = open_price
+            last_sh_price = last_sl_price = None
+            last_sh_idx = last_sl_idx = None
+            eff_stop = actions[-1].stop_loss if actions else stop_loss
+            for b in range(self.k + 1, n_bars):
+                chk = b - self.k
+                if sh[chk]:
+                    last_sh_price, last_sh_idx = float(highs[chk]), chk
+                if sl[chk]:
+                    last_sl_price, last_sl_idx = float(lows[chk]), chk
+                if b <= entry_idx:
+                    continue
+                if (
+                    d == 1
+                    and last_sh_idx is not None
+                    and last_sh_idx >= entry_idx
+                    and last_sh_price is not None
+                    and last_sh_price > bos_ref
+                ):
+                    bos_ref = last_sh_price
+                elif (
+                    d == -1
+                    and last_sl_idx is not None
+                    and last_sl_idx >= entry_idx
+                    and last_sl_price is not None
+                    and last_sl_price < bos_ref
+                ):
+                    bos_ref = last_sl_price
+                if d * (closes[b] - bos_ref) > 0:
+                    bos_ref = float(highs[b]) if d == 1 else float(lows[b])
+                    if b == n_bars - 1:
+                        swing_stop = None
+                        if (
+                            d == 1
+                            and last_sl_price is not None
+                            and last_sl_idx is not None
+                            and last_sl_idx >= entry_idx - self.k
+                        ):
+                            swing_stop = last_sl_price
+                        elif (
+                            d == -1
+                            and last_sh_price is not None
+                            and last_sh_idx is not None
+                            and last_sh_idx >= entry_idx - self.k
+                        ):
+                            swing_stop = last_sh_price + self.spread
+                        if swing_stop is not None and d * (swing_stop - eff_stop) > 0:
+                            actions.append(
+                                FiboLiveAction(
+                                    action_type="MODIFY_STOP",
+                                    stop_loss=swing_stop,
+                                    ticket=ticket,
+                                    reason="BOS_SWING_TRAIL",
+                                )
+                            )
 
         if cfg.trailing_exit_ma:
             prepared = self._strategy.resample_data(df_m5)

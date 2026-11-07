@@ -488,9 +488,8 @@ class LiveTradingEngine:
 
                 # L-07: cmd_id idempotente
                 cmd_id = make_cmd_id(symbol, act.action_type, df_m5.index[-1])
-                is_limit = (
-                    act.action_type == "PLACE_LIMIT"
-                    or state.order_type == "limit"
+                is_limit = act.action_type == "PLACE_LIMIT" or (
+                    act.action_type != "MARKET_ENTRY" and state.order_type == "limit"
                 )
                 order_req = OrderRequest(
                     symbol=symbol,

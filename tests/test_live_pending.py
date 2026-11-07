@@ -349,5 +349,71 @@ def test_pending_setup_respeita_trend_ma_slope():
     _ = strat_slope.pending_setup(df_combined, SPREAD)
 
 
+def test_fibo_live_m5_close_rejection_emits_market_entry_and_bos_swing_trail():
+    """FiboLiveEvaluator emite MARKET_ENTRY quando entry_mode='m5_close_rejection' e MODIFY_STOP em bos_swing_trailing."""
+    from smc_trader.execution.fibo_live import FiboLiveEvaluator
+
+    def _bars(ohlc: list[tuple[float, float, float, float]]) -> pd.DataFrame:
+        idx = pd.date_range("2026-01-05 08:00", periods=len(ohlc), freq="5min", tz="UTC")
+        return pd.DataFrame(
+            ohlc, columns=["open", "high", "low", "close"], index=idx, dtype=float
+        )
+
+    cfg = FiboOTEConfig(
+        timeframe="5min",
+        fibo_entry=0.50,
+        fibo_rejection_max=0.79,
+        fibo_stop=0.886,
+        entry_mode="m5_close_rejection",
+        stop_mode="fibo",
+        rejection_min_wick_ratio=0.50,
+        bos_swing_trailing=True,
+        target_mode="3R",
+        target_r=10.0,
+        trailing_exit_ma=None,
+        pivot_k=1,
+    )
+    evaluator = FiboLiveEvaluator(cfg, spread=0.0)
+    b0_8 = [
+        (100, 101, 99, 100),  # 0
+        (100, 102, 95, 101),  # 1: swing low = 95
+        (101, 103, 98, 102),  # 2
+        (102, 105, 100, 104),  # 3: swing high = 105
+        (104, 104, 101, 102),  # 4
+        (102, 107, 101, 106),  # 5: BOS -> leg [95, 107]
+        (106, 106, 102, 103),  # 6
+        (103, 104, 98.0, 102.5),  # 7: toca zona [50%-79%] com pavio >= 50% e fecha > 79%
+    ]
+    df_entry = _bars(b0_8)
+    acts_entry = evaluator.process_closed_m5(df_entry, is_positioned=False)
+    assert len(acts_entry) == 1
+    assert acts_entry[0].action_type == "MARKET_ENTRY"
+    assert acts_entry[0].direction == "long"
+
+    b_trail = b0_8 + [
+        (102.6, 105.0, 102.0, 104.5),  # 8: barra da entrada (open_time = index[8])
+        (104.5, 105.5, 101.0, 105.0),  # 9: forma novo swing low em 101.0
+        (105.0, 106.5, 104.0, 106.0),  # 10: confirma swing low (k=1) em 9
+        (106.0, 109.0, 105.5, 108.5),  # 11: fecha > 107.0 (BOS a favor) -> move stop p/ 101.0
+    ]
+    df_trail = _bars(b_trail)
+    acts_trail = evaluator.process_closed_m5(
+        df_trail,
+        is_positioned=True,
+        current_pos_direction="long",
+        current_pos_open_price=102.6,
+        current_pos_stop_loss=96.368,
+        current_pos_ticket=555,
+        current_pos_open_time=df_trail.index[8],
+    )
+    assert any(
+        a.action_type == "MODIFY_STOP"
+        and a.reason == "BOS_SWING_TRAIL"
+        and abs(a.stop_loss - 101.0) < 1e-6
+        for a in acts_trail
+    )
+
+
+
 
 

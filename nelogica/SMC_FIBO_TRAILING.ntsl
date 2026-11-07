@@ -13,9 +13,9 @@ Parametro
   MultVolatilidade(1.5);    // Multiplicador do Range Médio (Auto-escala)
   PeriodoVolatilidade(20);  // Barras para calcular o tamanho médio do candle
   
-  // FILTROS DE RISCO (Em Pontos do Ativo)
-  MaxStopPontos(250.0);     // STOP MÁXIMO: WIN sugerido 200-250 | WDO sugerido 8-10 (0 desativa)
-  MinStopPontos(50.0);      // STOP MÍNIMO: WIN sugerido 50-60   | WDO sugerido 3-4  (0 desativa)
+  // FILTROS DE RISCO (Em Pontos do Ativo - 0.0 = Universal Dinâmico Automático)
+  MaxStopPontos(0.0);       // STOP MÁXIMO: 0 desativa (Universal) | WIN: 200-250 | WDO: 8-10
+  MinStopPontos(0.0);       // STOP MÍNIMO: 0 desativa (Universal) | WIN: 50-60   | WDO: 3-4
   
   // EXIBIÇÃO VISUAL
   ExibirTopoFundo(Verdadeiro); // Plota as linhas de Topo e Fundo no Gráfico Principal

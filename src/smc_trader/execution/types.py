@@ -28,7 +28,8 @@ class SymbolInfo:
     min_lot: float = 0.01
     max_lot: float = 100.0
     lot_step: float = 0.01
-    tick_value: float = 1.0  # Valor financeiro de 1 ponto por 1 lote
+    tick_value: float = 1.0  # Valor financeiro de 1 tick por 1 lote
+    tick_size: float = 0.0   # Tamanho do tick (0.0 = fallback para point)
     trade_contract_size: float = 100.0
 
 

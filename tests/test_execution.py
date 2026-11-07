@@ -40,7 +40,7 @@ def test_calculate_lot_size_xauusd():
 
 
 def test_calculate_lot_size_min_lot_bound():
-    """Garante que o lote nunca seja inferior ao lote mínimo da corretora."""
+    """Garante que o lote respeite min_lot com tolerância, ou recuse (0.0) se estourar o risco (L-04)."""
     sym_info = SymbolInfo(
         symbol="XAUUSD",
         bid=2650.0,
@@ -53,15 +53,25 @@ def test_calculate_lot_size_min_lot_bound():
         lot_step=0.01,
         tick_value=1.0,
     )
-    # Saldo pequeno de $50 USD -> cálculo daria 0.0005, deve retornar min_lot 0.01
-    lot = calculate_lot_size(
+    # 1. Saldo suficiente para min_lot dentro da tolerância (ex: $950 USD, risco $9.50 -> min_lot custa $10.00)
+    lot_ok = calculate_lot_size(
+        equity=950.0,
+        risk_pct=1.0,
+        entry_price=2650.0,
+        stop_loss=2640.0,
+        symbol_info=sym_info,
+    )
+    assert lot_ok == 0.01
+
+    # 2. L-04: Saldo ínfimo ($50 USD), min_lot custaria 20% da conta -> NÃO opera (deve retornar 0.0)
+    lot_blowout = calculate_lot_size(
         equity=50.0,
         risk_pct=1.0,
         entry_price=2650.0,
         stop_loss=2640.0,
         symbol_info=sym_info,
     )
-    assert lot == 0.01
+    assert lot_blowout == 0.0
 
 
 def test_mock_mt5_client_order_lifecycle():

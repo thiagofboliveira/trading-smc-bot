@@ -102,14 +102,25 @@ class LiveTradingEngine:
 
         # 1. Obtém candles recentes de M1 (suficientes para cálculo de H1/M15 e médias)
         candles_count = 2000 if state.macro_tf in ("H1", "H4") else 450
-        candles_m1 = self.client.get_candles(
+        candles_m1_raw = self.client.get_candles(
             symbol, timeframe="M1", count=candles_count
         )
-        if candles_m1.empty or len(candles_m1) < 50:
+        if candles_m1_raw.empty or len(candles_m1_raw) < 50:
             return
 
-        last_time = candles_m1.index[-1]
-        now = now_utc or last_time
+        # L-03: Descartar a barra corrente em formação (ainda aberta) e operar apenas em barras fechadas
+        closed_candles = candles_m1_raw.iloc[:-1]
+        if closed_candles.empty or len(closed_candles) < 49:
+            return
+
+        last_closed_time = closed_candles.index[-1]
+        if state.last_processed_m1_time == last_closed_time:
+            # Barra fechada já processada; aguarda fechamento da próxima barra M1
+            return
+        state.last_processed_m1_time = last_closed_time
+
+        candles_m1 = closed_candles
+        now = now_utc or last_closed_time
 
         # 2. Sincroniza posições abertas no MT5 com o estado interno
         open_positions = self.client.get_open_positions(

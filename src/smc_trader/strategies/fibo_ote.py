@@ -138,21 +138,33 @@ class _Position:
 
 
 def _fractal_swings(
-    highs: np.ndarray, lows: np.ndarray, k: int
+    highs: np.ndarray, lows: np.ndarray, k: int, strict_tie_break: bool = True
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Marca o fractal no índice central (janela de 2k+1). Só é conhecido k barras depois."""
+    """Marca o fractal no índice central (janela de 2k+1). F-11: desempata na 1ª ocorrência."""
     n = len(highs)
     sh = np.zeros(n, dtype=bool)
     sl = np.zeros(n, dtype=bool)
     if n < 2 * k + 1:
         return sh, sl
-    win = 2 * k + 1
-    sh[k : n - k] = highs[k : n - k] == np.lib.stride_tricks.sliding_window_view(
-        highs, win
-    ).max(axis=1)
-    sl[k : n - k] = lows[k : n - k] == np.lib.stride_tricks.sliding_window_view(
-        lows, win
-    ).min(axis=1)
+    if not strict_tie_break:
+        win = 2 * k + 1
+        sh[k : n - k] = highs[k : n - k] == np.lib.stride_tricks.sliding_window_view(
+            highs, win
+        ).max(axis=1)
+        sl[k : n - k] = lows[k : n - k] == np.lib.stride_tricks.sliding_window_view(
+            lows, win
+        ).min(axis=1)
+        return sh, sl
+
+    mid_h = highs[k : n - k]
+    left_h = np.lib.stride_tricks.sliding_window_view(highs[: n - k - 1], k).max(axis=1)
+    right_h = np.lib.stride_tricks.sliding_window_view(highs[k + 1 :], k).max(axis=1)
+    sh[k : n - k] = (mid_h > left_h) & (mid_h >= right_h)
+
+    mid_l = lows[k : n - k]
+    left_l = np.lib.stride_tricks.sliding_window_view(lows[: n - k - 1], k).min(axis=1)
+    right_l = np.lib.stride_tricks.sliding_window_view(lows[k + 1 :], k).min(axis=1)
+    sl[k : n - k] = (mid_l < left_l) & (mid_l <= right_l)
     return sh, sl
 
 

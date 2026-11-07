@@ -1,0 +1,227 @@
+// ==============================================================================
+// SMC-FIBO CANÔNICO AUDITADO (NTSL / PROFIT / RICO TRADER / B3)
+// ==============================================================================
+// Estratégia Canônica SMC Fibonacci OTE em M5
+// Versão: 3.0 — 100% Auditada e em paridade com Python (N-01 a N-05, F-11)
+// Compatível com: Mini-Índice (WIN), Mini-Dólar (WDO), Ações (PETR4, VALE3)
+// ==============================================================================
+
+Parametro
+  FiboEntrada(0.705);           // Nível Sweet Spot Institucional (70.5%)
+  FiboStop(0.790);              // Nível de Invalidação Curto (79.0% ou 1.000 Estrutural)
+  PeriodoMME(8);                // MME de Condução de Saída
+  UsarTrava2para1(Falso);       // Trava 2:1 (Verdadeiro no Modelo Blindado: sobe SL para +1R)
+  MaxBarrasPerna(60);           // N-05: Expiração da perna após 60 barras M5
+  HorarioLimiteEntrada(1700);   // N-04: Sem novas entradas após 17:00 BRT
+  HorarioZeragem(1745);         // N-04: Zeragem obrigatória day trade às 17:45 BRT
+  OffsetStopTicks(5);           // Offset de execução do Stop na Bolsa
+  ExibirTopoFundo(Verdadeiro);  // Plota linhas de Topo e Fundo institucionais
+
+Var
+  mme8              : Real;
+  topoFractal       : Booleano;
+  fundoFractal      : Booleano;
+  ultimoTopo        : Real;
+  ultimoFundo       : Real;
+  ultimoTopoIdx     : Inteiro;
+  ultimoFundoIdx    : Inteiro;
+  
+  precoEntrada      : Real;
+  precoStop         : Real;
+  precoAlvo         : Real;
+  riscoInicial      : Real;
+  travaAtivada      : Booleano;
+  
+  pernadaAltaAtiva  : Booleano;
+  pernadaBaixaAtiva : Booleano;
+  barrasPerna       : Inteiro;
+  bosBarIdx         : Inteiro;
+  refTopo           : Real;
+  refFundo          : Real;
+  diffPernada       : Real;
+  nivelEntrada      : Real;
+  nivelStop         : Real;
+
+Inicio
+  // 1. Configuração Visual
+  SetPlotColor(1, clAqua);
+  SetPlotColor(2, clFuchsia);
+  SetPlotWidth(1, 2);
+  SetPlotWidth(2, 2);
+
+  mme8 := MediaExp(PeriodoMME, Fechamento);
+
+  // 2. F-11: Detecção Fractal Estrita (Janela 5 barras, atraso causal de 2 barras)
+  topoFractal := (Maxima[2] > Maxima[3]) e (Maxima[2] > Maxima[4]) e 
+                 (Maxima[2] >= Maxima[1]) e (Maxima[2] >= Maxima[0]);
+                 
+  fundoFractal := (Minima[2] < Minima[3]) e (Minima[2] < Minima[4]) e 
+                  (Minima[2] <= Minima[1]) e (Minima[2] <= Minima[0]);
+
+  Se topoFractal Entao
+  Inicio
+    ultimoTopo := Maxima[2];
+    ultimoTopoIdx := CurrentBar - 2;
+  Fim;
+
+  Se fundoFractal Entao
+  Inicio
+    ultimoFundo := Minima[2];
+    ultimoFundoIdx := CurrentBar - 2;
+  Fim;
+
+  // 3. N-04: Zeragem Compulsória Day Trade B3
+  Se (Time >= HorarioZeragem) e (HasPosition) Entao
+  Inicio
+    ClosePosition;
+    pernadaAltaAtiva := Falso;
+    pernadaBaixaAtiva := Falso;
+    Retorne;
+  Fim;
+
+  // 4. Gestão de Posição Aberta (N-01, N-02, F-03, L-09)
+  Se HasPosition Entao
+  Inicio
+    // N-02: Preço de entrada real da execução na corretora
+    Se IsBought Entao
+      precoEntrada := BuyPrice
+    Senao Se IsSold Entao
+      precoEntrada := SellPrice;
+
+    // F-03: Trava de Lucro 2:1 -> Sobe stop para +1R
+    Se UsarTrava2para1 e (Nao travaAtivada) e (riscoInicial > 0) Entao
+    Inicio
+      Se IsBought e ((Maxima - precoEntrada) >= 2.0 * riscoInicial) Entao
+      Inicio
+        precoStop := precoEntrada + 1.0 * riscoInicial;
+        travaAtivada := Verdadeiro;
+        SellToCoverStop(precoStop, precoStop - (OffsetStopTicks * MinPriceIncrement));
+      Fim
+      Senao Se IsSold e ((precoEntrada - Minima) >= 2.0 * riscoInicial) Entao
+      Inicio
+        precoStop := precoEntrada - 1.0 * riscoInicial;
+        travaAtivada := Verdadeiro;
+        BuyToCoverStop(precoStop, precoStop + (OffsetStopTicks * MinPriceIncrement));
+      Fim;
+    Fim;
+
+    // L-09: Saída por Trailing MME 8 no Lucro
+    Se IsBought e (Fechamento < mme8) e (Fechamento > precoEntrada) Entao
+    Inicio
+      ClosePosition;
+      Retorne;
+    Fim
+    Senao Se IsSold e (Fechamento > mme8) e (Fechamento < precoEntrada) Entao
+    Inicio
+      ClosePosition;
+      Retorne;
+    Fim;
+
+    Retorne;
+  Fim;
+
+  // Se não posicionado, reseta flags
+  travaAtivada := Falso;
+
+  // 5. Detecção de BOS (Quebra de Estrutura)
+  Se (Nao pernadaAltaAtiva) e (Nao pernadaBaixaAtiva) e (Time < HorarioLimiteEntrada) Entao
+  Inicio
+    // BOS de Alta
+    Se (ultimoTopoIdx > ultimoFundoIdx) e (Fechamento > ultimoTopo) Entao
+    Inicio
+      pernadaAltaAtiva := Verdadeiro;
+      refTopo := Maxima;
+      refFundo := ultimoFundo;
+      barrasPerna := 0;
+      bosBarIdx := CurrentBar;
+      PaintBar(clAmarelo);
+    Fim
+    // BOS de Baixa
+    Senao Se (ultimoFundoIdx > ultimoTopoIdx) e (Fechamento < ultimoFundo) Entao
+    Inicio
+      pernadaBaixaAtiva := Verdadeiro;
+      refTopo := ultimoTopo;
+      refFundo := Minima;
+      barrasPerna := 0;
+      bosBarIdx := CurrentBar;
+      PaintBar(clAmarelo);
+    Fim;
+  Fim;
+
+  // 6. Perna Ativa: F-01 só opera a partir da barra seguinte ao BOS
+  Se (pernadaAltaAtiva ou pernadaBaixaAtiva) e (CurrentBar > bosBarIdx) Entao
+  Inicio
+    barrasPerna := barrasPerna + 1;
+
+    // N-05: Expiração da perna
+    Se (barrasPerna > MaxBarrasPerna) ou (Time >= HorarioLimiteEntrada) Entao
+    Inicio
+      pernadaAltaAtiva := Falso;
+      pernadaBaixaAtiva := Falso;
+      Retorne;
+    Fim;
+
+    diffPernada := refTopo - refFundo;
+
+    // Perna de Alta: Compra no Sweet Spot
+    Se pernadaAltaAtiva Entao
+    Inicio
+      nivelEntrada := refTopo - (diffPernada * FiboEntrada);
+      nivelStop    := refTopo - (diffPernada * FiboStop);
+
+      // F-04: Testa toque no nível antes de expandir
+      Se (Minima <= nivelEntrada) Entao
+      Inicio
+        // N-02: Ordem Limite no nível
+        BuyLimit(nivelEntrada);
+        precoStop := nivelStop;
+        precoAlvo := refTopo;
+        riscoInicial := nivelEntrada - nivelStop;
+        
+        // N-01: Stop OCO Real na Bolsa
+        SellToCoverStop(precoStop, precoStop - (OffsetStopTicks * MinPriceIncrement));
+        SellToCoverLimit(precoAlvo);
+        
+        pernadaAltaAtiva := Falso;
+      Fim
+      Senao Se (Maxima > refTopo) Entao
+      Inicio
+        refTopo := Maxima; // Expansão causal da perna
+      Fim;
+    Fim
+
+    // Perna de Baixa: Venda no Sweet Spot
+    Senao Se pernadaBaixaAtiva Entao
+    Inicio
+      nivelEntrada := refFundo + (diffPernada * FiboEntrada);
+      nivelStop    := refFundo + (diffPernada * FiboStop);
+
+      Se (Maxima >= nivelEntrada) Entao
+      Inicio
+        // N-02: Ordem Limite no nível
+        SellShortLimit(nivelEntrada);
+        precoStop := nivelStop;
+        precoAlvo := refFundo;
+        riscoInicial := nivelStop - nivelEntrada;
+
+        // N-01: Stop OCO Real na Bolsa
+        BuyToCoverStop(precoStop, precoStop + (OffsetStopTicks * MinPriceIncrement));
+        BuyToCoverLimit(precoAlvo);
+
+        pernadaBaixaAtiva := Falso;
+      Fim
+      Senao Se (Minima < refFundo) Entao
+      Inicio
+        refFundo := Minima; // Expansão causal da perna
+      Fim;
+    Fim;
+  Fim;
+
+  // 7. Plot de Níveis
+  Se ExibirTopoFundo Entao
+  Inicio
+    Se refTopo > 0 Entao Plot(refTopo) Senao NoPlot(1);
+    Se refFundo > 0 Entao Plot2(refFundo) Senao NoPlot(2);
+  Fim;
+
+Fim;

@@ -38,9 +38,5 @@ class DailyLimitsTracker:
         if not self.config.enabled:
             return
 
-        if stats.trades_count >= self.config.max_trades_per_day:
-            stats.locked = True
-        elif stats.stops_count >= self.config.max_stops_per_day:
-            stats.locked = True
-        elif stats.gains_count >= self.config.max_gains_per_day:
+        if stats.trades_count >= self.config.max_trades_per_day or stats.stops_count >= self.config.max_stops_per_day or stats.gains_count >= self.config.max_gains_per_day:
             stats.locked = True

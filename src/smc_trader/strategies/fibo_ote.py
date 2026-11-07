@@ -358,9 +358,7 @@ class FiboOTEStrategy:
                         is_friday
                         and cfg.close_on_friday
                         and t_str >= cfg.friday_close_time
-                    ):
-                        force_close = True
-                    elif cfg.force_close_time and t_str >= cfg.force_close_time:
+                    ) or cfg.force_close_time and t_str >= cfg.force_close_time:
                         force_close = True
                     if force_close:
                         slip_exit = -cfg.slippage if d == 1 else cfg.slippage

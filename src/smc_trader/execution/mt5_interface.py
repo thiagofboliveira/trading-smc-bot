@@ -10,6 +10,7 @@ import logging
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
+
 import pandas as pd
 
 from smc_trader.execution.types import (

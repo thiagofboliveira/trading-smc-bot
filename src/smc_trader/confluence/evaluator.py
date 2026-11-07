@@ -1,4 +1,5 @@
 import math
+
 from smc_trader.config import ConfluenceConfig
 from smc_trader.confluence.fibonacci import calculate_fib_level
 from smc_trader.zones.orderblock import Zone

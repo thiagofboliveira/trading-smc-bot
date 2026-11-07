@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Any, Literal
+
 import pandas as pd
 
 from smc_trader.config import BacktestConfig

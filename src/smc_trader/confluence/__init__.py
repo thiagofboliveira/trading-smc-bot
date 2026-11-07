@@ -5,8 +5,8 @@ from smc_trader.confluence.fibonacci import calculate_fib_level
 from smc_trader.confluence.indicators import calculate_ema, calculate_sma
 
 __all__ = [
-    "calculate_ema",
-    "calculate_sma",
-    "calculate_fib_level",
     "ConfluenceEvaluator",
+    "calculate_ema",
+    "calculate_fib_level",
+    "calculate_sma",
 ]

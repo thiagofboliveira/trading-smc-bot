@@ -54,11 +54,9 @@ def calculate_metrics(trades: list[Trade]) -> dict[str, Any]:
     max_dd_r = 0.0
     for t in trades:
         cumulative_r += t.r_multiple
-        if cumulative_r > peak_r:
-            peak_r = cumulative_r
+        peak_r = max(peak_r, cumulative_r)
         dd = peak_r - cumulative_r
-        if dd > max_dd_r:
-            max_dd_r = dd
+        max_dd_r = max(max_dd_r, dd)
 
     # Breakdown mensal
     monthly_data: dict[str, list[Trade]] = {}

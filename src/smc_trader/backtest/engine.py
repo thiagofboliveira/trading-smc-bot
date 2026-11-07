@@ -1,4 +1,6 @@
-from typing import Any, Callable, Literal
+from collections.abc import Callable
+from typing import Any, Literal
+
 import numpy as np
 import pandas as pd
 

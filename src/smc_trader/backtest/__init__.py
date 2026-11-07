@@ -2,4 +2,4 @@
 
 from smc_trader.backtest.types import BacktestResult, DailyStats, Position, Trade
 
-__all__ = ["Trade", "Position", "DailyStats", "BacktestResult"]
+__all__ = ["BacktestResult", "DailyStats", "Position", "Trade"]

@@ -9,21 +9,22 @@ Gera:
    - Aba 2: 'Análise Estatística & ROI' (taxa de acerto, expectativa, profit factor, drawdown, ROI)
 """
 
-from datetime import datetime
 import json
-from pathlib import Path
 import re
+from datetime import datetime
+from pathlib import Path
 from typing import Any
+
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 import numpy as np
 import openpyxl
+import pandas as pd
+from matplotlib import patches
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-import pandas as pd
 
 from smc_trader.analysis import Analysis
 from smc_trader.backtest.types import BacktestResult, Trade
@@ -403,10 +404,7 @@ def export_backtest_package(
         )
         f.write("-" * 70 + "\n")
         f.write("DETALHAMENTO MENSAL:\n")
-        for month, m_data in metrics.get("monthly", {}).items():
-            f.write(
-                f"  Mês {month}: {m_data.get('trades')} trades | Taxa de Acerto: {m_data.get('win_rate', 0):.1f}% | R Total: {m_data.get('r_multiple', 0):+.2f}R\n"
-            )
+        f.writelines(f"  Mês {month}: {m_data.get('trades')} trades | Taxa de Acerto: {m_data.get('win_rate', 0):.1f}% | R Total: {m_data.get('r_multiple', 0):+.2f}R\n" for month, m_data in metrics.get("monthly", {}).items())
         f.write("=" * 70 + "\n")
 
     # 3. Gerar Planilha Excel (.xlsx) com 2 Abas Profissionais

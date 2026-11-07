@@ -1,9 +1,8 @@
 import argparse
-import sys
-from datetime import datetime, timezone
-from pathlib import Path
-
 import json
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
 
 from pydantic import ValidationError
 
@@ -25,9 +24,9 @@ from smc_trader.viz.chart import build_chart
 def _utc(text: str) -> datetime:
     dt = datetime.fromisoformat(text)
     return (
-        dt.replace(tzinfo=timezone.utc)
+        dt.replace(tzinfo=UTC)
         if dt.tzinfo is None
-        else dt.astimezone(timezone.utc)
+        else dt.astimezone(UTC)
     )
 
 
@@ -212,7 +211,7 @@ def _cmd_fetch(args: argparse.Namespace, cfg: Config) -> int:
         if args.start is not None or args.years < 1:
             print("use --years N (N >= 1) sozinho, sem --from", file=sys.stderr)
             return 2
-        end = args.end or datetime.now(timezone.utc).replace(
+        end = args.end or datetime.now(UTC).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
         start = years_back_start(end, args.years)
@@ -506,10 +505,12 @@ def _cmd_ui(args: argparse.Namespace, cfg: Config) -> int:
 
 def _cmd_live(args: argparse.Namespace, cfg: Config) -> int:
     import time
+
     import yaml
+
     from smc_trader.config import BacktestConfig
     from smc_trader.execution.live_engine import LiveTradingEngine
-    from smc_trader.execution.mt5_interface import MockMT5Client, BridgeEAServer
+    from smc_trader.execution.mt5_interface import BridgeEAServer, MockMT5Client
 
     prod_cfg_path = (
         args.config if args.config.exists() else Path("config/production.yaml")
@@ -661,6 +662,7 @@ def _spread_for(symbol: str, cfg: Config) -> float:
 
 def _cmd_fibo_backtest(args: argparse.Namespace, cfg: Config) -> int:
     import pandas as pd
+
     from smc_trader.strategies.fibo_ote import FiboOTEConfig, FiboOTEStrategy
 
     if args.symbol == "all":

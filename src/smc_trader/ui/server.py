@@ -5,6 +5,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+
 import pandas as pd
 
 from smc_trader.analysis import analyze
@@ -17,8 +18,8 @@ from smc_trader.backtest.exporter import (
 from smc_trader.backtest.runner import run_grid
 from smc_trader.config import (
     BacktestConfig,
-    ConfluenceConfig,
     Config,
+    ConfluenceConfig,
     LimitsConfig,
     TrailingConfig,
     ZoneConfig,

@@ -1,5 +1,6 @@
 import math
 from typing import Literal
+
 import pandas as pd
 
 from smc_trader.backtest.types import Position
@@ -77,10 +78,7 @@ class TrailingManager:
             if self.config.mode == "ema":
                 if trailing_ema_val is not None and not math.isnan(trailing_ema_val):
                     # Long: candle fechou abaixo da EMA
-                    if long and c_close < trailing_ema_val:
-                        return True, c_close, "trailing"
-                    # Short: candle fechou acima da EMA
-                    elif not long and c_close > trailing_ema_val:
+                    if long and c_close < trailing_ema_val or not long and c_close > trailing_ema_val:
                         return True, c_close, "trailing"
 
             elif self.config.mode == "bos":

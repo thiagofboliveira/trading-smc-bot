@@ -1,8 +1,8 @@
 """Testes unitários para o módulo de execução e automação em produção MetaTrader 5."""
 import json
 import urllib.request
+
 import pandas as pd
-import pytest
 
 from smc_trader.config import BacktestConfig
 from smc_trader.execution.live_engine import LiveTradingEngine

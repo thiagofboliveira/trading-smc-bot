@@ -1,5 +1,6 @@
 """Testes para o cálculo de tamanho de posição (L-04 do backlog)."""
 import pytest
+
 from smc_trader.execution.sizing import calculate_lot_size
 from smc_trader.execution.types import SymbolInfo
 

@@ -1,6 +1,6 @@
-import pandas as pd
 
 from helpers import candles_from_ohlc, mirror
+
 from smc_trader.zones.fvg import FVG, find_fvgs
 
 BULL = [(9.5, 10, 9, 9.8), (9.9, 13, 9.8, 12.8), (12.8, 14, 11, 13.5)]

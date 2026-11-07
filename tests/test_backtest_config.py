@@ -1,19 +1,18 @@
 """Testes para a configuração de backtest e tipos de dados."""
 
 from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
+from smc_trader.backtest.types import Position, Trade
 from smc_trader.config import (
     BacktestConfig,
-    Config,
     CostsConfig,
     LimitsConfig,
     SessionConfig,
-    SessionWindow,
     load_config,
 )
-from smc_trader.backtest.types import BacktestResult, Position, Trade
 
 
 def test_backtest_config_defaults():

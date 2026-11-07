@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pandas as pd
-import pytest
 
 from smc_trader.config import DataConfig
 from smc_trader.data.mt5_bridge import import_mt5_csv

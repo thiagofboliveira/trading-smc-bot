@@ -1,9 +1,8 @@
 """Testes para condução e trailing stop."""
 
 import pandas as pd
-import pytest
-
 from helpers import candles_from_ohlc
+
 from smc_trader.backtest.engine import BacktestEngine
 from smc_trader.config import BacktestConfig, TrailingConfig
 from smc_trader.zones.orderblock import Zone

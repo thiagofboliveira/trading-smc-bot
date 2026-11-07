@@ -3,6 +3,7 @@ import threading
 import time
 import urllib.request
 from pathlib import Path
+
 import pytest
 
 from smc_trader.config import load_config

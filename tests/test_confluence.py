@@ -4,9 +4,9 @@ import pandas as pd
 import pytest
 
 from smc_trader.config import ConfluenceConfig
+from smc_trader.confluence.evaluator import ConfluenceEvaluator
 from smc_trader.confluence.fibonacci import calculate_fib_level
 from smc_trader.confluence.indicators import calculate_ema, calculate_sma
-from smc_trader.confluence.evaluator import ConfluenceEvaluator
 from smc_trader.zones.orderblock import Zone
 
 
@@ -113,6 +113,7 @@ def test_evaluator_ma_confluence():
 
 def test_hybrid_mode_with_confluence_enters_on_touch():
     from helpers import candles_from_ohlc
+
     from smc_trader.backtest.engine import BacktestEngine
     from smc_trader.config import BacktestConfig
 
@@ -161,6 +162,7 @@ def test_hybrid_mode_with_confluence_enters_on_touch():
 
 def test_hybrid_mode_without_confluence_waits_confirmation():
     from helpers import candles_from_ohlc
+
     from smc_trader.backtest.engine import BacktestEngine
     from smc_trader.config import BacktestConfig
 

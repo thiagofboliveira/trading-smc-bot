@@ -170,6 +170,88 @@ class Config(BaseModel):
         return self
 
 
+# =====================================================================
+# Configuração de Produção e Execução ao Vivo (Live / Paper Trading)
+# =====================================================================
+
+
+class ProfitLockConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trigger_r: float = Field(2.0, gt=0.0)
+    lock_r: float = Field(1.0, ge=0.0)
+
+
+class FiboModelConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    strategy: Literal["fibo_ote", "zones"] = "fibo_ote"
+    timeframe: str = "M5"
+    fibo_entry: float = Field(0.705, ge=0.0, le=1.0)
+    fibo_stop: float = Field(0.790, ge=0.0, le=2.0)
+    target_mode: Literal["3R", "0_percent", "proj_618", "trailing_only"] = "0_percent"
+    target_r: float = Field(3.0, gt=0.0)
+    pivot_k: int = Field(3, ge=1)
+    trailing_exit_ma: str | None = "ema8"
+    profit_lock: ProfitLockConfig | None = None
+    blocks_filter: list[str] | None = None
+    require_sweep: bool | None = None
+    entry_mode: str | None = None
+    stop_mode: str | None = None
+
+
+class TradingProductionConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    risk_pct_per_trade: float = Field(1.0, gt=0.0, le=10.0)
+    max_open_trades_total: int = Field(4, ge=1)
+    magic_base: int = Field(888300, ge=1)
+
+
+class BridgeConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    host: str = "127.0.0.1"
+    port: int = 8089
+    poll_interval_ms: int = 500
+    auth_token: str | None = None
+
+
+class KillSwitchConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    max_daily_loss_pct: float = Field(3.0, gt=0.0)
+    max_consecutive_losses: int = Field(3, ge=1)
+    max_spread_multiplier: float = Field(2.5, gt=1.0)
+    max_data_delay_seconds: int = Field(180, ge=30)
+
+
+class ProductionSymbolConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model: str
+    description: str = ""
+    macro_tf: str = "M5"
+    order_type: Literal["market", "limit"] = "limit"
+
+
+class ProductionConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trading: TradingProductionConfig = Field(default_factory=TradingProductionConfig)
+    bridge: BridgeConfig = Field(default_factory=BridgeConfig)
+    kill_switch: KillSwitchConfig = Field(default_factory=KillSwitchConfig)
+    models: dict[str, FiboModelConfig]
+    symbols: dict[str, ProductionSymbolConfig]
+
+
+def load_production_config(path: Path = Path("config/production.yaml")) -> ProductionConfig:
+    with open(path, encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    return ProductionConfig.model_validate(data)
+
+
 def load_config(path: Path = Path("config/default.yaml")) -> Config:
     with open(path, encoding="utf-8") as f:
         return Config.model_validate(yaml.safe_load(f))

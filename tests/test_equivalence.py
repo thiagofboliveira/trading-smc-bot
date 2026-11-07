@@ -7,7 +7,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-
 from helpers import candles_from_ohlc, random_walk_candles
 from reference_impl import (
     ref_build_breakers,
@@ -15,6 +14,7 @@ from reference_impl import (
     ref_find_fvgs,
     ref_find_pivots,
 )
+
 from smc_trader.config import ZoneConfig
 from smc_trader.data.store import load_candles
 from smc_trader.structure.market_structure import detect_structure

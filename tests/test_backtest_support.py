@@ -1,7 +1,6 @@
 """Testes para custos, sessões e limites do backtest."""
 
 import pandas as pd
-import pytest
 
 from smc_trader.backtest.costs import ExecutionCostsCalculator
 from smc_trader.backtest.limits import DailyLimitsTracker

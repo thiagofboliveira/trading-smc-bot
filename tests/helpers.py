@@ -3,7 +3,6 @@ import pandas as pd
 
 from smc_trader.data.candles import TF_MINUTES, with_close_time
 
-
 SERIE_A_ROWS: list[tuple[float, float, float, float]] = [
     (10, 11, 9, 10.5),
     (10.5, 13, 10, 12.5),

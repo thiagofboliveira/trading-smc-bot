@@ -2,8 +2,8 @@
 
 import pandas as pd
 import pytest
-
 from helpers import candles_from_ohlc
+
 from smc_trader.analysis import analyze
 from smc_trader.backtest.engine import BacktestEngine
 from smc_trader.backtest.metrics import calculate_metrics
@@ -192,6 +192,7 @@ def test_confirmation_mode_with_m1_choch():
 
 def test_real_data_backtest_consistency():
     from pathlib import Path
+
     from smc_trader.data.resample import resample_ohlc
     from smc_trader.data.store import load_candles
 

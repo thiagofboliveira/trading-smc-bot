@@ -1,5 +1,5 @@
-import pytest
 import pandas as pd
+import pytest
 
 from smc_trader.data.store import load_candles, save_m1
 

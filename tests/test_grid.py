@@ -1,5 +1,4 @@
 import pandas as pd
-import pytest
 
 from smc_trader.backtest.attribution import VariantExecutionSummary, analyze_attribution, format_attribution_markdown
 from smc_trader.backtest.grid import GridVariant, generate_grid_variants

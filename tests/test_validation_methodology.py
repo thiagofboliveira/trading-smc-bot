@@ -1,6 +1,5 @@
 """Testes para a metodologia de validação estatística e walk-forward (M-01 e M-02 do backlog)."""
 import pandas as pd
-import pytest
 
 from smc_trader.backtest.attribution import VariantExecutionSummary, analyze_attribution, format_attribution_markdown
 from smc_trader.backtest.runner import run_grid

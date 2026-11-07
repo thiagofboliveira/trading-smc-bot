@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
-
 from helpers import candles_from_ohlc
+
 from smc_trader.structure.pivots import find_pivots
 
 COLS = ["time", "kind", "price", "confirmed_at"]

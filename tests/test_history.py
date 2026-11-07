@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 
 import pandas as pd
-import pytest
 
 from smc_trader.cli import main
 from smc_trader.data.history import fetch_history, years_back_start

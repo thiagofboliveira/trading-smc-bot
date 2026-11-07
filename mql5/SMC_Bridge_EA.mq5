@@ -5,18 +5,33 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, Antigravity AI Bot"
 #property link      "https://github.com/thiagooliveira/finance-analysis"
-#property version   "1.00"
+#property version   "2.00"
 #property strict
 
 #include <Trade\Trade.mqh>
 
 input group "=== Configurações da Ponte Python ==="
-input string   InpServerURL   = "http://127.0.0.1:8089"; // URL do Servidor Python SMC
-input int      InpPollIntervalMs = 500;                  // Intervalo de Polling (ms)
-input int      InpMagicNumber    = 888100;               // Magic Number Base
-input ulong    InpSlippagePoints = 30;                   // Desvio Máximo (Slippage)
+input string   InpServerURL      = "http://127.0.0.1:8089"; // URL do Servidor Python SMC
+input string   InpAuthToken      = "";                      // Token de Autenticação X-Bridge-Token (L-08)
+input int      InpPollIntervalMs = 500;                     // Intervalo de Polling (ms)
+input int      InpMagicNumber    = 888100;                  // Magic Number Base
+input ulong    InpSlippagePoints = 30;                      // Desvio Máximo (Slippage)
 
 CTrade trade;
+
+//+------------------------------------------------------------------+
+//| Configura modo de preenchimento suportado pela corretora (L-08)  |
+//+------------------------------------------------------------------+
+void ConfigureFillingMode(string sym)
+{
+   uint filling = (uint)SymbolInfoInteger(sym, SYMBOL_FILLING_MODE);
+   if((filling & SYMBOL_FILLING_FOK) != 0)
+      trade.SetTypeFilling(ORDER_FILLING_FOK);
+   else if((filling & SYMBOL_FILLING_IOC) != 0)
+      trade.SetTypeFilling(ORDER_FILLING_IOC);
+   else
+      trade.SetTypeFilling(ORDER_FILLING_RETURN);
+}
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -25,7 +40,7 @@ int OnInit()
 {
    trade.SetExpertMagicNumber(InpMagicNumber);
    trade.SetDeviationInPoints(InpSlippagePoints);
-   trade.SetTypeFilling(ORDER_FILLING_FOK);
+   ConfigureFillingMode(_Symbol);
    
    EventSetMillisecondTimer(InpPollIntervalMs);
    Print("🚀 [SMC Bridge EA] Inicializado com sucesso! Conectando a ", InpServerURL);
@@ -51,19 +66,35 @@ void OnTimer()
 }
 
 //+------------------------------------------------------------------+
+//| Retorna cabeçalhos HTTP com autenticação (L-08)                 |
+//+------------------------------------------------------------------+
+string GetHttpHeaders()
+{
+   string headers = "Content-Type: application/json\r\n";
+   if(StringLen(InpAuthToken) > 0)
+   {
+      headers += "X-Bridge-Token: " + InpAuthToken + "\r\n";
+   }
+   return headers;
+}
+
+//+------------------------------------------------------------------+
 //| Envia dados de conta e cotações para o Python                   |
 //+------------------------------------------------------------------+
 void SendTelemetry()
 {
-   string headers = "Content-Type: application/json\r\n";
+   string headers = GetHttpHeaders();
    char post[], result[];
    string result_headers;
    
    string payload = StringFormat(
-      "{\"type\":\"telemetry\",\"data\":{\"symbol\":\"%s\",\"bid\":%.5f,\"ask\":%.5f,\"balance\":%.2f,\"equity\":%.2f}}",
+      "{\"type\":\"telemetry\",\"data\":{\"symbol\":\"%s\",\"bid\":%.5f,\"ask\":%.5f,\"spread\":%.5f,\"point\":%.5f,\"digits\":%d,\"balance\":%.2f,\"equity\":%.2f}}",
       _Symbol,
       SymbolInfoDouble(_Symbol, SYMBOL_BID),
       SymbolInfoDouble(_Symbol, SYMBOL_ASK),
+      SymbolInfoDouble(_Symbol, SYMBOL_ASK) - SymbolInfoDouble(_Symbol, SYMBOL_BID),
+      SymbolInfoDouble(_Symbol, SYMBOL_POINT),
+      (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS),
       AccountInfoDouble(ACCOUNT_BALANCE),
       AccountInfoDouble(ACCOUNT_EQUITY)
    );
@@ -72,7 +103,7 @@ void SendTelemetry()
    ArrayResize(post, ArraySize(post) - 1);
    
    ResetLastError();
-   int res = WebRequest("POST", InpServerURL, headers, 1000, post, result, result_headers);
+   WebRequest("POST", InpServerURL, headers, 1000, post, result, result_headers);
 }
 
 //+------------------------------------------------------------------+
@@ -80,7 +111,7 @@ void SendTelemetry()
 //+------------------------------------------------------------------+
 void PollCommands()
 {
-   string headers = "Content-Type: application/json\r\n";
+   string headers = GetHttpHeaders();
    char post[], result[];
    string result_headers;
    
@@ -97,23 +128,23 @@ void PollCommands()
 }
 
 //+------------------------------------------------------------------+
-//| Executa ordem vinda do motor Python                             |
+//| Executa ordem vinda do motor Python (L-06, L-08)                 |
 //+------------------------------------------------------------------+
 void ExecuteIncomingCommand(string json_str)
 {
    Print("📥 [SMC Bridge EA] Comando recebido: ", json_str);
-   // Exemplo de payload esperado:
-   // {"action":"BUY","symbol":"XAUUSD","volume":0.02,"sl":2640.50,"tp":2670.00,"magic":888101,"cmd_id":"c123"}
    
    string action = ExtractJsonValue(json_str, "action");
    string sym = ExtractJsonValue(json_str, "symbol");
    double vol = StringToDouble(ExtractJsonValue(json_str, "volume"));
+   double price = StringToDouble(ExtractJsonValue(json_str, "price"));
    double sl = StringToDouble(ExtractJsonValue(json_str, "sl"));
    double tp = StringToDouble(ExtractJsonValue(json_str, "tp"));
    ulong magic = (ulong)StringToInteger(ExtractJsonValue(json_str, "magic"));
    string cmd_id = ExtractJsonValue(json_str, "cmd_id");
    
    if(sym == "") sym = _Symbol;
+   ConfigureFillingMode(sym);
    trade.SetExpertMagicNumber(magic > 0 ? magic : InpMagicNumber);
    
    bool success = false;
@@ -131,6 +162,18 @@ void ExecuteIncomingCommand(string json_str)
       success = trade.Sell(vol, sym, bid, sl, tp, "SMC-AutoSell");
       if(success) ticket = trade.ResultOrder();
    }
+   else if(action == "BUY_LIMIT")
+   {
+      // L-06: Ordem limite pendente no nível Fibo OTE
+      success = trade.BuyLimit(vol, price, sym, sl, tp, ORDER_TIME_GTC, 0, "SMC-FiboBuyLimit");
+      if(success) ticket = trade.ResultOrder();
+   }
+   else if(action == "SELL_LIMIT")
+   {
+      // L-06: Ordem limite pendente no nível Fibo OTE
+      success = trade.SellLimit(vol, price, sym, sl, tp, ORDER_TIME_GTC, 0, "SMC-FiboSellLimit");
+      if(success) ticket = trade.ResultOrder();
+   }
    else if(action == "MODIFY")
    {
       ulong pos_ticket = (ulong)StringToInteger(ExtractJsonValue(json_str, "ticket"));
@@ -143,26 +186,32 @@ void ExecuteIncomingCommand(string json_str)
       success = trade.PositionClose(pos_ticket);
       ticket = pos_ticket;
    }
+   else if(action == "CANCEL")
+   {
+      ulong ord_ticket = (ulong)StringToInteger(ExtractJsonValue(json_str, "ticket"));
+      success = trade.OrderDelete(ord_ticket);
+      ticket = ord_ticket;
+   }
    
-   // Envia resultado de volta para o Python
-   SendOrderResult(cmd_id, success, ticket, trade.ResultRetcodeDescription());
+   SendOrderResult(cmd_id, success, ticket, trade.ResultRetcodeDescription(), (int)trade.ResultRetcode());
 }
 
 //+------------------------------------------------------------------+
 //| Envia confirmação de execução de volta                          |
 //+------------------------------------------------------------------+
-void SendOrderResult(string cmd_id, bool success, ulong ticket, string comment)
+void SendOrderResult(string cmd_id, bool success, ulong ticket, string comment, int error_code)
 {
-   string headers = "Content-Type: application/json\r\n";
+   string headers = GetHttpHeaders();
    char post[], result[];
    string result_headers;
    
    string payload = StringFormat(
-      "{\"type\":\"order_result\",\"cmd_id\":\"%s\",\"result\":{\"success\":%s,\"ticket\":%I64u,\"comment\":\"%s\"}}",
+      "{\"type\":\"order_result\",\"cmd_id\":\"%s\",\"result\":{\"success\":%s,\"ticket\":%I64u,\"comment\":\"%s\",\"error_code\":%d}}",
       cmd_id,
       success ? "true" : "false",
       ticket,
-      comment
+      comment,
+      error_code
    );
    
    StringToCharArray(payload, post, 0, WHOLE_ARRAY, CP_UTF8);

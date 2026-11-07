@@ -48,6 +48,7 @@ class LivePosition:
     initial_risk: float
     magic: int = 888111
     comment: str = "SMC-Auto"
+    cmd_id: str = ""
     custom_data: dict[str, Any] = field(default_factory=dict)
 
 
@@ -63,6 +64,23 @@ class OrderRequest:
     magic: int = 888111
     comment: str = "SMC-Auto"
     deviation: int = 20  # Max slippage em pontos
+    cmd_id: str = ""
+
+
+@dataclass
+class ClosedTradeInfo:
+    ticket: int
+    symbol: str
+    direction: Literal["long", "short"]
+    volume: float
+    open_price: float
+    close_price: float
+    open_time: pd.Timestamp
+    close_time: pd.Timestamp
+    pnl: float
+    r_multiple: float
+    magic: int
+    comment: str = ""
 
 
 @dataclass
@@ -73,3 +91,4 @@ class OrderResult:
     volume: float = 0.0
     comment: str = ""
     error_code: int = 0
+    cmd_id: str = ""

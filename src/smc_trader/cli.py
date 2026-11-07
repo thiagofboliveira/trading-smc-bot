@@ -163,9 +163,9 @@ def _build_parser() -> argparse.ArgumentParser:
     live.add_argument("--config", type=Path, default=Path("config/production.yaml"))
     live.add_argument(
         "--mode",
-        choices=["bridge", "mock"],
+        choices=["bridge", "mock", "native"],
         default="bridge",
-        help="modo de conexão (bridge EA ou mock para teste)",
+        help="modo de conexão (bridge EA, native MT5 ou mock para teste)",
     )
     live.add_argument(
         "--symbols",
@@ -505,28 +505,31 @@ def _cmd_ui(args: argparse.Namespace, cfg: Config) -> int:
 
 def _cmd_live(args: argparse.Namespace, cfg: Config) -> int:
     import time
+    from datetime import datetime
 
-    import yaml
-
-    from smc_trader.config import BacktestConfig
+    from smc_trader.config import load_production_config
     from smc_trader.execution.live_engine import LiveTradingEngine
-    from smc_trader.execution.mt5_interface import BridgeEAServer, MockMT5Client
+    from smc_trader.execution.mt5_interface import (
+        BridgeEAServer,
+        BridgeMT5Client,
+        MockMT5Client,
+        NativeMT5Client,
+    )
 
     prod_cfg_path = (
         args.config if args.config.exists() else Path("config/production.yaml")
     )
-    with open(prod_cfg_path, "r", encoding="utf-8") as f:
-        prod_data = yaml.safe_load(f)
+    prod_cfg = load_production_config(prod_cfg_path)
 
     symbols_list = (
         args.symbols.split(",")
         if args.symbols
-        else list(prod_data.get("symbols", {}).keys())
+        else list(prod_cfg.symbols.keys())
     )
     risk_pct = (
         args.risk
         if args.risk is not None
-        else float(prod_data.get("trading", {}).get("risk_pct_per_trade", 1.0))
+        else float(prod_cfg.trading.risk_pct_per_trade)
     )
 
     print("=" * 65)
@@ -536,94 +539,55 @@ def _cmd_live(args: argparse.Namespace, cfg: Config) -> int:
     )
     print("=" * 65)
 
-    symbol_configs: dict[str, BacktestConfig] = {}
-    symbol_blocks: dict[str, list[str]] = {}
-    symbol_models: dict[str, str] = {}
-    symbol_macro_tfs: dict[str, str] = {}
-    symbol_sweeps: dict[str, bool] = {}
-
-    models_catalog = prod_data.get("models", {})
-    for sym in symbols_list:
-        sym_raw = prod_data.get("symbols", {}).get(sym, {})
-        model_key = sym_raw.get("model", "smc_dayflow")
-        model_def = models_catalog.get(model_key, {})
-
-        model_name = model_def.get("name", sym_raw.get("model_name", "SMC-DayFlow"))
-        macro_tf = sym_raw.get("macro_tf", model_def.get("macro_tf", "M15"))
-        require_sweep = sym_raw.get(
-            "require_sweep", model_def.get("require_sweep", False)
-        )
-        entry_mode = sym_raw.get(
-            "entry_mode", model_def.get("entry_mode", "confirmation")
-        )
-        stop_mode = sym_raw.get("stop_mode", model_def.get("stop_mode", "swing"))
-        target_r = sym_raw.get("target_r", model_def.get("target_r", 3.0))
-
-        sym_bt = BacktestConfig(
-            entry_mode=entry_mode,
-            stop_mode=stop_mode,
-            target_r=target_r,
-        )
-
-        blocks = (
-            sym_raw.get("zone", {}).get("blocks_filter")
-            or model_def.get("blocks_filter")
-            or ["OB"]
-        )
-        symbol_blocks[sym] = blocks
-        symbol_models[sym] = model_name
-        symbol_macro_tfs[sym] = macro_tf
-        symbol_sweeps[sym] = require_sweep
-        if "trailing" in sym_raw and "mode" in sym_raw["trailing"]:
-            sym_bt.trailing.mode = sym_raw["trailing"]["mode"]
-        symbol_configs[sym] = sym_bt
-
     bridge_server = None
     if args.mode == "mock":
         client = MockMT5Client(initial_balance=1000.0)
         client.connect()
         print("✅ Cliente Mock MT5 conectado com saldo inicial de $1000.00 USD")
-    else:
-        bridge_cfg = prod_data.get("bridge", {})
-        host = bridge_cfg.get("host", "0.0.0.0")
-        port = bridge_cfg.get("port", 8089)
-        bridge_server = BridgeEAServer(host=host, port=port)
+    elif args.mode == "native":
+        client = NativeMT5Client()
+        if not client.connect():
+            raise RuntimeError("Falha ao inicializar o cliente nativo MetaTrader 5.")
+        print("✅ Cliente Nativo MetaTrader 5 inicializado e conectado.")
+    else:  # bridge
+        bridge_cfg = prod_cfg.bridge
+        bridge_server = BridgeEAServer(
+            host=bridge_cfg.host,
+            port=bridge_cfg.port,
+            auth_token=bridge_cfg.auth_token,
+        )
         bridge_server.start()
-        print(f"✅ Ponte MetaTrader 5 iniciada na porta {port} (escutando em {host})")
-        print("👉 Se o MT5 estiver na mesma máquina: URL http://127.0.0.1:8089")
         print(
-            "👉 Se o MT5 estiver em outra máquina (Windows na rede): URL http://<IP_DESTA_MAQUINA>:8089"
+            f"✅ Ponte MetaTrader 5 iniciada na porta {bridge_cfg.port} (escutando em {bridge_cfg.host})"
         )
-        print(
-            "👉 Anexe o Expert Advisor 'mql5/SMC_Bridge_EA.mq5' no gráfico do seu MetaTrader 5!"
-        )
-        client = MockMT5Client()
+        print("👉 Anexe o Expert Advisor 'mql5/SMC_Bridge_EA.mq5' no gráfico do MetaTrader 5.")
+        client = BridgeMT5Client(server=bridge_server)
         client.connect()
+
+    # L-01: Fail-closed check
+    if args.mode != "mock" and isinstance(client, MockMT5Client):
+        raise RuntimeError(
+            "Modo de produção real proíbe MockMT5Client (L-01). Use '--mode bridge' ou '--mode native'."
+        )
+    if not client.is_connected():
+        raise RuntimeError("Cliente MT5 não está conectado com sucesso.")
 
     engine = LiveTradingEngine(
         client=client,
-        symbol_configs=symbol_configs,
-        symbol_blocks=symbol_blocks,
-        symbol_models=symbol_models,
-        symbol_macro_tfs=symbol_macro_tfs,
-        symbol_sweeps=symbol_sweeps,
-        risk_pct=risk_pct,
+        production_config=prod_cfg,
         notification_callback=lambda msg: print(
             f"[{datetime.now().strftime('%H:%M:%S')}] {msg}"
         ),
     )
 
-    print("\n🟢 Motor em execução autônoma com Modelos Operacionais Fechados:")
+    print("\n🟢 Motor em execução autônoma com Modelos Operacionais Validados:")
     for sym in symbols_list:
-        m_name = symbol_models.get(sym, "SMC-DayFlow")
-        m_tf = symbol_macro_tfs.get(sym, "M15")
-        s_req = (
-            "Sim (Sweep Obrigatório)"
-            if symbol_sweeps.get(sym, False)
-            else "Não (Fluxo Direto)"
-        )
+        sym_def = prod_cfg.symbols.get(sym)
+        m_name = sym_def.model if sym_def else "smc_fibo_trailing"
+        m_tf = sym_def.macro_tf if sym_def else "M5"
+        o_type = sym_def.order_type if sym_def else "limit"
         print(
-            f"  📌 {sym:7s} -> Modelo: [{m_name}] | TF: {m_tf}/M1 | Varredura Wyckoff: {s_req}"
+            f"  📌 {sym:7s} -> Modelo: [{m_name}] | TF: {m_tf} | Tipo de Ordem: {o_type.upper()}"
         )
     print("\nPressione Ctrl+C para encerrar.\n")
     if args.dry_run:

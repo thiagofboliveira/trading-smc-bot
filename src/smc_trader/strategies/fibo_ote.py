@@ -40,6 +40,9 @@ class FiboOTEConfig:
     timeframe: str = "5min"
     fibo_entry: float = 0.705  # Nível Sweet Spot Institucional (70.5%)
     fibo_stop: float = 0.790  # Nível de Invalidação (79.0% ou 1.000 estrutural)
+    fibo_rejection_max: float | None = (
+        None  # Limite máximo da zona p/ rejeição (ex: 0.790 com fibo_entry=0.500)
+    )
     entry_mode: Literal["limit", "m5_close_rejection"] = "limit"
     stop_mode: Literal["fibo", "rejection_candle"] = "fibo"
     rejection_min_wick_ratio: float = 0.0
@@ -709,30 +712,47 @@ class FiboOTEStrategy:
             if leg.candles > cfg.max_holding_candles:
                 leg = None
                 continue
-            if leg.touched:
+            if leg.touched and cfg.entry_mode == "limit":
                 continue
 
-            # F-08: filtro de sessão para novas entradas
-            if cfg.session_filter and cfg.session_windows:
-                cur_ts = ts[i]
-                t_str = cur_ts.strftime("%H:%M")
-                if not any(
-                    w_start <= t_str < w_end for w_start, w_end in cfg.session_windows
-                ):
-                    continue
-
-            # F-04: toque contra o nível calculado até a barra i-1
             d = leg.d
             level = leg.level(cfg.fibo_entry)
             touch = lows[i] if d == 1 else highs[i]
-            if d * (level - touch) >= 0:
-                if cfg.entry_mode == "m5_close_rejection":
+
+            if cfg.entry_mode == "m5_close_rejection":
+                # Se rompeu a origem estrutural (1.000), invalida a perna imediatamente
+                if d * (leg.origin - touch) >= 0:
+                    leg = None
+                    continue
+                in_zone = d * (level - touch) >= 0
+                if in_zone:
+                    leg.touched = True
+                ma_touched = (
+                    (lows[i] <= conf_mas[i] <= highs[i])
+                    if (cfg.confluence_ma and conf_mas is not None)
+                    else True
+                )
+                if in_zone and ma_touched:
                     # Espera o fechamento da barra i; a entrada só ocorre no open de i+1.
                     # Por isso, os dados da barra i (close[i], high[i], low[i], médias[i])
                     # já estão fechados no momento em que a ordem para i+1 é decidida.
+                    in_session = True
+                    if cfg.session_filter and cfg.session_windows:
+                        t_str = ts[i].strftime("%H:%M")
+                        in_session = any(
+                            w_start <= t_str < w_end
+                            for w_start, w_end in cfg.session_windows
+                        )
+                    rej_bound = (
+                        leg.level(cfg.fibo_rejection_max)
+                        if cfg.fibo_rejection_max is not None
+                        else level
+                    )
                     inv_level = leg.level(cfg.fibo_stop)
-                    cond = (d * (closes[i] - level) > 0) and (
-                        d * (closes[i] - inv_level) > 0
+                    cond = (
+                        in_session
+                        and (d * (closes[i] - rej_bound) > 0)
+                        and (d * (closes[i] - inv_level) > 0)
                     )
                     if cond and cfg.rejection_min_wick_ratio > 0:
                         rng_b = highs[i] - lows[i]
@@ -766,10 +786,6 @@ class FiboOTEStrategy:
                                 cond = False
                             if d == -1 and slope >= -cfg.trend_ma_min_slope:
                                 cond = False
-                    if cond and cfg.confluence_ma and conf_mas is not None:
-                        c_ma = conf_mas[i]
-                        if not (lows[i] <= c_ma <= highs[i]):
-                            cond = False
                     if cond:
                         curr_spread = (
                             (ask_opens[i] - opens[i])
@@ -804,7 +820,23 @@ class FiboOTEStrategy:
                             )
                     leg = None
                     continue
+                if not leg.touched:
+                    ext = highs[i] if d == 1 else lows[i]
+                    if d * (ext - leg.extreme) > 0:
+                        leg.extreme = ext
+                continue
 
+            # F-08: filtro de sessão para novas entradas (modo limit)
+            if cfg.session_filter and cfg.session_windows:
+                cur_ts = ts[i]
+                t_str = cur_ts.strftime("%H:%M")
+                if not any(
+                    w_start <= t_str < w_end for w_start, w_end in cfg.session_windows
+                ):
+                    continue
+
+            # F-04: toque contra o nível calculado até a barra i-1
+            if d * (level - touch) >= 0:
                 # Modo "limit": a ordem executa no toque intrabar (close[i] ainda não existe);
                 # todo filtro adicional usa estritamente a barra anterior (i-1).
                 if (

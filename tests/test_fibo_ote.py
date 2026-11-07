@@ -419,3 +419,34 @@ def test_f13_m5_close_rejection_stop_abaixo_do_candle_de_rejeicao_e_live():
     assert t.r_multiple == pytest.approx(2.0)
 
 
+def test_f14_zona_50_79_aguarda_toque_e_rejeicao_na_ema80():
+    """Valida a zona [0.50, 0.79] com toque e rejeição na EMA80 (fibo_rejection_max=0.79)."""
+    # Perna: 95 -> 108 (span 13). Nível 0.50 = 101.5, 0.79 = 97.73, 0.886 = 96.482.
+    # Barra 9: entra na zona 0.50 (low 101.0 <= 101.5), mas ainda acima da EMA80 (~100.3) -> não consome o gatilho.
+    # Barra 10: toca a EMA80 dentro da zona (low 99.8 <= EMA80 <= high 103.0) e fecha em 102.5 (> EMA80 e > 97.73).
+    # Barra 11: abre em 102.5 (entry = 102.6) e vai ao alvo 2R.
+    b9_only_50 = (107.0, 107.5, 101.0, 102.0)
+    b10_touch_ema80 = (102.0, 103.0, 99.8, 102.5)
+    b11_tp = (102.5, 116.0, 102.0, 115.5)
+
+    trades = run(
+        PREFIX + [BOS_QUIET, b9_only_50, b10_touch_ema80, b11_tp] + FLAT_HIGH,
+        fibo_entry=0.50,
+        fibo_rejection_max=0.79,
+        fibo_stop=0.886,
+        entry_mode="m5_close_rejection",
+        stop_mode="fibo",
+        confluence_ma="ema80",
+        trend_ma="ema80",
+        target_mode="3R",
+        target_r=2.0,
+    )
+    assert len(trades) == 1
+    t = trades[0]
+    assert t.entry_time == bar_time(11), "deve entrar na barra 11 (após a barra 10 tocar e rejeitar a EMA80)"
+    assert t.entry_price == pytest.approx(102.5 + SPREAD)
+    assert t.exit_reason == "TAKE_PROFIT"
+    assert t.r_multiple == pytest.approx(2.0)
+
+
+

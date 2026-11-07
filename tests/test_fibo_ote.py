@@ -360,3 +360,62 @@ def test_f12_filtro_trend_ma_nao_depende_do_fechamento_da_barra_do_toque():
     assert trades_high[0].entry_time == bar_time(9)
     assert trades_low[0].entry_price == pytest.approx(trades_high[0].entry_price)
 
+
+def test_f13_m5_close_rejection_entra_apenas_no_open_da_barra_seguinte():
+    """Regra 1 (AGENTS.md): confirmação no fechamento da barra i só pode entrar em i+1."""
+    rej_ok = (107.0, 107.5, 98.2, 102.0)    # barra 9: toca 98.835 e fecha acima (102.0)
+    rej_fail = (107.0, 107.5, 98.2, 98.5)   # barra 9: toca 98.835 e fecha abaixo (98.5)
+    b10 = (102.5, 109.0, 102.0, 108.5)      # barra 10: abre em 102.5 e bate o alvo
+
+    trades_ok = run(
+        PREFIX + [BOS_QUIET, rej_ok, b10] + FLAT_HIGH,
+        entry_mode="m5_close_rejection",
+        trend_ma="ema80",
+    )
+    trades_fail = run(
+        PREFIX + [BOS_QUIET, rej_fail, b10] + FLAT_HIGH,
+        entry_mode="m5_close_rejection",
+        trend_ma="ema80",
+    )
+
+    assert len(trades_ok) == 1
+    t = trades_ok[0]
+    assert t.entry_time == bar_time(10), "entrada após confirmação de fechamento deve ocorrer na barra i+1"
+    assert t.entry_price == pytest.approx(102.5 + SPREAD)
+    assert trades_fail == []
+
+
+def test_f13_m5_close_rejection_stop_abaixo_do_candle_de_rejeicao_e_live():
+    """Valida stop_mode='rejection_candle' e paridade com pending_setup no live."""
+    rej_bar = (107.0, 107.5, 98.4, 102.0)  # barra 9: mínima 98.4, pavio inferior = 3.6 (> 50% do range 9.1)
+    b10_tp = (102.0, 110.0, 101.5, 109.6)  # entrada 102.1, stop 98.4 (risco 3.7) -> alvo 2R = 109.5
+
+    strat = FiboOTEStrategy(
+        cfg(
+            entry_mode="m5_close_rejection",
+            stop_mode="rejection_candle",
+            rejection_min_wick_ratio=0.3,
+            target_mode="3R",
+            target_r=2.0,
+        )
+    )
+    # 1. Antes do toque (até a barra 8), pending_setup não arma ordem limite cega
+    assert strat.pending_setup(m1_from_m5(PREFIX + [BOS_QUIET]), SPREAD) is None
+
+    # 2. Após o fechamento da barra 9 com rejeição, pending_setup arma entrada para a barra 10
+    setup = strat.pending_setup(m1_from_m5(PREFIX + [BOS_QUIET, rej_bar]), SPREAD)
+    assert setup is not None
+    assert setup.stop_loss == pytest.approx(98.4)
+
+    # 3. No backtest, entra na barra 10 com stop na mínima da barra 9 (98.4) e alvo de 2R
+    trades = strat.run_backtest(
+        m1_from_m5(PREFIX + [BOS_QUIET, rej_bar, b10_tp] + FLAT_HIGH), "TEST", SPREAD
+    )
+    assert len(trades) == 1
+    t = trades[0]
+    assert t.entry_time == bar_time(10)
+    assert t.stop_loss == pytest.approx(98.4)
+    assert t.exit_reason == "TAKE_PROFIT"
+    assert t.r_multiple == pytest.approx(2.0)
+
+

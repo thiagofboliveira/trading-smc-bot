@@ -85,6 +85,15 @@ def fibo_runner(**kw):
 FIBO_VARIANTS = [
     dict(fibo_entry=0.705, fibo_stop=0.79, target_mode="0_percent"),
     dict(fibo_entry=0.618, fibo_stop=1.0, target_mode="3R", use_lock_2to1=True),
+    dict(
+        fibo_entry=0.618,
+        fibo_stop=0.886,
+        entry_mode="m5_close_rejection",
+        stop_mode="rejection_candle",
+        target_mode="3R",
+        target_r=2.0,
+        trend_ma="ema80",
+    ),
 ]
 
 

@@ -40,6 +40,9 @@ class FiboOTEConfig:
     timeframe: str = "5min"
     fibo_entry: float = 0.705  # Nível Sweet Spot Institucional (70.5%)
     fibo_stop: float = 0.790  # Nível de Invalidação (79.0% ou 1.000 estrutural)
+    entry_mode: Literal["limit", "m5_close_rejection"] = "limit"
+    stop_mode: Literal["fibo", "rejection_candle"] = "fibo"
+    rejection_min_wick_ratio: float = 0.0
     target_mode: Literal["3R", "0_percent", "proj_618", "trailing_only"] = "0_percent"
     target_r: float = 3.0
     pivot_k: int = 2  # Delay fractal (2 barras para confirmação sem lookahead)
@@ -147,6 +150,16 @@ class _Leg:
     def level(self, ratio: float) -> float:
         span = self.d * (self.extreme - self.origin)
         return self.extreme - self.d * ratio * span
+
+
+@dataclass
+class _PendingOpenEntry:
+    d: int
+    stop: float
+    level: float
+    extreme: float
+    risk_ref: float
+    bos_idx: int
 
 
 @dataclass
@@ -450,6 +463,7 @@ class FiboOTEStrategy:
         last_sh_idx = last_sl_idx = None
         pos: _Position | None = None
         leg: _Leg | None = None
+        pending_open: _PendingOpenEntry | None = None
         last_roll_idx = -1
 
         for i in range(k + 1, n):
@@ -465,6 +479,7 @@ class FiboOTEStrategy:
                     )
                     pos = None
                 leg = None
+                pending_open = None
                 last_sh_price = last_sl_price = None
                 last_sh_idx = last_sl_idx = None
                 last_roll_idx = i
@@ -481,6 +496,62 @@ class FiboOTEStrategy:
                 last_sh_price, last_sh_idx = highs[chk], chk
             if swing_ok and swing_l[chk]:
                 last_sl_price, last_sl_idx = lows[chk], chk
+
+            # 1b. Ordem a mercado armada no fechamento da barra i-1 (entry_mode="m5_close_rejection"):
+            # executa no open desta barra (i), antes do gerenciamento da posição.
+            if pending_open is not None and pos is None:
+                po = pending_open
+                pending_open = None
+                d_po = po.d
+                curr_spread = (
+                    (ask_opens[i] - opens[i])
+                    if (ask_opens is not None and i < len(ask_opens))
+                    else spread
+                )
+                slip = cfg.slippage if d_po == 1 else -cfg.slippage
+                entry_px = opens[i] + (curr_spread if d_po == 1 else 0.0) + slip
+                risk_px = d_po * (entry_px - po.stop)
+                if risk_px <= 0:
+                    # Gap na abertura já além do stop: executa e encerra imediatamente no open
+                    pos_gap = _Position(
+                        d=d_po,
+                        entry_idx=i,
+                        entry_price=entry_px + d_po * po.risk_ref,
+                        stop=po.stop,
+                        target=po.extreme,
+                        risk=po.risk_ref,
+                    )
+                    trades.append(
+                        close_trade(
+                            pos_gap,
+                            i,
+                            get_stop_exit_price(pos_gap, i),
+                            "STOP_LOSS",
+                        )
+                    )
+                    leg = None
+                    continue
+                if risk_px > curr_spread * 1.5:
+                    if cfg.target_mode == "trailing_only":
+                        target_px = 0.0
+                    elif cfg.target_mode == "3R":
+                        target_px = entry_px + d_po * risk_px * cfg.target_r
+                    elif cfg.target_mode == "proj_618":
+                        target_px = po.extreme + 0.618 * (po.extreme - po.level)
+                    else:
+                        target_px = po.extreme
+                    if (
+                        cfg.target_mode in ("trailing_only", "3R")
+                        or d_po * (target_px - entry_px) > 0
+                    ):
+                        pos = _Position(
+                            d=d_po,
+                            entry_idx=i,
+                            entry_price=entry_px,
+                            stop=po.stop,
+                            target=target_px,
+                            risk=risk_px,
+                        )
 
             # 2. Gerenciamento da posição aberta (barras posteriores à entrada)
             if pos is not None:
@@ -655,8 +726,87 @@ class FiboOTEStrategy:
             level = leg.level(cfg.fibo_entry)
             touch = lows[i] if d == 1 else highs[i]
             if d * (level - touch) >= 0:
-                # Checa filtros adicionais de tendência e confluência usando apenas i-1,
-                # pois a entrada limite ocorre no toque intrabar (close[i] ainda não existe).
+                if cfg.entry_mode == "m5_close_rejection":
+                    # Espera o fechamento da barra i; a entrada só ocorre no open de i+1.
+                    # Por isso, os dados da barra i (close[i], high[i], low[i], médias[i])
+                    # já estão fechados no momento em que a ordem para i+1 é decidida.
+                    inv_level = leg.level(cfg.fibo_stop)
+                    cond = (d * (closes[i] - level) > 0) and (
+                        d * (closes[i] - inv_level) > 0
+                    )
+                    if cond and cfg.rejection_min_wick_ratio > 0:
+                        rng_b = highs[i] - lows[i]
+                        wick_len = (
+                            (min(opens[i], closes[i]) - lows[i])
+                            if d == 1
+                            else (highs[i] - max(opens[i], closes[i]))
+                        )
+                        cond = rng_b > 0 and (
+                            wick_len >= cfg.rejection_min_wick_ratio * rng_b
+                        )
+                    if (
+                        cond
+                        and cfg.trend_filter_80_200
+                        and emas80 is not None
+                        and smas200 is not None
+                    ):
+                        if d == 1 and emas80[i] <= smas200[i]:
+                            cond = False
+                        if d == -1 and emas80[i] >= smas200[i]:
+                            cond = False
+                    if cond and cfg.trend_ma and trend_mas is not None:
+                        t_ma = trend_mas[i]
+                        if d == 1 and closes[i] <= t_ma:
+                            cond = False
+                        if d == -1 and closes[i] >= t_ma:
+                            cond = False
+                        if cond and cfg.trend_ma_slope and i > 0:
+                            slope = trend_mas[i] - trend_mas[i - 1]
+                            if d == 1 and slope <= cfg.trend_ma_min_slope:
+                                cond = False
+                            if d == -1 and slope >= -cfg.trend_ma_min_slope:
+                                cond = False
+                    if cond and cfg.confluence_ma and conf_mas is not None:
+                        c_ma = conf_mas[i]
+                        if not (lows[i] <= c_ma <= highs[i]):
+                            cond = False
+                    if cond:
+                        curr_spread = (
+                            (ask_opens[i] - opens[i])
+                            if (ask_opens is not None and i < len(ask_opens))
+                            else spread
+                        )
+                        c_ref = closes[i] + (curr_spread if d == 1 else 0.0)
+                        if cfg.stop_mode == "rejection_candle":
+                            stop_px = (
+                                lows[i]
+                                if d == 1
+                                else (
+                                    ask_highs[i]
+                                    if (ask_highs is not None and i < len(ask_highs))
+                                    else highs[i] + spread
+                                )
+                            )
+                        else:
+                            stop_px = inv_level
+                        risk_ref = d * (c_ref - stop_px)
+                        if risk_ref > curr_spread * 1.5 and (
+                            cfg.target_mode in ("trailing_only", "3R")
+                            or d * (leg.extreme - c_ref) > 0
+                        ):
+                            pending_open = _PendingOpenEntry(
+                                d=d,
+                                stop=stop_px,
+                                level=level,
+                                extreme=leg.extreme,
+                                risk_ref=risk_ref,
+                                bos_idx=leg.bos_idx,
+                            )
+                    leg = None
+                    continue
+
+                # Modo "limit": a ordem executa no toque intrabar (close[i] ainda não existe);
+                # todo filtro adicional usa estritamente a barra anterior (i-1).
                 if (
                     cfg.trend_filter_80_200
                     and emas80 is not None
@@ -698,6 +848,32 @@ class FiboOTEStrategy:
                 if d * (ext - leg.extreme) > 0:
                     leg.extreme = ext
         if live:
+            if cfg.entry_mode == "m5_close_rejection":
+                if pos is not None or pending_open is None or n < 1:
+                    return None
+                po = pending_open
+                slip = cfg.slippage if po.d == 1 else -cfg.slippage
+                entry_px = closes[n - 1] + (spread if po.d == 1 else 0.0) + slip
+                risk_px = po.d * (entry_px - po.stop)
+                if risk_px <= spread * 1.5:
+                    return None
+                if cfg.target_mode == "trailing_only":
+                    target_px = 0.0
+                elif cfg.target_mode == "3R":
+                    target_px = entry_px + po.d * risk_px * cfg.target_r
+                elif cfg.target_mode == "proj_618":
+                    target_px = po.extreme + 0.618 * (po.extreme - po.level)
+                else:
+                    target_px = po.extreme
+                return PendingSetup(
+                    direction="long" if po.d == 1 else "short",
+                    entry_price=entry_px,
+                    stop_loss=po.stop,
+                    take_profit=target_px,
+                    risk=risk_px,
+                    bos_time=ts[po.bos_idx],
+                    candles_left=1,
+                )
             if pos is not None or leg is None or leg.touched or n < 1:
                 return None
             # F-08: filtro de sessão para novas ordens limite pendentes na barra seguinte (n)

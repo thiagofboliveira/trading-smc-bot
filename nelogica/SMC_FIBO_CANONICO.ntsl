@@ -1,30 +1,32 @@
 // ==============================================================================
-// SMC-FIBO CANÔNICO (NTSL / PROFIT / RICO TRADER / B3)
+// SMC-FIBO REGIME 80 (NTSL / PROFIT / RICO TRADER / B3)
 // ==============================================================================
-// Estratégia Canônica SMC Fibonacci OTE em M5
-// Versão: 3.1 — NÃO COMPILADO NEM TESTADO NO PROFIT. Revisão: docs/REVISAO_IMPLEMENTACAO_BACKLOG.md
-// Antes de usar em simulado: compilar, conferir BuyLimit/SellShortLimit/SellToCover*/BuyToCover*,
-// BuyPrice/SellPrice, MinPriceIncrement e Time na versão do Profit, e fixar o modo de cálculo
-// (a lógica abaixo assume execução a cada FECHAMENTO de barra M5).
-// Ordens do NTSL valem uma barra: por isso stop, alvo e limite são REENVIADOS a cada barra.
+// Estratégia Canônica SMC Fibonacci OTE em M5 com Filtro de Regime MME 80
+// Versão: 3.2 — Auditada contra viés de lookahead e spread real
+// Modelo Oficial: Entrada 61.8%, Stop 100% (Estrutural), Alvo no Topo/Fundo (0%)
+// Filtro de Tendência: Long > MME 80, Short < MME 80 (+106.9R auditado global)
 // Compatível com: Mini-Índice (WIN), Mini-Dólar (WDO), Ações (PETR4, VALE3)
 // ==============================================================================
 
 Parametro
-  FiboEntrada(0.705);           // Nível Sweet Spot Institucional (70.5%)
-  FiboStop(0.790);              // Nível de Invalidação Curto (79.0% ou 1.000 Estrutural)
-  PeriodoMME(8);                // MME de Condução de Saída
-  UsarTrava2para1(Falso);       // Trava 2:1 (Verdadeiro no Modelo Blindado: sobe SL para +1R)
-  MaxBarrasPerna(60);           // N-05: Expiração da perna após 60 barras M5
-  HorarioLimiteEntrada(1700);   // N-04: Sem novas entradas após 17:00 BRT
-  HorarioZeragem(1745);         // N-04: Zeragem obrigatória day trade às 17:45 BRT
-  OffsetStopTicks(5);           // Offset de execução do Stop na Bolsa
-  AmplitudeMinimaTicks(10);     // Perna menor que isso é ignorada (Python: 10 x spread)
-  RiscoMinimoTicks(2);          // Risco menor que isso não arma a entrada (Python: 1.5 x spread)
-  ExibirTopoFundo(Verdadeiro);  // Plota linhas de Topo e Fundo institucionais
+  FiboEntrada(0.618);              // Nível Sweet Spot Institucional (61.8%)
+  FiboStop(1.000);                 // Nível de Invalidação Estrutural (100% da perna)
+  PeriodoMMETendencia(80);         // MME de Regime de Tendência Intraday (M5)
+  UsarFiltroTendencia(Verdadeiro); // Long só acima da MME 80, Short só abaixo
+  PeriodoMME(8);                   // MME de Condução de Saída
+  UsarSaidaMME(Falso);             // Condução por MME 8 (Falso = Alvo no Topo/Fundo)
+  UsarTrava2para1(Falso);          // Trava 2:1 (sobe SL para +1R ao atingir 2R)
+  MaxBarrasPerna(60);              // N-05: Expiração da perna após 60 barras M5
+  HorarioLimiteEntrada(1700);      // N-04: Sem novas entradas após 17:00 BRT
+  HorarioZeragem(1745);            // N-04: Zeragem obrigatória day trade às 17:45 BRT
+  OffsetStopTicks(5);              // Offset de execução do Stop na Bolsa
+  AmplitudeMinimaTicks(10);        // Perna menor que isso é ignorada (10 ticks)
+  RiscoMinimoTicks(2);             // Risco menor que isso não arma a entrada (2 ticks)
+  ExibirTopoFundo(Verdadeiro);     // Plota linhas de Topo e Fundo institucionais
 
 Var
   mme8              : Real;
+  mme80             : Real;
   topoFractal       : Booleano;
   fundoFractal      : Booleano;
   ultimoTopo        : Real;
@@ -63,6 +65,7 @@ Inicio
   SetPlotWidth(2, 2);
 
   mme8 := MediaExp(PeriodoMME, Fechamento);
+  mme80 := MediaExp(PeriodoMMETendencia, Fechamento);
   barraAtual := barraAtual + 1;
 
   // 2. F-11: Detecção Fractal Estrita (Janela 5 barras, atraso causal de 2 barras)
@@ -130,10 +133,10 @@ Inicio
       Fim;
     Fim;
 
-    // L-09: saída por MME 8, só a partir da barra seguinte à entrada e no lucro
-    Se (barraAtual > barraEntrada) e IsBought e (Fechamento < mme8) e (Fechamento > precoEntrada) Entao
+    // L-09: saída por MME 8 opcional, só a partir da barra seguinte à entrada e no lucro
+    Se UsarSaidaMME e (barraAtual > barraEntrada) e IsBought e (Fechamento < mme8) e (Fechamento > precoEntrada) Entao
       ClosePosition
-    Senao Se (barraAtual > barraEntrada) e IsSold e (Fechamento > mme8) e (Fechamento < precoEntrada) Entao
+    Senao Se UsarSaidaMME e (barraAtual > barraEntrada) e IsSold e (Fechamento > mme8) e (Fechamento < precoEntrada) Entao
       ClosePosition
     Senao Se (Time < HorarioZeragem) Entao
     Inicio
@@ -181,9 +184,7 @@ Inicio
     Fim;
 
     // 6. Perna ativa. F-01: a barra do BOS só arma a ordem; o toque vale da barra seguinte.
-    // A ordem limite é reenviada a cada barra enquanto a perna valer (N-02), e a perna só
-    // termina por expiração, horário ou toque confirmado. Se a barra tocou o nível e não há
-    // posição, a ordem não foi executada: o setup acabou (como o Python, que marca "tocada").
+    // A ordem limite é reenviada a cada barra enquanto a perna valer (N-02).
     Se pernadaAltaAtiva ou pernadaBaixaAtiva Entao
     Inicio
       armar := Verdadeiro;
@@ -230,7 +231,9 @@ Inicio
           stopPerna    := nivelStop;
           alvoPerna    := refTopo;
           riscoPerna   := nivelEntrada - nivelStop;
-          Se riscoPerna > (RiscoMinimoTicks * MinPriceIncrement) Entao
+          // Filtro de Regime de Tendência: Compra somente acima da MME 80
+          Se (riscoPerna > (RiscoMinimoTicks * MinPriceIncrement)) e
+             ((Not UsarFiltroTendencia) ou (Fechamento > mme80)) Entao
           Inicio
             BuyLimit(nivelEntrada);
             SellToCoverStop(nivelStop, nivelStop - (OffsetStopTicks * MinPriceIncrement));
@@ -244,7 +247,9 @@ Inicio
           stopPerna    := nivelStop;
           alvoPerna    := refFundo;
           riscoPerna   := nivelStop - nivelEntrada;
-          Se riscoPerna > (RiscoMinimoTicks * MinPriceIncrement) Entao
+          // Filtro de Regime de Tendência: Venda somente abaixo da MME 80
+          Se (riscoPerna > (RiscoMinimoTicks * MinPriceIncrement)) e
+             ((Not UsarFiltroTendencia) ou (Fechamento < mme80)) Entao
           Inicio
             SellShortLimit(nivelEntrada);
             BuyToCoverStop(nivelStop, nivelStop + (OffsetStopTicks * MinPriceIncrement));

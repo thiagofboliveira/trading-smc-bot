@@ -73,8 +73,11 @@ class FiboOTEConfig:
     trend_filter_80_200: bool = (
         False  # Long só se EMA80 > SMA200, Short só se EMA80 < SMA200
     )
+    trend_ma: str | None = (
+        None  # Filtro de regime de tendência por média móvel ('sma20', 'sma50', 'sma200', 'ema80', 'ema20')
+    )
     confluence_ma: str | None = (
-        None  # Exige toque na média móvel na entrada ('ema8', 'sma20', etc.)
+        None  # Exige toque na média móvel na entrada ('ema8', 'ema20', 'sma20', 'sma50', 'ema80', 'sma200')
     )
     check_intrabar_sl: bool = True  # A barra de entrada também pode estopar a posição
     max_position_candles: int = 0  # F-07: tempo máximo de posição (0 = sem limite)
@@ -253,6 +256,10 @@ class FiboOTEStrategy:
                 df_res["confluence_ma"] = (
                     df_res["close"].ewm(span=8, adjust=False).mean()
                 )
+            elif cma == "ema20":
+                df_res["confluence_ma"] = (
+                    df_res["close"].ewm(span=20, adjust=False).mean()
+                )
             elif cma == "sma20":
                 df_res["confluence_ma"] = df_res["close"].rolling(20).mean()
             elif cma == "sma50":
@@ -263,6 +270,21 @@ class FiboOTEStrategy:
                 )
             elif cma == "sma200":
                 df_res["confluence_ma"] = df_res["close"].rolling(200).mean()
+
+        if self.config.trend_ma:
+            tma = self.config.trend_ma.lower()
+            if tma == "ema8":
+                df_res["trend_ma"] = df_res["close"].ewm(span=8, adjust=False).mean()
+            elif tma == "ema20":
+                df_res["trend_ma"] = df_res["close"].ewm(span=20, adjust=False).mean()
+            elif tma == "sma20":
+                df_res["trend_ma"] = df_res["close"].rolling(20).mean()
+            elif tma == "sma50":
+                df_res["trend_ma"] = df_res["close"].rolling(50).mean()
+            elif tma == "ema80":
+                df_res["trend_ma"] = df_res["close"].ewm(span=80, adjust=False).mean()
+            elif tma == "sma200":
+                df_res["trend_ma"] = df_res["close"].rolling(200).mean()
 
         return df_res
 
@@ -315,6 +337,9 @@ class FiboOTEStrategy:
         smas200 = df["sma200"].to_numpy() if "sma200" in df.columns else None
         conf_mas = (
             df["confluence_ma"].to_numpy() if "confluence_ma" in df.columns else None
+        )
+        trend_mas = (
+            df["trend_ma"].to_numpy() if "trend_ma" in df.columns else None
         )
         swing_h, swing_l = _fractal_swings(highs, lows, k)
 
@@ -634,6 +659,12 @@ class FiboOTEStrategy:
                         continue
                     if d == -1 and emas80[i] >= smas200[i]:
                         continue
+                if cfg.trend_ma and trend_mas is not None:
+                    t_ma = trend_mas[i]
+                    if d == 1 and closes[i] <= t_ma:
+                        continue
+                    if d == -1 and closes[i] >= t_ma:
+                        continue
                 if cfg.confluence_ma and conf_mas is not None:
                     c_ma = conf_mas[i]
                     if not (lows[i] <= c_ma <= highs[i]):
@@ -677,6 +708,12 @@ class FiboOTEStrategy:
                 if leg.d == 1 and emas80[n - 1] <= smas200[n - 1]:
                     return None
                 if leg.d == -1 and emas80[n - 1] >= smas200[n - 1]:
+                    return None
+            if cfg.trend_ma and trend_mas is not None:
+                t_ma = trend_mas[n - 1]
+                if leg.d == 1 and closes[n - 1] <= t_ma:
+                    return None
+                if leg.d == -1 and closes[n - 1] >= t_ma:
                     return None
             # a próxima barra incrementa `candles` antes de testar a validade
             if leg.candles + 1 > cfg.max_holding_candles:

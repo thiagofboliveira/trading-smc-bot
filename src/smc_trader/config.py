@@ -194,6 +194,8 @@ class FiboModelConfig(BaseModel):
     target_r: float = Field(3.0, gt=0.0)
     pivot_k: int = Field(3, ge=1)
     trailing_exit_ma: str | None = "ema8"
+    trend_ma: str | None = None
+    confluence_ma: str | None = None
     profit_lock: ProfitLockConfig | None = None
     blocks_filter: list[str] | None = None
     require_sweep: bool | None = None

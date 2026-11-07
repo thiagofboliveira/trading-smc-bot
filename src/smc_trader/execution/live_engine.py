@@ -163,6 +163,12 @@ class LiveTradingEngine:
                     force_close_time=(
                         model_def.force_close_time if model_def else None
                     ),
+                    trend_ma=(
+                        model_def.trend_ma if model_def else None
+                    ),
+                    confluence_ma=(
+                        model_def.confluence_ma if model_def else None
+                    ),
                 )
                 self.fibo_evaluators[sym] = FiboLiveEvaluator(fibo_cfg)
 

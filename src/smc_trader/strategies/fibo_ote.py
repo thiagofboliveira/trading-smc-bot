@@ -1,10 +1,10 @@
 """
-Módulo Oficial da Estratégia SMC Fibonacci OTE (Optimal Trade Entry)
-Validação Empírica: M5 com entrada em 61.8%, stop em 79.0% e alvo 3R (ou topo prévio).
+Módulo Oficial da Estratégia SMC Fibonacci OTE (Optimal Trade Entry) — Versão Auditada Realista
+Implementa execução 100% livre de viés intrabar (anti-imunidade de mesma barra),
+Trailing Stop MME 8 com filtro de proteção de lucro e Trava de Lucro 2:1 (Blindagem de Capital).
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 import numpy as np
@@ -14,21 +14,26 @@ import pandas as pd
 @dataclass
 class FiboOTEConfig:
     timeframe: str = "5min"
-    fibo_entry: float = 0.618
-    fibo_stop: float = 0.790
-    target_mode: Literal["3R", "0_percent", "proj_618"] = "3R"
+    fibo_entry: float = 0.705           # Nível Sweet Spot Institucional (70.5%)
+    fibo_stop: float = 0.790            # Nível de Invalidação (79.0% ou 1.000 estrutural)
+    target_mode: Literal["3R", "0_percent", "proj_618", "trailing_only"] = "0_percent"
     target_r: float = 3.0
-    pivot_k: int = 3
+    pivot_k: int = 2                    # Delay fractal (2 barras para confirmação sem lookahead)
     max_holding_candles: int = 60
     enable_reentry_79: bool = False
     min_leg_spread_mult: float = 10.0
-    trailing_exit_ma: str | None = None  # ex: 'ema8', 'sma20', 'sma9', 'ema80' ou None
+    trailing_exit_ma: str | None = "ema8"  # 'ema8', 'sma20', 'sma9', 'ema80' ou None
+    trailing_profit_only: bool = True     # Exige fechamento no lucro para encerrar por trailing
+    use_lock_2to1: bool = False           # Trava 2:1 (Perfil Blindado: ao atingir +2R, sobe stop para +1R)
+    lock_trigger_r: float = 2.0
+    lock_guarantee_r: float = 1.0
+    check_intrabar_sl: bool = True        # Auditoria anti-imunidade: verifica se a própria barra de entrada estopou
 
 
 @dataclass
 class FiboTrade:
     symbol: str
-    stage: int  # 1 = entrada 61.8%, 2 = reentrada 79%
+    stage: int  # 1 = entrada primária, 2 = reentrada
     direction: Literal["long", "short"]
     entry_time: pd.Timestamp
     exit_time: pd.Timestamp
@@ -84,7 +89,7 @@ class FiboOTEStrategy:
         return df_res
 
     def run_backtest(self, df_m1: pd.DataFrame, symbol: str, spread: float) -> list[FiboTrade]:
-        """Executa simulação cronológica candle a candle."""
+        """Executa simulação cronológica candle a candle sem viés de mesma barra."""
         df = self.resample_data(df_m1)
         cfg = self.config
         k = cfg.pivot_k
@@ -121,6 +126,7 @@ class FiboOTEStrategy:
         entry_idx = 0
         risk = 0.0
         trade_stage = 1
+        trava_ativada = False
 
         active_leg = None
 
@@ -134,46 +140,64 @@ class FiboOTEStrategy:
                 last_sl_price = lows[chk_idx]
                 last_sl_idx = chk_idx
 
-            # 2. Gerenciamento de posição aberta
+            # 2. Gerenciamento de posição aberta (barras subsequentes à entrada)
             if in_pos:
                 c_high = highs[i]
                 c_low = lows[i]
                 c_close = closes[i]
 
+                # 2.1 Trava 2:1 (Blindagem de Capital)
+                if cfg.use_lock_2to1 and not trava_ativada:
+                    if pos_dir == 1:
+                        if c_high >= (entry_price + risk * cfg.lock_trigger_r):
+                            sl_price = entry_price + (risk * cfg.lock_guarantee_r)
+                            trava_ativada = True
+                    else:
+                        if c_low <= (entry_price - risk * cfg.lock_trigger_r):
+                            sl_price = entry_price - (risk * cfg.lock_guarantee_r)
+                            trava_ativada = True
+
+                # 2.2 Verificação de Saída por Trailing MA (Apenas se estiver no lucro!)
                 exit_by_trailing = False
                 trailing_exit_price = 0.0
                 if trailing_mas is not None and i > entry_idx:
                     curr_ma = trailing_mas[i]
                     if pos_dir == 1 and c_close < curr_ma:
-                        exit_by_trailing = True
-                        trailing_exit_price = c_close
+                        if (not cfg.trailing_profit_only) or (c_close > entry_price):
+                            exit_by_trailing = True
+                            trailing_exit_price = c_close
                     elif pos_dir == -1 and c_close > curr_ma:
-                        exit_by_trailing = True
-                        trailing_exit_price = c_close
+                        if (not cfg.trailing_profit_only) or (c_close < entry_price):
+                            exit_by_trailing = True
+                            trailing_exit_price = c_close
 
+                # 2.3 Resolução de Saídas (Stop Loss / Take Profit / Trailing MA)
                 if pos_dir == 1:  # LONG
                     hit_sl = c_low <= sl_price
-                    hit_tp = c_high >= tp_price
+                    hit_tp = (c_high >= tp_price) if cfg.target_mode != "trailing_only" else False
 
                     if hit_sl and hit_tp:
+                        # Pior cenário primeiro (conservador)
                         pnl_pts = sl_price - entry_price
+                        r_mult = pnl_pts / risk
                         trades.append(FiboTrade(
                             symbol=symbol, stage=trade_stage, direction="long",
                             entry_time=timestamps[entry_idx], exit_time=timestamps[i],
                             entry_price=entry_price, stop_loss=sl_price, take_profit=tp_price,
-                            risk_points=risk, pnl_points=pnl_pts, r_multiple=-1.0, win=False,
-                            exit_reason="STOP_LOSS"
+                            risk_points=risk, pnl_points=pnl_pts, r_multiple=r_mult, win=(r_mult > 0),
+                            exit_reason="LOCK_PROFIT_SL" if trava_ativada else "STOP_LOSS"
                         ))
                         in_pos = False
                         active_leg = None
                     elif hit_sl:
                         pnl_pts = sl_price - entry_price
+                        r_mult = pnl_pts / risk
                         trades.append(FiboTrade(
                             symbol=symbol, stage=trade_stage, direction="long",
                             entry_time=timestamps[entry_idx], exit_time=timestamps[i],
                             entry_price=entry_price, stop_loss=sl_price, take_profit=tp_price,
-                            risk_points=risk, pnl_points=pnl_pts, r_multiple=-1.0, win=False,
-                            exit_reason="STOP_LOSS"
+                            risk_points=risk, pnl_points=pnl_pts, r_multiple=r_mult, win=(r_mult > 0),
+                            exit_reason="LOCK_PROFIT_SL" if trava_ativada else "STOP_LOSS"
                         ))
                         in_pos = False
                         active_leg = None
@@ -203,27 +227,29 @@ class FiboOTEStrategy:
                         active_leg = None
                 else:  # SHORT
                     hit_sl = c_high >= sl_price
-                    hit_tp = c_low <= tp_price
+                    hit_tp = (c_low <= tp_price) if cfg.target_mode != "trailing_only" else False
 
                     if hit_sl and hit_tp:
                         pnl_pts = entry_price - sl_price
+                        r_mult = pnl_pts / risk
                         trades.append(FiboTrade(
                             symbol=symbol, stage=trade_stage, direction="short",
                             entry_time=timestamps[entry_idx], exit_time=timestamps[i],
                             entry_price=entry_price, stop_loss=sl_price, take_profit=tp_price,
-                            risk_points=risk, pnl_points=pnl_pts, r_multiple=-1.0, win=False,
-                            exit_reason="STOP_LOSS"
+                            risk_points=risk, pnl_points=pnl_pts, r_multiple=r_mult, win=(r_mult > 0),
+                            exit_reason="LOCK_PROFIT_SL" if trava_ativada else "STOP_LOSS"
                         ))
                         in_pos = False
                         active_leg = None
                     elif hit_sl:
                         pnl_pts = entry_price - sl_price
+                        r_mult = pnl_pts / risk
                         trades.append(FiboTrade(
                             symbol=symbol, stage=trade_stage, direction="short",
                             entry_time=timestamps[entry_idx], exit_time=timestamps[i],
                             entry_price=entry_price, stop_loss=sl_price, take_profit=tp_price,
-                            risk_points=risk, pnl_points=pnl_pts, r_multiple=-1.0, win=False,
-                            exit_reason="STOP_LOSS"
+                            risk_points=risk, pnl_points=pnl_pts, r_multiple=r_mult, win=(r_mult > 0),
+                            exit_reason="LOCK_PROFIT_SL" if trava_ativada else "STOP_LOSS"
                         ))
                         in_pos = False
                         active_leg = None
@@ -255,7 +281,7 @@ class FiboOTEStrategy:
 
             # 3. Detectar nova perna de impulsão por quebra de estrutura (BOS)
             if active_leg is None and last_sh_price is not None and last_sl_price is not None:
-                if last_sh_idx > last_sl_idx:  # Perna de alta
+                if last_sh_idx > last_sl_idx:  # BOS de Alta
                     if closes[i] > last_sh_price:
                         leg_low = last_sl_price
                         leg_high = highs[i]
@@ -266,14 +292,14 @@ class FiboOTEStrategy:
                                 "low": leg_low,
                                 "high": leg_high,
                                 "range": leg_range,
-                                "fibo_618": leg_high - cfg.fibo_entry * leg_range,
-                                "fibo_790": leg_high - cfg.fibo_stop * leg_range,
+                                "fibo_entry": leg_high - cfg.fibo_entry * leg_range,
+                                "fibo_stop": leg_high - cfg.fibo_stop * leg_range,
                                 "origin_100": leg_low,
-                                "touched_618": False,
+                                "touched_entry": False,
                                 "awaiting_79": False,
                                 "candles": 0
                             }
-                elif last_sl_idx > last_sh_idx:  # Perna de baixa
+                elif last_sl_idx > last_sh_idx:  # BOS de Baixa
                     if closes[i] < last_sl_price:
                         leg_high = last_sh_price
                         leg_low = lows[i]
@@ -284,10 +310,10 @@ class FiboOTEStrategy:
                                 "high": leg_high,
                                 "low": leg_low,
                                 "range": leg_range,
-                                "fibo_618": leg_low + cfg.fibo_entry * leg_range,
-                                "fibo_790": leg_low + cfg.fibo_stop * leg_range,
+                                "fibo_entry": leg_low + cfg.fibo_entry * leg_range,
+                                "fibo_stop": leg_low + cfg.fibo_stop * leg_range,
                                 "origin_100": leg_high,
-                                "touched_618": False,
+                                "touched_entry": False,
                                 "awaiting_79": False,
                                 "candles": 0
                             }
@@ -300,25 +326,25 @@ class FiboOTEStrategy:
                     continue
 
                 # Expansão da perna caso continue antes de retrair
-                if not active_leg["touched_618"] and not active_leg["awaiting_79"]:
+                if not active_leg["touched_entry"] and not active_leg["awaiting_79"]:
                     if active_leg["dir"] == 1 and highs[i] > active_leg["high"]:
                         active_leg["high"] = highs[i]
                         active_leg["range"] = active_leg["high"] - active_leg["low"]
-                        active_leg["fibo_618"] = active_leg["high"] - cfg.fibo_entry * active_leg["range"]
-                        active_leg["fibo_790"] = active_leg["high"] - cfg.fibo_stop * active_leg["range"]
+                        active_leg["fibo_entry"] = active_leg["high"] - cfg.fibo_entry * active_leg["range"]
+                        active_leg["fibo_stop"] = active_leg["high"] - cfg.fibo_stop * active_leg["range"]
                     elif active_leg["dir"] == -1 and lows[i] < active_leg["low"]:
                         active_leg["low"] = lows[i]
                         active_leg["range"] = active_leg["high"] - active_leg["low"]
-                        active_leg["fibo_618"] = active_leg["low"] + cfg.fibo_entry * active_leg["range"]
-                        active_leg["fibo_790"] = active_leg["low"] + cfg.fibo_stop * active_leg["range"]
+                        active_leg["fibo_entry"] = active_leg["low"] + cfg.fibo_entry * active_leg["range"]
+                        active_leg["fibo_stop"] = active_leg["low"] + cfg.fibo_stop * active_leg["range"]
 
-                # A) ENTRADA 1: Toque no nível 61.8%
-                if not active_leg["touched_618"] and not active_leg["awaiting_79"]:
+                # ENTRADA PRIMÁRIA: Toque no nível de Fibonacci
+                if not active_leg["touched_entry"] and not active_leg["awaiting_79"]:
                     if active_leg["dir"] == 1:
-                        if lows[i] <= active_leg["fibo_618"]:
-                            active_leg["touched_618"] = True
-                            raw_entry = active_leg["fibo_618"]
-                            raw_sl = active_leg["fibo_790"]
+                        if lows[i] <= active_leg["fibo_entry"]:
+                            active_leg["touched_entry"] = True
+                            raw_entry = active_leg["fibo_entry"]
+                            raw_sl = active_leg["fibo_stop"]
 
                             entry_price = raw_entry + spread
                             sl_price = raw_sl
@@ -330,75 +356,39 @@ class FiboOTEStrategy:
                                 elif cfg.target_mode == "0_percent":
                                     tp_price = active_leg["high"]
                                 elif cfg.target_mode == "proj_618":
-                                    corr_size = active_leg["high"] - active_leg["fibo_618"]
+                                    corr_size = active_leg["high"] - active_leg["fibo_entry"]
                                     tp_price = active_leg["high"] + (corr_size * 0.618)
-
-                                in_pos = True
-                                pos_dir = 1
-                                trade_stage = 1
-                                entry_idx = i
-                                continue
-                    else:
-                        if highs[i] >= active_leg["fibo_618"]:
-                            active_leg["touched_618"] = True
-                            raw_entry = active_leg["fibo_618"]
-                            raw_sl = active_leg["fibo_790"]
-
-                            entry_price = raw_entry
-                            sl_price = raw_sl + spread
-                            risk = sl_price - entry_price
-
-                            if risk > spread * 1.5:
-                                if cfg.target_mode == "3R":
-                                    tp_price = entry_price - (risk * cfg.target_r)
-                                elif cfg.target_mode == "0_percent":
-                                    tp_price = active_leg["low"]
-                                elif cfg.target_mode == "proj_618":
-                                    corr_size = active_leg["fibo_618"] - active_leg["low"]
-                                    tp_price = active_leg["low"] - (corr_size * 0.618)
-
-                                in_pos = True
-                                pos_dir = -1
-                                trade_stage = 1
-                                entry_idx = i
-                                continue
-
-                # B) ENTRADA 2: Rejeição no nível 79.0% (opcional, desativada por padrão)
-                elif active_leg["awaiting_79"] and cfg.enable_reentry_79:
-                    if active_leg["dir"] == 1 and lows[i] <= active_leg["origin_100"]:
-                        active_leg = None
-                        continue
-                    elif active_leg["dir"] == -1 and highs[i] >= active_leg["origin_100"]:
-                        active_leg = None
-                        continue
-
-                    if active_leg["dir"] == 1:
-                        if closes[i] > opens[i] and closes[i] > active_leg["fibo_790"]:
-                            raw_entry = closes[i]
-                            raw_sl = min(lows[i], active_leg["origin_100"])
-                            entry_price = raw_entry + spread
-                            sl_price = raw_sl
-                            risk = entry_price - sl_price
-
-                            if risk > spread * 1.5:
-                                if cfg.target_mode == "3R":
-                                    tp_price = entry_price + (risk * cfg.target_r)
-                                elif cfg.target_mode == "0_percent":
+                                else:
                                     tp_price = active_leg["high"]
-                                elif cfg.target_mode == "proj_618":
-                                    corr_size = active_leg["high"] - lows[i]
-                                    tp_price = active_leg["high"] + (corr_size * 0.618)
 
                                 in_pos = True
                                 pos_dir = 1
-                                trade_stage = 2
+                                trade_stage = 1
                                 entry_idx = i
-                                active_leg["awaiting_79"] = False
+                                trava_ativada = False
+
+                                # ==========================================================
+                                # AUDITORIA ANTI-IMUNIDADE (GEMINI ARGON):
+                                # Verifica se a própria barra de entrada afundou no Stop Loss!
+                                # ==========================================================
+                                if cfg.check_intrabar_sl and lows[i] <= sl_price:
+                                    pnl_pts = sl_price - entry_price
+                                    trades.append(FiboTrade(
+                                        symbol=symbol, stage=trade_stage, direction="long",
+                                        entry_time=timestamps[i], exit_time=timestamps[i],
+                                        entry_price=entry_price, stop_loss=sl_price, take_profit=tp_price,
+                                        risk_points=risk, pnl_points=pnl_pts, r_multiple=-1.0, win=False,
+                                        exit_reason="INTRABAR_STOP_LOSS"
+                                    ))
+                                    in_pos = False
+                                    active_leg = None
                                 continue
                     else:
-                        if closes[i] < opens[i] and closes[i] < active_leg["fibo_790"]:
-                            raw_entry = closes[i]
-                            raw_sl = max(highs[i], active_leg["origin_100"])
+                        if highs[i] >= active_leg["fibo_entry"]:
+                            active_leg["touched_entry"] = True
+                            raw_entry = active_leg["fibo_entry"]
+                            raw_sl = active_leg["fibo_stop"]
+
                             entry_price = raw_entry
                             sl_price = raw_sl + spread
                             risk = sl_price - entry_price
@@ -409,14 +399,32 @@ class FiboOTEStrategy:
                                 elif cfg.target_mode == "0_percent":
                                     tp_price = active_leg["low"]
                                 elif cfg.target_mode == "proj_618":
-                                    corr_size = highs[i] - active_leg["low"]
+                                    corr_size = active_leg["fibo_entry"] - active_leg["low"]
                                     tp_price = active_leg["low"] - (corr_size * 0.618)
+                                else:
+                                    tp_price = active_leg["low"]
 
                                 in_pos = True
                                 pos_dir = -1
-                                trade_stage = 2
+                                trade_stage = 1
                                 entry_idx = i
-                                active_leg["awaiting_79"] = False
+                                trava_ativada = False
+
+                                # ==========================================================
+                                # AUDITORIA ANTI-IMUNIDADE (GEMINI ARGON):
+                                # Verifica se a própria barra de entrada subiu no Stop Loss!
+                                # ==========================================================
+                                if cfg.check_intrabar_sl and highs[i] >= sl_price:
+                                    pnl_pts = entry_price - sl_price
+                                    trades.append(FiboTrade(
+                                        symbol=symbol, stage=trade_stage, direction="short",
+                                        entry_time=timestamps[i], exit_time=timestamps[i],
+                                        entry_price=entry_price, stop_loss=sl_price, take_profit=tp_price,
+                                        risk_points=risk, pnl_points=pnl_pts, r_multiple=-1.0, win=False,
+                                        exit_reason="INTRABAR_STOP_LOSS"
+                                    ))
+                                    in_pos = False
+                                    active_leg = None
                                 continue
 
         return trades

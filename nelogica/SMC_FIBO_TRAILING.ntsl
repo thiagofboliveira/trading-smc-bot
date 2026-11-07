@@ -1,22 +1,25 @@
 // ==============================================================================
-// PLAYBOOK OFICIAL SMC-FIBO-TRAILING (NTSL / PROFIT / RICO TRADER)
+// PLAYBOOK OFICIAL SMC-FIBO-TRAILING UNIVERSAL (NTSL / PROFIT / RICO TRADER)
 // ==============================================================================
 // Estratégia: SMC Fibonacci OTE (Optimal Trade Entry) + Condução Livre MME 8
-// Modelo: smc_fibo_trailing_44pct_2500R_2.23pf_32dd (Campeã Suprema)
-// Retorno Validado: +8.037 R (2 Anos) | +2.500 R (1 Ano) | Profit Factor: 2.70
-// Plataforma: Nelogica ProfitChart / Rico Trader / Clear Trader / XP Trader
-// Timeframes Recomendados B3: 2 Minutos (M2) ou 5 Minutos (M5)
-// Ativos Recomendados: Mini-Índice (WIN) e Mini-Dólar (WDO)
+// Versão: 2.2 — AUTO-ESCALA + FILTRO DE RISCO + PLOT DE LINHAS (ENTRADA / STOP / GAIN)
 // ==============================================================================
 
 Parametro
   FiboEntrada(0.705);       // Nível Sweet Spot Institucional (70.5%)
   FiboStop(0.790);          // Nível de Invalidação Curto (79.0%)
   PeriodoMME(8);            // Média Móvel Exponencial para Condução do Trade
-  MinPernadaPontos(150.0);   // Amplitude mínima do BOS (WIN: 150 pts | WDO: 5 pts)
+  MultVolatilidade(1.5);    // Multiplicador do Range Médio (Auto-escala)
+  PeriodoVolatilidade(20);  // Barras para calcular o tamanho médio do candle
+  
+  // FILTROS DE RISCO (Em Pontos do Ativo)
+  MaxStopPontos(250.0);     // STOP MÁXIMO: WIN sugerido 200-250 | WDO sugerido 8-10 (0 desativa)
+  MinStopPontos(50.0);      // STOP MÍNIMO: WIN sugerido 50-60   | WDO sugerido 3-4  (0 desativa)
 
 Var
   mme8              : Real;
+  rangeMedio        : Real;
+  filtroMinimo      : Real;
   topoFractal       : Booleano;
   fundoFractal      : Booleano;
   ultimoTopo        : Real;
@@ -26,7 +29,8 @@ Var
   precoEntrada      : Real;
   precoStop         : Real;
   precoAlvo         : Real;
-  riscoInicial      : Real;
+  riscoCalculado    : Real;
+  stopValido        : Booleano;
   
   pernadaAltaAtiva  : Booleano;
   pernadaBaixaAtiva : Booleano;
@@ -37,10 +41,22 @@ Var
   nivelStop         : Real;
 
 Inicio
-  // 1. Cálculo da MME de Condução
+  // 1. Configuração Visual das Linhas no Gráfico
+  SetPlotColor(1, clAmarelo);   // Linha 1: Preço de Entrada (Amarelo)
+  SetPlotColor(2, clVermelho);  // Linha 2: Stop Loss (Vermelho)
+  SetPlotColor(3, clVerde);     // Linha 3: Alvo de Gain (Verde)
+  SetPlotWidth(1, 2);
+  SetPlotWidth(2, 2);
+  SetPlotWidth(3, 2);
+
+  // 2. Cálculo da MME de Condução
   mme8 := MediaExp(PeriodoMME, Fechamento);
 
-  // 2. Detecção de Swings Fractais (Atraso de 2 barras para confirmação sem repintura)
+  // 3. Cálculo Universal de Volatilidade
+  rangeMedio   := Media(PeriodoVolatilidade, Maxima - Minima);
+  filtroMinimo := rangeMedio * MultVolatilidade;
+
+  // 4. Detecção de Swings Fractais (Atraso de 2 barras para confirmação sem repintura)
   topoFractal := (Maxima[2] > Maxima[1]) e (Maxima[2] > Maxima[0]) e 
                  (Maxima[2] > Maxima[3]) e (Maxima[2] > Maxima[4]);
                  
@@ -53,14 +69,14 @@ Inicio
   Se fundoFractal Entao
     ultimoFundo := Minima[2];
 
-  // 3. Detecção de Quebra de Estrutura (BOS - Break of Structure)
+  // 5. Detecção de Quebra de Estrutura (BOS - Break of Structure)
   Se (Not HasPosition) e (emOperacao = 0) Entao
   Inicio
-    // BOS de Alta: Fechamento rompe o último topo institucional
+    // BOS de Alta
     Se (ultimoTopo > 0) e (ultimoFundo > 0) e (Fechamento > ultimoTopo) e (Fechamento[1] <= ultimoTopo) Entao
     Inicio
       diffPernada := Maxima - ultimoFundo;
-      Se diffPernada >= MinPernadaPontos Entao
+      Se diffPernada >= filtroMinimo Entao
       Inicio
         pernadaAltaAtiva  := Verdadeiro;
         pernadaBaixaAtiva := Falso;
@@ -69,11 +85,11 @@ Inicio
       Fim;
     Fim;
 
-    // BOS de Baixa: Fechamento perde o último fundo institucional
+    // BOS de Baixa
     Se (ultimoTopo > 0) e (ultimoFundo > 0) e (Fechamento < ultimoFundo) e (Fechamento[1] >= ultimoFundo) Entao
     Inicio
       diffPernada := ultimoTopo - Minima;
-      Se diffPernada >= MinPernadaPontos Entao
+      Se diffPernada >= filtroMinimo Entao
       Inicio
         pernadaBaixaAtiva := Verdadeiro;
         pernadaAltaAtiva  := Falso;
@@ -90,24 +106,28 @@ Inicio
   Se pernadaBaixaAtiva e (Minima < refFundo) Entao
     refFundo := Minima;
 
-  // 4. Execução de Entrada no Sweet Spot 70.5% (Se não estiver posicionado)
+  // 6. Execução de Entrada com Filtro de Risco
   Se (Not HasPosition) e (emOperacao = 0) Entao
   Inicio
     // Entrada Comprada
     Se pernadaAltaAtiva Entao
     Inicio
-      diffPernada  := refTopo - refFundo;
-      nivelEntrada := refTopo - (diffPernada * FiboEntrada);
-      nivelStop    := refTopo - (diffPernada * FiboStop);
+      diffPernada    := refTopo - refFundo;
+      nivelEntrada   := refTopo - (diffPernada * FiboEntrada);
+      nivelStop      := refTopo - (diffPernada * FiboStop);
+      riscoCalculado := nivelEntrada - nivelStop;
 
-      Se (Minima <= nivelEntrada) e (Fechamento > nivelStop) Entao
+      stopValido := Verdadeiro;
+      Se (MaxStopPontos > 0) e (riscoCalculado > MaxStopPontos) Entao stopValido := Falso;
+      Se (MinStopPontos > 0) e (riscoCalculado < MinStopPontos) Entao stopValido := Falso;
+
+      Se stopValido e (Minima <= nivelEntrada) e (Fechamento > nivelStop) Entao
       Inicio
         BuyAtMarket;
         emOperacao        := 1;
         precoEntrada      := nivelEntrada;
         precoStop         := nivelStop;
         precoAlvo         := refTopo;
-        riscoInicial      := precoEntrada - precoStop;
         pernadaAltaAtiva  := Falso;
       Fim;
     Fim;
@@ -115,50 +135,51 @@ Inicio
     // Entrada Vendida
     Se pernadaBaixaAtiva Entao
     Inicio
-      diffPernada  := refTopo - refFundo;
-      nivelEntrada := refFundo + (diffPernada * FiboEntrada);
-      nivelStop    := refFundo + (diffPernada * FiboStop);
+      diffPernada    := refTopo - refFundo;
+      nivelEntrada   := refFundo + (diffPernada * FiboEntrada);
+      nivelStop      := refFundo + (diffPernada * FiboStop);
+      riscoCalculado := nivelStop - nivelEntrada;
 
-      Se (Maxima >= nivelEntrada) e (Fechamento < nivelStop) Entao
+      stopValido := Verdadeiro;
+      Se (MaxStopPontos > 0) e (riscoCalculado > MaxStopPontos) Entao stopValido := Falso;
+      Se (MinStopPontos > 0) e (riscoCalculado < MinStopPontos) Entao stopValido := Falso;
+
+      Se stopValido e (Maxima >= nivelEntrada) e (Fechamento < nivelStop) Entao
       Inicio
         SellShortAtMarket;
         emOperacao        := -1;
         precoEntrada      := nivelEntrada;
         precoStop         := nivelStop;
         precoAlvo         := refFundo;
-        riscoInicial      := precoStop - precoEntrada;
         pernadaBaixaAtiva := Falso;
       Fim;
     Fim;
   Fim;
 
-  // 5. Gestão Ativa da Posição (Condução 100% Livre pela MME 8 até Inversão ou Alvo)
+  // 7. Gestão Ativa da Posição (Condução 100% Livre pela MME 8)
   Se HasPosition ou (emOperacao <> 0) Entao
   Inicio
-    // -------------------------------------------------------------
-    // GESTÃO DA COMPRA (Trailing Livre)
-    // -------------------------------------------------------------
+    // GESTÃO DA COMPRA
     Se (IsBought) ou (emOperacao = 1) Entao
     Inicio
-      PaintBar(clVerde); // Coloração verde durante a condução
+      PaintBar(clVerde);
 
-      // A) STOP LOSS ORIGINAL (Proteção se o trade não evoluir)
+      // Stop Loss Original
       Se (Minima <= precoStop) Entao
       Inicio
         ClosePosition;
         emOperacao := 0;
       Fim
 
-      // B) SAÍDA DINÂMICA POR TRAILING STOP NA MME 8
-      // Encerra imediatamente quando uma barra fecha abaixo da MME 8 com lucro
+      // Saída por Trailing Stop na MME 8 (Fechamento abaixo da média no lucro)
       Senao Se (Fechamento < mme8) e (Fechamento[1] >= mme8[1]) e (Fechamento > precoEntrada) Entao
       Inicio
         ClosePosition;
         emOperacao := 0;
-        Alert(clAzul); // Alerta visual/sonoro: Saída Lucrativa por Trailing MME 8!
+        Alert(clAzul);
       Fim
 
-      // C) SAÍDA NO TOPO PRÉVIO ESTRUTURAL (Se atingir a máxima absoluta)
+      // Saída no Topo Prévio Estrutural
       Senao Se (Maxima >= precoAlvo) Entao
       Inicio
         ClosePosition;
@@ -166,36 +187,53 @@ Inicio
       Fim;
     Fim;
 
-    // -------------------------------------------------------------
-    // GESTÃO DA VENDA (Trailing Livre)
-    // -------------------------------------------------------------
+    // GESTÃO DA VENDA
     Se (IsSold) ou (emOperacao = -1) Entao
     Inicio
-      PaintBar(clVermelho); // Coloração vermelha durante a condução
+      PaintBar(clVermelho);
 
-      // A) STOP LOSS ORIGINAL (Proteção se o trade não evoluir)
+      // Stop Loss Original
       Se (Maxima >= precoStop) Entao
       Inicio
         ClosePosition;
         emOperacao := 0;
       Fim
 
-      // B) SAÍDA DINÂMICA POR TRAILING STOP NA MME 8
-      // Encerra imediatamente quando uma barra fecha acima da MME 8 com lucro
+      // Saída por Trailing Stop na MME 8 (Fechamento acima da média no lucro)
       Senao Se (Fechamento > mme8) e (Fechamento[1] <= mme8[1]) e (Fechamento < precoEntrada) Entao
       Inicio
         ClosePosition;
         emOperacao := 0;
-        Alert(clAzul); // Alerta visual/sonoro: Saída Lucrativa por Trailing MME 8!
+        Alert(clAzul);
       Fim
 
-      // C) SAÍDA NO FUNDO PRÉVIO ESTRUTURAL (Se atingir a mínima absoluta)
+      // Saída no Fundo Prévio Estrutural
       Senao Se (Minima <= precoAlvo) Entao
       Inicio
         ClosePosition;
         emOperacao := 0;
       Fim;
     Fim;
+  Fim;
+
+  // 8. PLOT DAS LINHAS NO GRÁFICO (Entrada, Stop Loss e Alvo Gain)
+  Se HasPosition ou (emOperacao <> 0) Entao
+  Inicio
+    Plot(precoEntrada); // Linha Amarela no preço exato de entrada
+    Plot2(precoStop);   // Linha Vermelha no nível de Stop Loss
+    Plot3(precoAlvo);   // Linha Verde no nível do Alvo de Gain
+  Fim
+  Senao Se pernadaAltaAtiva ou pernadaBaixaAtiva Entao
+  Inicio
+    Plot(nivelEntrada); // Mostra onde está armada a entrada pendente
+    Plot2(nivelStop);   // Mostra onde ficará o stop pendente
+    Se pernadaAltaAtiva Entao Plot3(refTopo) Senao Plot3(refFundo);
+  Fim
+  Senao
+  Inicio
+    NoPlot(1);
+    NoPlot(2);
+    NoPlot(3);
   Fim;
 
 Fim;

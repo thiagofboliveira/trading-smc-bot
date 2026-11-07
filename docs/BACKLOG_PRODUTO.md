@@ -24,6 +24,30 @@ Cada entrega (E0 a E9) deixa algo utilizável e só depende das anteriores.
 | E9 Sinais próprios (opcional) | sua estratégia oferecida como "funcionário pronto" | E8 + PQ aprovada + 3 meses em live |
 | PQ Pesquisa | estratégia própria com vantagem fora da amostra | E1 (paralela) |
 
+### Sequência e estimativa
+
+```
+E0 → E1 → E2 → E3 ─┬→ E4 ──→ E6 ─┐
+                   └→ E5 ──→ E7 ─┴→ E8 → (E9, se houver estratégia aprovada)
+          └──────── PQ (pesquisa, em paralelo desde a E1) ────────┘
+```
+
+Estimativas grosseiras (uma pessoa, com ajuda de agentes); variam muito com o ritmo.
+
+| Entrega | Estimativa | Marco ao concluir |
+|---|---|---|
+| E0 | 3 a 5 dias | base limpa |
+| E1 | 2 a 3 semanas | números do backtest confiáveis; a PQ pode começar |
+| E2 | 2 a 3 semanas | estratégia num lugar só; SDK e `strategy check` |
+| E3 | 1,5 a 2 semanas | **dia 0**: começa o histórico em paper |
+| E4 | 1 a 1,5 semana | uso diário pelo celular |
+| E5 | 3 a 4 semanas (pode correr junto com a E4) | o escritório; já dá para mostrar a outras pessoas |
+| E6 | 2 a 3 semanas | ordem no MT5 testada em demo; dinheiro real depende da PQ |
+| E7 | cerca de 2 semanas | escritório animado |
+| E8 (fase 1) | 4 a 6 semanas | primeira versão vendável |
+
+Até o sistema no celular (E0 a E4): cerca de 7 a 10 semanas.
+
 ---
 
 ## E0 — Fundação
@@ -32,7 +56,7 @@ Cada entrega (E0 a E9) deixa algo utilizável e só depende das anteriores.
 
 | ID | Item | Tam. | Critério de aceite |
 |---|---|---|---|
-| E0-1 | Trocar a senha do MT5 demo e tirar o login real de `test.env.example` | P | Senha trocada, por você. Decidir se o histórico do git será reescrito (`git filter-repo`). |
+| E0-1 | ~~Trocar a senha do MT5 demo~~ **Decidido (2026-11-07): mantida.** É conta de teste, sem dinheiro. Fica a regra: credencial de conta real nunca entra no repositório, só por variável de ambiente. | — | Decisão registrada. |
 | E0-2 | Conferir quais pendências da revisão os commits `9193602` e `9124e8f` resolveram e atualizar o status em `REVISAO_IMPLEMENTACAO_BACKLOG.md` | P | Cada achado marcado como resolvido (com teste) ou aberto. |
 | E0-3 | Uma única fonte de configuração de modelo: um loader lê `config/models/*.yaml` e alimenta backtest e live; `production.yaml` só referencia ids | M | Teste prova que backtest e live recebem o mesmo `FiboOTEConfig` para o mesmo id. |
 | E0-4 | Uma única tabela de custos (spread, comissão, slippage) em `contracts`, usada pelos dois motores | P | `backtest.costs.spread_pips` removido; teste de config. |

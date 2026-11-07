@@ -1,8 +1,7 @@
 # ===================================================================
 # SMC TRADER — CONFIGURAÇÃO OFICIAL DE PRODUÇÃO (LIVE / PAPER MT5)
 # Validado via Pydantic com restrição estrita extra='forbid'
-# Modelo Oficial: SMC-Fibo-Slope-50 (BOS + Fibo 61.8% + Stop 88.6% + MMA50 com Angulação)
-# Resultado Auditado Global: +157.1R | PF 1.28 | Win Rate 36.2% | MaxDD -17.0R
+# Modelos canônicos: smc_fibo_estrutural, smc_fibo_trailing, smc_fibo_blindado
 # ===================================================================
 
 trading:
@@ -23,19 +22,59 @@ kill_switch:
   max_data_delay_seconds: 180   # Bloqueia ordens se último candle for mais velho que 3 min
 
 models:
-  # Estratégia Canônica Oficial Aprovada
-  smc_fibo_slope_50:
-    name: "SMC-Fibo-Slope-50"
+  # Modelo 1: Fibo Trailing Stop por MME8 (REPROVADO NA AUDITORIA: -483R)
+  smc_fibo_trailing:
+    name: "SMC-Fibo-Trailing"
+    strategy: "fibo_ote"
+    timeframe: "M5"
+    fibo_entry: 0.705
+    fibo_stop: 0.790
+    target_mode: "0_percent"
+    target_r: 3.0
+    pivot_k: 3
+    trailing_exit_ma: "ema8"
+    status: "reproved"
+
+  # Modelo 2: Fibo Blindado (REPROVADO NA AUDITORIA: -478R)
+  smc_fibo_blindado:
+    name: "SMC-Fibo-Blindado"
+    strategy: "fibo_ote"
+    timeframe: "M5"
+    fibo_entry: 0.705
+    fibo_stop: 0.790
+    target_mode: "0_percent"
+    target_r: 3.0
+    pivot_k: 3
+    trailing_exit_ma: "ema8"
+    status: "reproved"
+    profit_lock:
+      trigger_r: 2.0
+      lock_r: 1.0
+
+  # Modelo 3: Fibo Estrutural Clássico (REPROVADO NA AUDITORIA: -270R)
+  smc_fibo_estrutural:
+    name: "SMC-Fibo-Estrutural"
+    strategy: "fibo_ote"
+    timeframe: "M5"
+    fibo_entry: 0.705
+    fibo_stop: 1.000
+    target_mode: "0_percent"
+    target_r: 3.0
+    pivot_k: 3
+    trailing_exit_ma: "ema8"
+    status: "reproved"
+
+  # Modelo 4: Fibo Ouro Sessão Londres/NY (+9.9R auditado, PF 1.05, WR 40.1%)
+  smc_fibo_gold_session:
+    name: "SMC-Fibo-Gold-Session"
     strategy: "fibo_ote"
     timeframe: "M5"
     fibo_entry: 0.618
-    fibo_stop: 0.886
+    fibo_stop: 1.000
     target_mode: "0_percent"
     target_r: 3.0
     pivot_k: 2
     trailing_exit_ma: null
-    trend_ma: "sma50"
-    trend_ma_slope: true
     session_filter: true
     session_windows: [["07:00", "18:00"]]
     status: "approved"
@@ -46,57 +85,50 @@ models:
 # ===================================================================
 symbols:
   XAUUSD:
-    model: "smc_fibo_slope_50"
-    description: "Ouro — SMC-Fibo-Slope-50 M5 (+34.6R auditado, PF 1.35)"
+    model: "smc_fibo_gold_session"
+    description: "Ouro — SMC-Fibo-Gold Sessão Londres/NY M5"
     macro_tf: "M5"
     order_type: "limit"
     enabled: false
 
   NAS100:
-    model: "smc_fibo_slope_50"
-    description: "Nasdaq 100 — SMC-Fibo-Slope-50 M5 (+46.6R auditado, PF 1.33)"
-    macro_tf: "M5"
-    order_type: "limit"
-    enabled: false
-
-  US30:
-    model: "smc_fibo_slope_50"
-    description: "Dow Jones 30 — SMC-Fibo-Slope-50 M5 (+36.1R auditado, PF 1.25)"
+    model: "smc_fibo_trailing"
+    description: "Nasdaq 100 — SMC-Fibo-Trailing M5 (Reprovado)"
     macro_tf: "M5"
     order_type: "limit"
     enabled: false
 
   DAX40:
-    model: "smc_fibo_slope_50"
-    description: "DAX 40 — SMC-Fibo-Slope-50 M5"
+    model: "smc_fibo_trailing"
+    description: "DAX 40 — SMC-Fibo-Trailing M5 (Reprovado)"
     macro_tf: "M5"
     order_type: "limit"
     enabled: false
 
   BRENT:
-    model: "smc_fibo_slope_50"
-    description: "Petróleo Brent — SMC-Fibo-Slope-50 M5 (+45.7R auditado, PF 1.38)"
+    model: "smc_fibo_trailing"
+    description: "Petróleo Brent — SMC-Fibo-Trailing M5 (Reprovado)"
     macro_tf: "M5"
     order_type: "limit"
     enabled: false
 
   USDJPY:
-    model: "smc_fibo_slope_50"
-    description: "USD/JPY — SMC-Fibo-Slope-50 M5"
+    model: "smc_fibo_trailing"
+    description: "USD/JPY — SMC-Fibo-Trailing M5 (Reprovado)"
     macro_tf: "M5"
     order_type: "limit"
     enabled: false
 
   EURUSD:
-    model: "smc_fibo_slope_50"
-    description: "EUR/USD — SMC-Fibo-Slope-50 M5"
+    model: "smc_fibo_trailing"
+    description: "EUR/USD — SMC-Fibo-Trailing M5 (Reprovado)"
     macro_tf: "M5"
     order_type: "limit"
     enabled: false
 
   GBPUSD:
-    model: "smc_fibo_slope_50"
-    description: "GBP/USD — SMC-Fibo-Slope-50 M5 (+6.6R auditado, PF 1.15)"
+    model: "smc_fibo_trailing"
+    description: "GBP/USD — SMC-Fibo-Trailing M5 (Reprovado)"
     macro_tf: "M5"
     order_type: "limit"
     enabled: false

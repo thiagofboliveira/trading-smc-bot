@@ -333,3 +333,30 @@ def test_b01_partial_exit_realizes_fraction_of_r():
     t = trades[0]
     assert t.exit_reason == "STOP_LOSS"
     assert t.r_multiple == pytest.approx(0.0, abs=1e-3)
+
+
+def test_f12_filtro_trend_ma_nao_depende_do_fechamento_da_barra_do_toque():
+    """Regra 1 (AGENTS.md): ordem limite executa no toque intrabar; close[i] não existe ainda.
+
+    Cenário A: barra 9 toca 98.835 e despenca para fechar em 98.0 (abaixo da EMA80 ~101.8).
+    Cenário B: barra 9 toca 98.835 e recupera para fechar em 106.0 (acima da EMA80).
+    Na barra 8 (anterior à entrada), o fechamento (107.0) estava acima da EMA80 em ambos.
+    Ambos os cenários DEVEM gerar a entrada comprada na barra 9 — o backtest não pode
+    descartar o Cenário A olhando o fechamento futuro da própria barra 9.
+    """
+    entry_bar_closes_low = (107.0, 107.5, 98.5, 98.0)   # fecha abaixo da EMA80
+    entry_bar_closes_high = (107.0, 107.5, 98.5, 106.0) # fecha acima da EMA80
+    after = [(98.0, 98.2, 97.0, 97.2)]  # barra 10 estopa
+
+    bars_low = PREFIX + [BOS_QUIET, entry_bar_closes_low] + after + FLAT_HIGH
+    bars_high = PREFIX + [BOS_QUIET, entry_bar_closes_high] + after + FLAT_HIGH
+
+    trades_low = run(bars_low, trend_ma="ema80", trend_ma_slope=True)
+    trades_high = run(bars_high, trend_ma="ema80", trend_ma_slope=True)
+
+    assert len(trades_low) == 1, "não pode descartar entrada limite que fechou abaixo da média"
+    assert len(trades_high) == 1
+    assert trades_low[0].entry_time == bar_time(9)
+    assert trades_high[0].entry_time == bar_time(9)
+    assert trades_low[0].entry_price == pytest.approx(trades_high[0].entry_price)
+

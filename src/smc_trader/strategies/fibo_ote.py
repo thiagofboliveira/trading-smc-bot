@@ -655,31 +655,32 @@ class FiboOTEStrategy:
             level = leg.level(cfg.fibo_entry)
             touch = lows[i] if d == 1 else highs[i]
             if d * (level - touch) >= 0:
-                # Checa filtros adicionais de tendência e confluência
+                # Checa filtros adicionais de tendência e confluência usando apenas i-1,
+                # pois a entrada limite ocorre no toque intrabar (close[i] ainda não existe).
                 if (
                     cfg.trend_filter_80_200
                     and emas80 is not None
                     and smas200 is not None
                 ):
-                    if d == 1 and emas80[i] <= smas200[i]:
+                    if d == 1 and emas80[i - 1] <= smas200[i - 1]:
                         continue
-                    if d == -1 and emas80[i] >= smas200[i]:
+                    if d == -1 and emas80[i - 1] >= smas200[i - 1]:
                         continue
                 if cfg.trend_ma and trend_mas is not None:
-                    t_ma = trend_mas[i]
-                    if d == 1 and closes[i] <= t_ma:
+                    t_ma = trend_mas[i - 1]
+                    if d == 1 and closes[i - 1] <= t_ma:
                         continue
-                    if d == -1 and closes[i] >= t_ma:
+                    if d == -1 and closes[i - 1] >= t_ma:
                         continue
-                    if cfg.trend_ma_slope and i > 0:
-                        slope = trend_mas[i] - trend_mas[i - 1]
+                    if cfg.trend_ma_slope and i > 1:
+                        slope = trend_mas[i - 1] - trend_mas[i - 2]
                         if d == 1 and slope <= cfg.trend_ma_min_slope:
                             continue
                         if d == -1 and slope >= -cfg.trend_ma_min_slope:
                             continue
                 if cfg.confluence_ma and conf_mas is not None:
-                    c_ma = conf_mas[i]
-                    if not (lows[i] <= c_ma <= highs[i]):
+                    c_ma = conf_mas[i - 1]
+                    if not (lows[i - 1] <= c_ma <= highs[i - 1]):
                         continue
 
                 leg.touched = True
@@ -733,6 +734,10 @@ class FiboOTEStrategy:
                         return None
                     if leg.d == -1 and slope >= -cfg.trend_ma_min_slope:
                         return None
+            if cfg.confluence_ma and conf_mas is not None:
+                c_ma = conf_mas[n - 1]
+                if not (lows[n - 1] <= c_ma <= highs[n - 1]):
+                    return None
             # a próxima barra incrementa `candles` antes de testar a validade
             if leg.candles + 1 > cfg.max_holding_candles:
                 return None

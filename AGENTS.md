@@ -33,7 +33,11 @@ Uma decisão tomada no instante `t` só pode usar informação disponível em `t
 3. **Contagem dupla no modo unificado:** Os gatilhos (Trap, Barra de Força, Engolfo) rodavam em laços independentes. Quando dois ou três gatilhos disparavam na mesma barra (167 casos, 360 trades), o simulador abria 2 ou 3 posições idênticas (mesma entrada, mesmo stop), concentrando 2R a 3R de risco no mesmo evento e inflando a contagem de trades e o retorno total.
 4. **Ordens stop sem slippage:** Ordens de stop não continham slippage (mínimo de 1 ponto em índices).
 5. **Atribuição falsa de alpha aos gatilhos:** O resultado foi anunciado com entusiasmo excessivo, atribuindo o mérito aos gatilhos gráficos. Uma entrada aleatória dentro do mesmo regime macro (ADX >= 25, MME 80/200, slope > 0.10, Sessão NY, saída na MME 20) rendeu praticamente o mesmo (+0,258R contra +0,303R), provando que os gatilhos gráficos não tinham vantagem estatística real. Além disso, a estratégia falhou catastroficamente em Forex e Commodities (XAUUSD −77R, EURUSD −135R, GBPUSD −59R, BRENT −31R).
-- **Impacto corrigido:** O retorno relatado de +281,0R (741 trades, PF 1.64) cai para +141,6R (562 trades, PF 1.50) com 1 pt de slippage (+0,252R/trade).
+- **Impacto corrigido no modelo configurado (Single-Position, slippage 1.0 pt):**
+  - O retorno relatado de **+281,0R** (741 trades, PF 1.64) cai para **+54,7R em 457 trades** (+0,120 ± 0,112R/trade, PF 1.18, MaxDD 29.9R).
+  - Com $t \approx 0,120 / 0,112 \approx 1,07$, esse resultado **não possui significância estatística** ($t < 2,0$).
+  - Nos primeiros 3 anos (2021-2024), o retorno acumulado foi de apenas **+8,5R** (PF 1.05, praticamente nulo), com anos negativos em 2023 (−16,9R) e 2025 (−11,1R).
+  - O número intermediário de "+141,6R em 562 trades" decorria de uma etapa em que posições sobrepostas de gatilhos distintos eram mantidas. No modo independente (com até 3 posições abertas simultaneamente), o resultado é +142,4R (+0,186 ± 0,087R/trade), decorrente puramente de triplicar a exposição ao regime direcional do índice, e não de qualquer vantagem dos gatilhos.
 
 ### Regras obrigatórias para qualquer simulação de estratégia:
 - **Toda ordem executada dentro da barra `i` deve obrigatoriamente checar se a barra `i` atinge o stop loss.** A barra de entrada só pode ser estopada, nunca alvejada.

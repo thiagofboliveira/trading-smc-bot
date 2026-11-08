@@ -15,11 +15,17 @@
 # 3. Contagem dupla no modo independente (360 trades duplicados em 167 candles);
 # 4. Falta de slippage em ordens stop.
 #
-# MÉTRICAS CORRIGIDAS (5 Anos: 2021-11-01 a 2026-11-08, spreads reais: NAS100 1.5, US30 2.0):
-# Com Slippage Realista (1.0 pt nas ordens stop):
+# MÉTRICAS CORRIGIDAS DO MODELO CONFIGURADO (5 Anos: 2021-11-01 a 2026-11-08, spreads reais: NAS100 1.5, US30 2.0):
+# Modo Single-Position com Slippage Realista (1.0 pt nas ordens stop):
 # Total Carteira: +54.7R em 457 trades (Expectativa: +0.120 ± 0.112R/trade, WR 28.9%, PF 1.18, MaxDD 29.9R)
-# In-Sample (3 anos): +8.5R | Out-of-Sample (2 anos): +46.2R
+# Estatística t = 1.07 (NÃO DISTINGUÍVEL DE ZERO, t < 2.0).
+# In-Sample (3 anos: 2021-2024): +8.5R (PF 1.05 — estatisticamente nulo)
+# Out-of-Sample (2 anos: 2024-2026): +46.2R (PF 1.38)
+# Anos Negativos: 2023 (-16.9R) e 2025 (-11.1R)
 # NAS100: +39.9R (236 trades, WR 30.9%, PF 1.26) | US30: +14.7R (221 trades, WR 26.7%, PF 1.10)
+#
+# Modo Independente (Loops Separados com até 3R de risco simultâneo):
+# Total Carteira: +142.4R em 764 trades (+0.186 ± 0.087R/trade, PF 1.29) — decorrente de tripla exposição ao regime.
 #
 # Sem Slippage Adicional (apenas spread):
 # Total Carteira: +76.2R em 457 trades (+0.167 ± 0.115R/trade, WR 29.1%, PF 1.25, MaxDD 26.2R)

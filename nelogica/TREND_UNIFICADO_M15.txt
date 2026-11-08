@@ -1,28 +1,26 @@
 // ==============================================================================
-// ESTRATÉGIA: SUPER TENDÊNCIA UNIFICADA M15 (MULTI-GATILHO COM ATRIBUIÇÃO)
+// ESTRATÉGIA: SUPER TENDÊNCIA UNIFICADA M15 (MULTI-GATILHO SINGLE-POSITION)
 // Plataforma: Nelogica ProfitChart / Rico Trader / Clear Trader / BlackArrow
 // Linguagem: NTSL (Nelogica Trading System Language)
-// Versão: 1.0 (Alinhada com TrendFollowerStrategy do Python)
+// Versão: 1.1 (Revisada pós-auditoria de simulação)
 // ==============================================================================
-// REGRAS OPERACIONAIS:
-// 1. Super Tendência Macro Causal (avaliada no candle anterior i-1):
-//    - Alinhamento de Médias: Fechamento > MME 80 > MME 200 (Compra) ou Fechamento < MME 80 < MME 200 (Venda);
-//    - ADX(14) >= 25 (Mercado em modo direcional forte);
-// 2. Janela de Liquidez de Nova York:
-//    - Entradas permitidas entre 10:00 e 14:30 BRT (13:00 às 17:30 UTC);
-// 3. Gatilhos Selecionáveis (operam em paralelo com regras de coloração):
-//    - TRAP (Amarelo): Falso rompimento da mínima/máxima anterior absorvido na MME 8;
-//    - BARRA DE FORÇA (Azul): Pullback na média com forte ímpeto (fechamento nos 30% extremos);
-//    - ENGOLFO (Ciano): Candle engolfando o corpo anterior na zona da média;
-// 4. Execução:
-//    - Ordem Stop armada para a barra seguinte (BuyStop na máxima para compra; SellShortStop na mínima para venda);
-// 5. Condução e Saída:
-//    - Stop Loss no extremo do candle de sinal;
-//    - Condução pela MME 20: encerra a mercado quando um candle fechar contra a MME 20.
+// ⚠️ AVISO CRÍTICO DE AUDITORIA E DIVERGÊNCIAS (LEIA ANTES DE USAR):
+// 1. NÃO ALINHADO INTEGRALMENTE COM O PYTHON:
+//    - O ProfitChart NTSL não possui ordens OCO intrabar nativas via script.
+//      Ao acionar a entrada por BuyStop, o SellToCoverStop só é registrado no
+//      fechamento da barra, deixando a barra de entrada vulnerável no backtest do Profit.
+//      Para execução real, configure uma regra OCO na Boleta/Roteamento da corretora!
+// 2. ATIVOS DA B3 (WIN / WDO) NÃO TESTADOS:
+//    - Este modelo foi pesquisado em NAS100 e US30. Testes em Forex e Commodities
+//      falharam (-31R a -63R). NUNCA opere no mini-índice sem validação prévia.
+// 3. RESULTADO HONESTO DO MODELO CONFIGURADO:
+//    - No Python (modo single-position com 1 pt de slippage), o resultado em 5 anos
+//      é de apenas +54.7R em 457 trades (R/tr: +0.120 ± 0.112, t = 1.07, PF 1.18).
+//      Estatisticamente não possui vantagem comprovada sobre o zero. NÃO USAR EM REAL.
 // ==============================================================================
 
 Parametro
-  // Seleção de Gatilhos
+  // Seleção de Gatilhos (Fila de Prioridade: Trap > Força > Engolfo)
   UsarTrap(Verdadeiro);             // Ativa gatilho de Trap na MME 8
   UsarBarraForca(Verdadeiro);       // Ativa gatilho de Barra de Força / Ponto Contínuo
   UsarEngolfo(Verdadeiro);          // Ativa gatilho de Engolfo na Média
@@ -34,16 +32,18 @@ Parametro
   PeriodoMME_Gatilho(8);           // MME 8 (Média de Timing do Trap)
   PeriodoADX(14);                  // ADX para filtro de super tendência
   MinADX(25.0);                    // ADX mínimo exigido
+  MinSlope(0.10);                  // Inclinação mínima da MME 80 normalizada por ATR
+  MaxSlope(1.00);                  // Inclinação máxima da MME 80 normalizada por ATR
 
   // Gerenciamento de Risco Diário
   MaxTradesDia(3);                 // Máximo de operações por dia
   MaxStopsDia(2);                  // Trava de risco diário após 2 stops
-  MaxGainsDia(1);                  // Meta batida após 1 gain
+  PermitirOvernight(Falso);        // Python mantém posições overnight; no Profit padrão é day-trade
 
   // Horários Operacionais (Horário de Brasília)
-  HorarioInicioEntrada(1000);      // 10:00 BRT (13:00 UTC - Abertura de Wall Street)
+  HorarioInicioEntrada(1000);      // 10:00 BRT (13:00 UTC - Abertura de NY)
   HorarioLimiteEntrada(1430);      // 14:30 BRT (17:30 UTC - Fim do Miolo de NY)
-  HorarioZeragem(1745);            // Zeragem obrigatória day trade
+  HorarioZeragem(1745);            // Zeragem obrigatória se day-trade
 
 Var
   mme8                  : Real;
@@ -51,12 +51,16 @@ Var
   mme80                 : Real;
   mme200                : Real;
   adxVal                : Real;
+  atrVal                : Real;
+  slope80               : Real;
   cRange                : Real;
   
-  // Condições Macro
+  // Condições Macro (medidas em i-1)
   tendenciaAlta         : Booleano;
   tendenciaBaixa        : Booleano;
   adxForte              : Booleano;
+  slopeBullish          : Booleano;
+  slopeBearish          : Booleano;
   emHorario             : Booleano;
 
   // Sinais de Gatilho
@@ -67,17 +71,15 @@ Var
   sinalEngolfoCompra    : Booleano;
   sinalEngolfoVenda     : Booleano;
 
-  // Estado da Ordem Armada
-  ordemCompraArmada     : Booleano;
-  ordemVendaArmada      : Booleano;
+  // Preços de Execução
   precoGatilho          : Real;
   precoStopLoss         : Real;
 
   // Controle Diário
   tradesHoje            : Inteiro;
   stopsHoje             : Inteiro;
-  gainsHoje             : Inteiro;
   diaAtual              : Inteiro;
+  posicaoAnterior       : Inteiro;
 
 Inicio
   // 1. Inicialização do Dia
@@ -86,35 +88,50 @@ Inicio
     diaAtual := Date;
     tradesHoje := 0;
     stopsHoje := 0;
-    gainsHoje := 0;
-    ordemCompraArmada := Falso;
-    ordemVendaArmada := Falso;
+    posicaoAnterior := 0;
   Fim;
 
-  // 2. Cálculo dos Indicadores
+  // 2. Rastreamento de Trades Executados
+  Se (HasPosition) e (posicaoAnterior = 0) entao
+  Inicio
+    tradesHoje := tradesHoje + 1;
+    posicaoAnterior := 1;
+  Fim
+  Senao Se (Not HasPosition) e (posicaoAnterior = 1) entao
+  Inicio
+    posicaoAnterior := 0;
+  Fim;
+
+  // 3. Cálculo dos Indicadores Técnicos
   mme8 := MediaExp(PeriodoMME_Gatilho, Fechamento);
   mme20 := MediaExp(PeriodoMME_Conducao, Fechamento);
   mme80 := MediaExp(PeriodoMME_Fast, Fechamento);
   mme200 := MediaExp(PeriodoMME_Slow, Fechamento);
   adxVal := ADX(PeriodoADX, Fechamento);
+  atrVal := AvgTrueRange(14);
   cRange := Maxima - Minima;
 
-  // 3. Filtros Macro Causais (olhando a barra anterior [1])
+  // Inclinação normalizada da MME 80 em 10 barras por ATR(14) (idêntico ao Python)
+  Se (atrVal[1] > 0) entao
+    slope80 := (mme80[1] - mme80[11]) / (10 * atrVal[1])
+  Senao
+    slope80 := 0;
+
+  // 4. Filtros Macro Causais em i-1
   tendenciaAlta := (Fechamento[1] > mme80[1]) e (mme80[1] > mme200[1]);
   tendenciaBaixa := (Fechamento[1] < mme80[1]) e (mme80[1] < mme200[1]);
   adxForte := (adxVal[1] >= MinADX);
+  slopeBullish := (slope80 >= MinSlope) e (slope80 <= MaxSlope);
+  slopeBearish := (slope80 <= -MinSlope) e (slope80 >= -MaxSlope);
   emHorario := (Time >= HorarioInicioEntrada) e (Time <= HorarioLimiteEntrada);
 
-  // 4. Gerenciamento de Posição Aberta
+  // 5. Gerenciamento de Posição Aberta
   Se (IsBought) entao
   Inicio
-    ordemCompraArmada := Falso;
-    ordemVendaArmada := Falso;
-
-    // Stop Loss Fixo da Operação
+    // Stop Loss Fixo da Posição
     SellToCoverStop(precoStopLoss, precoStopLoss);
 
-    // Condução Causal pela MME 20: Fecha se candle fechar abaixo da MME 20
+    // Condução Causal pela MME 20: encerra no fechamento abaixo da média
     Se (Fechamento < mme20) entao
     Inicio
       ClosePosition;
@@ -122,80 +139,62 @@ Inicio
   Fim
   Senao Se (IsSold) entao
   Inicio
-    ordemCompraArmada := Falso;
-    ordemVendaArmada := Falso;
-
-    // Stop Loss Fixo da Operação
+    // Stop Loss Fixo da Posição
     BuyToCoverStop(precoStopLoss, precoStopLoss);
 
-    // Condução Causal pela MME 20: Fecha se candle fechar acima da MME 20
+    // Condução Causal pela MME 20: encerra no fechamento acima da média
     Se (Fechamento > mme20) entao
     Inicio
       ClosePosition;
     Fim;
   Fim;
 
-  // Zeragem forçada no fim da sessão
-  Se (Time >= HorarioZeragem) e (HasPosition) entao
+  // Zeragem de fim de dia (apenas se day-trade)
+  Se (Not PermitirOvernight) e (Time >= HorarioZeragem) e (HasPosition) entao
   Inicio
     ClosePosition;
   Fim;
 
-  // 5. Execução de Ordem Armada na Barra Seguinte
-  Se (Not HasPosition) e (tradesHoje < MaxTradesDia) e (stopsHoje < MaxStopsDia) e (gainsHoje < MaxGainsDia) entao
+  // 6. Detecção e Arme Imediato de Gatilhos (Válidos para a Barra Seguinte i+1)
+  Se (Not HasPosition) e (emHorario) e (adxForte) e (cRange > 0) e (tradesHoje < MaxTradesDia) e (stopsHoje < MaxStopsDia) entao
   Inicio
-    Se (ordemCompraArmada) entao
+    // --- COMPRA (Super Tendência de Alta com Slope Válido) ---
+    Se (tendenciaAlta) e (slopeBullish) entao
     Inicio
-      BuyStop(precoGatilho, precoGatilho);
-      ordemCompraArmada := Falso; // Validade de 1 barra para evitar ordem zumbi
-    Fim
-    Senao Se (ordemVendaArmada) entao
-    Inicio
-      SellShortStop(precoGatilho, precoGatilho);
-      ordemVendaArmada := Falso;
-    Fim;
-  Fim;
-
-  // 6. Detecção dos Gatilhos no Fechamento da Barra Atual
-  Se (Not HasPosition) e (emHorario) e (adxForte) e (cRange > 0) e (tradesHoje < MaxTradesDia) e (stopsHoje < MaxStopsDia) e (gainsHoje < MaxGainsDia) entao
-  Inicio
-    // --- COMPRA (Super Tendência de Alta) ---
-    Se (tendenciaAlta) entao
-    Inicio
-      // GATILHO 1: TRAP MME 8
+      // GATILHO 1: TRAP MME 8 (Prioridade 1)
       sinalTrapCompra := UsarTrap e (Minima <= mme8 * 1.001) e (Minima < Minima[1]) e (Fechamento > Minima[1]) e (Fechamento > Abertura);
       
-      // GATILHO 2: BARRA DE FORÇA
+      // GATILHO 2: BARRA DE FORÇA (Prioridade 2)
       sinalForcaCompra := UsarBarraForca e (Minima <= Max(mme8, mme20) * 1.001) e (Fechamento > Abertura) e ((Fechamento - Minima) / cRange >= 0.70) e (Fechamento > mme8);
       
-      // GATILHO 3: ENGOLFO
+      // GATILHO 3: ENGOLFO (Prioridade 3)
       sinalEngolfoCompra := UsarEngolfo e (Minima <= Max(mme8, mme20) * 1.001) e (Fechamento[1] < Abertura[1]) e (Fechamento > Abertura) e (Fechamento >= Abertura[1]) e (Abertura <= Fechamento[1]);
 
       Se (sinalTrapCompra) entao
       Inicio
-        PaintBar(clYellow); // Amarelo para Trap
-        ordemCompraArmada := Verdadeiro;
+        PaintBar(clYellow);
         precoGatilho := Maxima;
         precoStopLoss := Minima;
+        BuyStop(precoGatilho, precoGatilho);
       Fim
       Senao Se (sinalForcaCompra) entao
       Inicio
-        PaintBar(clBlue); // Azul para Barra de Força
-        ordemCompraArmada := Verdadeiro;
+        PaintBar(clBlue);
         precoGatilho := Maxima;
         precoStopLoss := Minima;
+        BuyStop(precoGatilho, precoGatilho);
       Fim
       Senao Se (sinalEngolfoCompra) entao
       Inicio
-        PaintBar(clAqua); // Ciano para Engolfo
-        ordemCompraArmada := Verdadeiro;
+        PaintBar(clAqua);
         precoGatilho := Maxima;
         precoStopLoss := Minima;
+        BuyStop(precoGatilho, precoGatilho);
       Fim;
     Fim
 
-    // --- VENDA (Super Tendência de Baixa) ---
-    Senao Se (tendenciaBaixa) entao
+    // --- VENDA (Super Tendência de Baixa com Slope Válido) ---
+    Senao Se (tendenciaBaixa) e (slopeBearish) entao
     Inicio
       // GATILHO 1: TRAP MME 8
       sinalTrapVenda := UsarTrap e (Maxima >= mme8 * 0.999) e (Maxima > Maxima[1]) e (Fechamento < Maxima[1]) e (Fechamento < Abertura);
@@ -208,24 +207,24 @@ Inicio
 
       Se (sinalTrapVenda) entao
       Inicio
-        PaintBar(clYellow); // Amarelo para Trap
-        ordemVendaArmada := Verdadeiro;
+        PaintBar(clYellow);
         precoGatilho := Minima;
         precoStopLoss := Maxima;
+        SellShortStop(precoGatilho, precoGatilho);
       Fim
       Senao Se (sinalForcaVenda) entao
       Inicio
-        PaintBar(clBlue); // Azul para Barra de Força
-        ordemVendaArmada := Verdadeiro;
+        PaintBar(clBlue);
         precoGatilho := Minima;
         precoStopLoss := Maxima;
+        SellShortStop(precoGatilho, precoGatilho);
       Fim
       Senao Se (sinalEngolfoVenda) entao
       Inicio
-        PaintBar(clAqua); // Ciano para Engolfo
-        ordemVendaArmada := Verdadeiro;
+        PaintBar(clAqua);
         precoGatilho := Minima;
         precoStopLoss := Maxima;
+        SellShortStop(precoGatilho, precoGatilho);
       Fim;
     Fim;
   Fim;

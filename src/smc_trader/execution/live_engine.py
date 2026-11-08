@@ -188,6 +188,9 @@ class LiveTradingEngine:
                     max_gains_per_day=(
                         model_def.max_gains_per_day if model_def else 0
                     ),
+                    require_inducement=(
+                        model_def.require_inducement if model_def else True
+                    ),
                     trend_ma=(
                         model_def.trend_ma if model_def else None
                     ),

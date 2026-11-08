@@ -212,6 +212,7 @@ class FiboModelConfig(BaseModel):
     max_trades_per_day: int = Field(0, ge=0)
     max_stops_per_day: int = Field(0, ge=0)
     max_gains_per_day: int = Field(0, ge=0)
+    require_inducement: bool = True
 
 
 class TradingProductionConfig(BaseModel):

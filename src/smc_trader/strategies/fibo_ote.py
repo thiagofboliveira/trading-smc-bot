@@ -106,6 +106,7 @@ class FiboOTEConfig:
     max_trades_per_day: int = 0  # F-16: máximo de trades encerrados no dia antes de bloquear novas entradas (0 = sem limite)
     max_stops_per_day: int = 0  # F-16: máximo de stops consecutivos no dia antes de parar (0 = sem limite)
     max_gains_per_day: int = 0  # F-16: máximo de gains no dia antes de bater a meta e parar (0 = sem limite)
+    require_inducement: bool = True  # F-17: exige que a retração capture liquidez/indução interna prévia
     slippage: float = 0.0  # F-10: slippage por execução em pontos de preço
     commission_per_unit: float = (
         0.0  # F-10: comissão total por trade em pontos de preço
@@ -155,6 +156,8 @@ class _Leg:
     bos_idx: int  # barra que confirmou o BOS
     candles: int = 0  # barras decorridas desde o BOS
     touched: bool = False
+    idm_level: float | None = None
+    idm_swept: bool = False
 
     def level(self, ratio: float) -> float:
         span = self.d * (self.extreme - self.origin)
@@ -828,6 +831,26 @@ class FiboOTEStrategy:
             level = leg.level(cfg.fibo_entry)
             touch = lows[i] if d == 1 else highs[i]
 
+            # F-17: Rastreia Inducement (IDM) — pivô interno formado no recuo antes da zona
+            if leg.idm_level is None and i > leg.bos_idx + 1:
+                span_leg = leg.d * (leg.extreme - leg.origin)
+                if leg.d == 1:
+                    sub_l = lows[leg.bos_idx + 1 : i]
+                    min_sub = float(np.min(sub_l))
+                    if np.any(highs[leg.bos_idx + 1 : i] > min_sub + 0.10 * span_leg):
+                        leg.idm_level = min_sub
+                else:
+                    sub_h = highs[leg.bos_idx + 1 : i]
+                    max_sub = float(np.max(sub_h))
+                    if np.any(lows[leg.bos_idx + 1 : i] < max_sub - 0.10 * span_leg):
+                        leg.idm_level = max_sub
+
+            if leg.idm_level is not None and not leg.idm_swept:
+                if leg.d == 1 and lows[i] < leg.idm_level:
+                    leg.idm_swept = True
+                elif leg.d == -1 and highs[i] > leg.idm_level:
+                    leg.idm_swept = True
+
             if cfg.entry_mode == "m5_close_rejection":
                 # Se rompeu a origem estrutural (1.000), invalida a perna imediatamente
                 if d * (leg.origin - touch) >= 0:
@@ -861,6 +884,7 @@ class FiboOTEStrategy:
                     cond = (
                         in_session
                         and (not is_day_locked(ts[i].date()))
+                        and ((not cfg.require_inducement) or leg.idm_swept)
                         and (d * (closes[i] - rej_bound) > 0)
                         and (d * (closes[i] - inv_level) > 0)
                     )
@@ -944,6 +968,8 @@ class FiboOTEStrategy:
                     ext = highs[i] if d == 1 else lows[i]
                     if d * (ext - leg.extreme) > 0:
                         leg.extreme = ext
+                        leg.idm_level = None
+                        leg.idm_swept = False
                 continue
 
             # F-08: filtro de sessão para novas entradas (modo limit)

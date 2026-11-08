@@ -46,7 +46,12 @@ FLAT_HIGH = [(107.0, 108.0, 105.0, 107.0)] * 5
 
 
 def cfg(**kw) -> FiboOTEConfig:
-    base = dict(trailing_exit_ma=None, target_mode="0_percent", pivot_k=2)
+    base = dict(
+        trailing_exit_ma=None,
+        target_mode="0_percent",
+        pivot_k=2,
+        require_inducement=False,
+    )
     base.update(kw)
     return FiboOTEConfig(**base)
 
@@ -529,6 +534,51 @@ def test_f16_limites_diarios_param_apos_1_gain_ou_2_stops_seguidos():
     trades_2stops = run(bars_three_losses, max_stops_per_day=2)
     assert len(trades_2stops) == 2
     assert all(not t.win for t in trades_2stops)
+
+
+def test_f17_require_inducement_sweep():
+    """Valida F-17 (SMC Inducement / Engenharia de Liquidez Interna):
+    - Se require_inducement=True e a retração não tiver gerado e violado uma indução, bloqueia o trade.
+    - Se a retração tiver gerado um pivô interno (indução) e violado antes/durante a retração na zona, permite a entrada.
+    """
+    # 1. Sem indução (recuo direto na barra 9 para 98.5 sem repique prévio):
+    rej_direct = (107.0, 107.5, 98.5, 102.0)
+    b10_tp = (102.0, 110.0, 101.5, 109.5)
+
+    bars_no_idm = PREFIX + [BOS_QUIET, rej_direct, b10_tp] + FLAT_HIGH
+
+    # Sem exigir indução (False), o trade acontece normalmente
+    assert len(run(bars_no_idm, entry_mode="m5_close_rejection", require_inducement=False)) == 1
+
+    # Exigindo indução (True), o trade é descartado (sem indução prévia capturada)
+    assert run(bars_no_idm, entry_mode="m5_close_rejection", require_inducement=True) == []
+
+    # 2. Com indução:
+    # Barra 9: recua até 103.0 (acima do nível 50% = 101.5)
+    # Barra 10: repica para cima até 106.0 (fixa a indução no fundo 103.0)
+    # Barra 11: viola a indução (mínima 98.5 < 103.0), toca a zona 50%-79% e fecha em 102.0 com rejeição
+    # Barra 12: entra no open (102.0) e vai ao alvo
+    b9_pull = (107.0, 107.0, 103.0, 104.0)
+    b10_bounce = (104.0, 106.0, 103.5, 105.5)
+    b11_sweep_rej = (105.0, 105.5, 98.5, 102.0)
+    b12_tp = (102.0, 110.0, 101.5, 109.5)
+
+    bars_with_idm = PREFIX + [BOS_QUIET, b9_pull, b10_bounce, b11_sweep_rej, b12_tp] + FLAT_HIGH
+
+    trades_idm = run(bars_with_idm, entry_mode="m5_close_rejection", require_inducement=True)
+    assert len(trades_idm) == 1
+    t = trades_idm[0]
+    assert t.entry_time == bar_time(12)
+    assert t.exit_reason == "TAKE_PROFIT"
+
+    # Paridade com pending_setup no live:
+    strat = FiboOTEStrategy(cfg(entry_mode="m5_close_rejection", require_inducement=True))
+    setup = strat.pending_setup(
+        m1_from_m5(PREFIX + [BOS_QUIET, b9_pull, b10_bounce, b11_sweep_rej]), SPREAD
+    )
+    assert setup is not None
+    assert setup.direction == "long"
+
 
 
 

@@ -29,6 +29,7 @@ Parametro
   TravaGatilhoR(1.618);           // Nível para acionar a trava de lucro (+1.618R)
   TravaGarantidaR(1.0);           // Stop garantido ao travar (+1.0R)
   MaxBarrasPerna(60);             // Validade máxima da perna após o BOS (60 candles M5)
+  ExigirInducao(Verdadeiro);      // Exige captura de liquidez/indução interna prévia (SMC Inducement)
   
   // Regras de Gerenciamento Diário (Controle de Risco)
   MaxTradesDia(3);                // Máximo de operações no dia (3 trades)
@@ -65,6 +66,8 @@ Var
   nivel50               : Real;
   nivel79               : Real;
   nivel886              : Real;
+  nivelInducao          : Real;
+  inducaoCapturada      : Booleano;
 
   // Ordem Armada para a Abertura da Próxima Barra
   armarCompra           : Booleano;
@@ -283,6 +286,8 @@ Inicio
         refFundo := ultimoFundo;
         barrasPerna := 0;
         bosBarIdx := CurrentBar;
+        nivelInducao := 0;
+        inducaoCapturada := Falso;
         PaintBar(clAmarelo);
       Fim
       // BOS de Baixa: Fechamento rompe fundo prévio
@@ -294,6 +299,8 @@ Inicio
         refFundo := Minima;
         barrasPerna := 0;
         bosBarIdx := CurrentBar;
+        nivelInducao := 0;
+        inducaoCapturada := Falso;
         PaintBar(clAmarelo);
       Fim;
     Fim;
@@ -323,9 +330,20 @@ Inicio
           nivel79  := refTopo - (diffPernada * FiboRejeicaoMax);
           nivel886 := refTopo - (diffPernada * FiboStop);
 
+          // Rastreia Inducement (IDM): fundo intermediário no recuo com repique
+          Se (nivelInducao = 0) e (barrasPerna >= 2) e (Minima[1] > nivel50) e (Maxima[0] > Maxima[1] + (diffPernada * 0.10)) Entao
+            nivelInducao := Minima[1];
+
+          Se (nivelInducao > 0) e (Not inducaoCapturada) e (Minima < nivelInducao) Entao
+            inducaoCapturada := Verdadeiro;
+
           // Expansão da perna enquanto não retrair até 50%
           Se (Minima > nivel50) e (Maxima > refTopo) Entao
+          Inicio
             refTopo := Maxima;
+            nivelInducao := 0;
+            inducaoCapturada := Falso;
+          Fim;
 
           // Checa se tocou a zona [50% a 79%] e a MME 80 nesta barra
           Se (Minima <= nivel50) Entao
@@ -340,8 +358,9 @@ Inicio
             // 1. Tocou MME 80;
             // 2. Fechou acima da MME 80;
             // 3. Fechou acima do nível de 79% e 88.6%;
-            // 4. Pavio inferior >= 50% do range.
-            Se toqueMME e (Fechamento > mme80) e (Fechamento > nivel79) e (Fechamento > nivel886) e condPavio Entao
+            // 4. Pavio inferior >= 50% do range;
+            // 5. Capturou indução prévia (se ExigirInducao = Verdadeiro).
+            Se toqueMME e ((Not ExigirInducao) ou inducaoCapturada) e (Fechamento > mme80) e (Fechamento > nivel79) e (Fechamento > nivel886) e condPavio Entao
             Inicio
               armarCompra := Verdadeiro;
               stopArmado := nivel886;
@@ -368,9 +387,20 @@ Inicio
           nivel79  := refFundo + (diffPernada * FiboRejeicaoMax);
           nivel886 := refFundo + (diffPernada * FiboStop);
 
+          // Rastreia Inducement (IDM): topo intermediário no recuo com queda
+          Se (nivelInducao = 0) e (barrasPerna >= 2) e (Maxima[1] < nivel50) e (Minima[0] < Minima[1] - (diffPernada * 0.10)) Entao
+            nivelInducao := Maxima[1];
+
+          Se (nivelInducao > 0) e (Not inducaoCapturada) e (Maxima > nivelInducao) Entao
+            inducaoCapturada := Verdadeiro;
+
           // Expansão da perna enquanto não retrair até 50%
           Se (Maxima < nivel50) e (Minima < refFundo) Entao
+          Inicio
             refFundo := Minima;
+            nivelInducao := 0;
+            inducaoCapturada := Falso;
+          Fim;
 
           // Checa se tocou a zona [50% a 79%] e a MME 80 nesta barra
           Se (Maxima >= nivel50) Entao
@@ -385,8 +415,9 @@ Inicio
             // 1. Tocou MME 80;
             // 2. Fechou abaixo da MME 80;
             // 3. Fechou abaixo do nível de 79% e 88.6%;
-            // 4. Pavio superior >= 50% do range.
-            Se toqueMME e (Fechamento < mme80) e (Fechamento < nivel79) e (Fechamento < nivel886) e condPavio Entao
+            // 4. Pavio superior >= 50% do range;
+            // 5. Capturou indução prévia (se ExigirInducao = Verdadeiro).
+            Se toqueMME e ((Not ExigirInducao) ou inducaoCapturada) e (Fechamento < mme80) e (Fechamento < nivel79) e (Fechamento < nivel886) e condPavio Entao
             Inicio
               armarVenda := Verdadeiro;
               stopArmado := nivel886;

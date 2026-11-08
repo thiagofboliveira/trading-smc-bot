@@ -1,0 +1,265 @@
+// ==============================================================================
+// ESTRATÉGIA: TRAP DO STORMER COM MME 80 + MME 8 (M10 / M5 / M15)
+// Plataforma: Nelogica ProfitChart / Rico Trader / Clear Trader / B3
+// Linguagem: NTSL (Nelogica Trading System Language)
+// Versão: 1.0 (Alinhada com o modelo quantitativo Python sim_stormer_trap)
+// ==============================================================================
+// REGRAS OPERACIONAIS:
+// 1. Tendência Primária: Fechamento a favor da MME 80 e MME 8.
+// 2. Fundo/Topo Corretivo: O preço forma um pivô corretivo nas últimas barras.
+// 3. O Trap (Armadilha):
+//    - Para Compra: O candle atual viola a mínima do pivô anterior (capturando stops),
+//      mas rejeita e fecha acima da mínima do pivô (reclaim).
+//    - Para Venda: O candle atual viola a máxima do pivô anterior, mas fecha abaixo.
+// 4. Execução Causal: Ordem Stop armada para a barra seguinte (BuyStop na máxima do candle
+//    de Trap para compra; SellShortStop na mínima para venda).
+// 5. Gestão de Risco:
+//    - Stop Loss no extremo oposto do candle de Trap;
+//    - Alvo: 1.618R simétrico;
+//    - Limites Diários: 1 gain bate meta e para; 2 stops seguidos para no dia; máx 3 trades/dia.
+// ==============================================================================
+
+Parametro
+  PeriodoMME_Lenta(80);           // MME 80 (Regime de Tendência Principal)
+  PeriodoMME_Rapida(8);           // MME 8 (Condução e Timing de Curto Prazo)
+  AlvoMultiplicadorR(1.618);      // Alvo simétrico em R (1.618R)
+  LookbackPivo(12);               // Janela de busca do pivô corretivo (12 barras)
+  MinCandleTicks(10);             // Tamanho mínimo do candle de Trap para evitar micro-ruído
+  
+  // Regras de Gerenciamento Diário (Controle de Risco)
+  MaxTradesDia(3);                // Máximo de operações no dia (3 trades)
+  MaxStopsDia(2);                 // Para o dia após 2 stops seguidos
+  MaxGainsDia(1);                 // Meta batida: para o dia após 1 gain
+  
+  // Horários Operacionais (Horário de Brasília)
+  HorarioInicioEntrada(0915);     // Início de novas entradas
+  HorarioLimiteEntrada(1645);     // Limite para novas entradas
+  HorarioZeragem(1745);           // Zeragem obrigatória day trade B3
+  
+  // Execução na Bolsa
+  OffsetStopTicks(5);             // Offset de envio do stop em ticks
+
+Var
+  mme80                 : Real;
+  mme8                  : Real;
+
+  // Busca do Pivô Corretivo
+  p                     : Inteiro;
+  fundoPivo             : Real;
+  topoPivo              : Real;
+  pivoEncontrado        : Booleano;
+  subiuUmPouco          : Booleano;
+  caiuUmPouco           : Booleano;
+  fundoIntacto          : Booleano;
+  topoIntacto           : Booleano;
+
+  // Ordem Stop Armada para a Barra Seguinte
+  armarCompraStop       : Booleano;
+  armarVendaStop        : Booleano;
+  gatilhoStop           : Real;
+  slStop                : Real;
+
+  // Posição Aberta
+  precoEntrada          : Real;
+  precoStop             : Real;
+  precoAlvo             : Real;
+  riscoInicial          : Real;
+  posInicializada       : Booleano;
+
+  // Controle Diário de Trades
+  dataAtual             : Inteiro;
+  dataAnterior          : Inteiro;
+  tradesHoje            : Inteiro;
+  stopsSeguidosHoje     : Inteiro;
+  gainsHoje             : Inteiro;
+  diaBloqueado          : Booleano;
+  estavaPosicionado     : Booleano;
+  ultimoResultadoR      : Real;
+
+Inicio
+  mme80 := MediaExp(PeriodoMME_Lenta, Fechamento);
+  mme8  := MediaExp(PeriodoMME_Rapida, Fechamento);
+
+  // 1. Controle de Virada de Dia
+  dataAtual := Date;
+  Se (dataAtual <> dataAnterior) Entao
+  Inicio
+    dataAnterior := dataAtual;
+    tradesHoje := 0;
+    stopsSeguidosHoje := 0;
+    gainsHoje := 0;
+    diaBloqueado := Falso;
+    armarCompraStop := Falso;
+    armarVendaStop := Falso;
+  Fim;
+
+  // 2. Envio da Ordem Stop Armada no Candle Anterior
+  Se (Not HasPosition) e (Not diaBloqueado) e (Time >= HorarioInicioEntrada) e (Time < HorarioLimiteEntrada) Entao
+  Inicio
+    Se armarCompraStop Entao
+    Inicio
+      BuyStop(gatilhoStop, gatilhoStop + (OffsetStopTicks * MinPriceIncrement));
+    Fim
+    Senao Se armarVendaStop Entao
+    Inicio
+      SellShortStop(gatilhoStop, gatilhoStop - (OffsetStopTicks * MinPriceIncrement));
+    Fim;
+  Fim;
+
+  // 3. Atualização de Resultados quando o Trade é Encerrado
+  Se estavaPosicionado e (Not HasPosition) Entao
+  Inicio
+    tradesHoje := tradesHoje + 1;
+    Se ultimoResultadoR > 0.05 Entao
+    Inicio
+      gainsHoje := gainsHoje + 1;
+      stopsSeguidosHoje := 0;
+    Fim
+    Senao Se ultimoResultadoR < -0.05 Entao
+    Inicio
+      stopsSeguidosHoje := stopsSeguidosHoje + 1;
+    Fim;
+
+    Se (MaxGainsDia > 0) e (gainsHoje >= MaxGainsDia) Entao diaBloqueado := Verdadeiro;
+    Se (MaxStopsDia > 0) e (stopsSeguidosHoje >= MaxStopsDia) Entao diaBloqueado := Verdadeiro;
+    Se (MaxTradesDia > 0) e (tradesHoje >= MaxTradesDia) Entao diaBloqueado := Verdadeiro;
+
+    posInicializada := Falso;
+    armarCompraStop := Falso;
+    armarVendaStop := Falso;
+  Fim;
+  estavaPosicionado := HasPosition;
+
+  // 4. Zeragem Compulsória de Fim de Sessão
+  Se (Time >= HorarioZeragem) Entao
+  Inicio
+    Se HasPosition Entao ClosePosition;
+    armarCompraStop := Falso;
+    armarVendaStop := Falso;
+  Fim;
+
+  // 5. Gerenciamento de Posição Aberta
+  Se HasPosition Entao
+  Inicio
+    armarCompraStop := Falso;
+    armarVendaStop := Falso;
+
+    Se IsBought Entao
+      precoEntrada := BuyPrice
+    Senao Se IsSold Entao
+      precoEntrada := SellPrice;
+
+    Se (Not posInicializada) Entao
+    Inicio
+      posInicializada := Verdadeiro;
+      precoStop := slStop;
+      Se IsBought Entao
+      Inicio
+        riscoInicial := precoEntrada - precoStop;
+        precoAlvo := precoEntrada + (AlvoMultiplicadorR * riscoInicial);
+      Fim
+      Senao
+      Inicio
+        riscoInicial := precoStop - precoEntrada;
+        precoAlvo := precoEntrada - (AlvoMultiplicadorR * riscoInicial);
+      Fim;
+    Fim;
+
+    // Registra último resultado estimado em R
+    Se riscoInicial > 0 Entao
+    Inicio
+      Se IsBought Entao
+        ultimoResultadoR := (Fechamento - precoEntrada) / riscoInicial
+      Senao
+        ultimoResultadoR := (precoEntrada - Fechamento) / riscoInicial;
+    Fim;
+
+    // Reenvio das ordens OCO a cada fechamento
+    Se (Time < HorarioZeragem) Entao
+    Inicio
+      Se IsBought Entao
+      Inicio
+        SellToCoverStop(precoStop, precoStop - (OffsetStopTicks * MinPriceIncrement));
+        SellToCoverLimit(precoAlvo);
+      Fim
+      Senao Se IsSold Entao
+      Inicio
+        BuyToCoverStop(precoStop, precoStop + (OffsetStopTicks * MinPriceIncrement));
+        BuyToCoverLimit(precoAlvo);
+      Fim;
+    Fim;
+  Fim
+  Senao
+  Inicio
+    // 6. Busca por Padrão de Trap no Fechamento do Candle Atual
+    armarCompraStop := Falso;
+    armarVendaStop := Falso;
+
+    Se (Not diaBloqueado) e (Time >= HorarioInicioEntrada) e (Time < HorarioLimiteEntrada) Entao
+    Inicio
+      // A) TRAP DE COMPRA: A favor da MME 80 e MME 8
+      Se (Fechamento > mme80) e (Fechamento > mme8) e ((Maxima - Minima) >= MinCandleTicks * MinPriceIncrement) Entao
+      Inicio
+        pivoEncontrado := Falso;
+        fundoPivo := 0;
+
+        Para p := 2 Ate LookbackPivo Faca
+        Inicio
+          Se (Not pivoEncontrado) e (Minima[p] < Minima[p + 1]) Entao
+          Inicio
+            // Checa se subiu um pouco e se o fundo ficou intacto até a barra anterior
+            subiuUmPouco := (Maxima[1] > Maxima[p]);
+            fundoIntacto := (Minima[1] >= Minima[p]);
+            
+            Se subiuUmPouco e fundoIntacto Entao
+            Inicio
+              fundoPivo := Minima[p];
+              pivoEncontrado := Verdadeiro;
+            Fim;
+          Fim;
+        Fim;
+
+        // O candle atual violou o fundo do pivô (capturou stops) mas fechou acima dele?
+        Se pivoEncontrado e (Minima < fundoPivo) e (Fechamento >= fundoPivo) Entao
+        Inicio
+          armarCompraStop := Verdadeiro;
+          gatilhoStop := Maxima;
+          slStop := Minima;
+          PaintBar(clVerde); // Pinta candle de Trap de Compra
+        Fim;
+      Fim;
+
+      // B) TRAP DE VENDA: Contra a MME 80 e MME 8
+      Se (Not armarCompraStop) e (Fechamento < mme80) e (Fechamento < mme8) e ((Maxima - Minima) >= MinCandleTicks * MinPriceIncrement) Entao
+      Inicio
+        pivoEncontrado := Falso;
+        topoPivo := 0;
+
+        Para p := 2 Ate LookbackPivo Faca
+        Inicio
+          Se (Not pivoEncontrado) e (Maxima[p] > Maxima[p + 1]) Entao
+          Inicio
+            caiuUmPouco := (Minima[1] < Minima[p]);
+            topoIntacto := (Maxima[1] <= Maxima[p]);
+
+            Se caiuUmPouco e topoIntacto Entao
+            Inicio
+              topoPivo := Maxima[p];
+              pivoEncontrado := Verdadeiro;
+            Fim;
+          Fim;
+        Fim;
+
+        // O candle atual violou o topo do pivô mas fechou abaixo dele?
+        Se pivoEncontrado e (Maxima > topoPivo) e (Fechamento <= topoPivo) Entao
+        Inicio
+          armarVendaStop := Verdadeiro;
+          gatilhoStop := Minima;
+          slStop := Maxima;
+          PaintBar(clFuchsia); // Pinta candle de Trap de Venda
+        Fim;
+      Fim;
+    Fim;
+  Fim;
+
+Fim;

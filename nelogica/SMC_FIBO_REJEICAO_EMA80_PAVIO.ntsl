@@ -1,0 +1,412 @@
+// ==============================================================================
+// ESTRATÉGIA: SMC FIBO REJEIÇÃO EMA 80 PAVIO (M5)
+// Plataforma: Nelogica ProfitChart / Rico Trader / Clear Trader / B3
+// Linguagem: NTSL (Nelogica Trading System Language)
+// Versão: 2.0 (Alinhada com o modelo quantitativo Python FiboOTEStrategy)
+// ==============================================================================
+// REGRAS OPERACIONAIS:
+// 1. Identificação de Perna por BOS (Break of Structure) confirmado por fractal (k=2).
+// 2. Retração na Zona Institucional [50.0% a 79.0%] com toque na MME 80.
+// 3. Candle de Gatilho de Rejeição:
+//    - Toca na MME 80 dentro da zona;
+//    - Deixa pavio de absorção >= 50% do tamanho total da barra;
+//    - Fecha a favor da MME 80 e acima/abaixo do limite de 79%.
+// 4. Execução Causal: Ordem a Mercado na abertura da barra seguinte (BuyAtMarket/SellShortAtMarket).
+// 5. Gestão de Risco:
+//    - Stop Loss técnico na invalidação em 88.6% de Fibonacci;
+//    - Trava de Proteção: Ao atingir +1.618R, sobe o stop para +1.0R garantido no bolso;
+//    - Alvo Teto: 4.0R;
+//    - Limites Diários: 1 gain bate meta e para; 2 stops seguidos para no dia; máx 3 trades/dia.
+// ==============================================================================
+
+Parametro
+  FiboEntrada(0.500);             // Início da zona de retração (50.0%)
+  FiboRejeicaoMax(0.790);         // Limite máximo da zona de rejeição (79.0%)
+  FiboStop(0.886);                // Nível de invalidação estrutural (88.6%)
+  PeriodoMME(80);                 // MME de tendência e confluência de rejeição (80 períodos)
+  MinPavioRatio(0.50);            // Pavio mínimo de absorção (50% do range do candle)
+  AlvoMultiplicadorR(4.0);        // Alvo teto em R (4.0R)
+  TravaGatilhoR(1.618);           // Nível para acionar a trava de lucro (+1.618R)
+  TravaGarantidaR(1.0);           // Stop garantido ao travar (+1.0R)
+  MaxBarrasPerna(60);             // Validade máxima da perna após o BOS (60 candles M5)
+  
+  // Regras de Gerenciamento Diário (Controle de Risco)
+  MaxTradesDia(3);                // Máximo de operações no dia (3 trades)
+  MaxStopsDia(2);                 // Para o dia após 2 stops seguidos
+  MaxGainsDia(1);                 // Meta batida: para o dia após 1 gain
+  
+  // Horários Operacionais (Horário de Brasília)
+  HorarioInicioEntrada(0915);     // Início de novas entradas (evita leilão e primeiros 15 min)
+  HorarioLimiteEntrada(1645);     // Limite para novas entradas (sem entradas no fim da tarde)
+  HorarioZeragem(1745);           // Zeragem obrigatória day trade B3
+  
+  // Execução na Bolsa
+  OffsetStopTicks(5);             // Offset de envio do stop em ticks (evita pulo de stop)
+  AmplitudeMinimaTicks(15);       // Perna mínima para validar o BOS (evita micro-ruído)
+  ExibirLinhas(Verdadeiro);       // Exibe linhas de Topo e Fundo da perna
+
+Var
+  mme80                 : Real;
+  topoFractal           : Booleano;
+  fundoFractal          : Booleano;
+  ultimoTopo            : Real;
+  ultimoFundo           : Real;
+  ultimoTopoIdx         : Inteiro;
+  ultimoFundoIdx        : Inteiro;
+
+  // Estado da Perna Ativa
+  pernadaAltaAtiva      : Booleano;
+  pernadaBaixaAtiva     : Booleano;
+  barrasPerna           : Inteiro;
+  bosBarIdx             : Inteiro;
+  refTopo               : Real;
+  refFundo              : Real;
+  diffPernada           : Real;
+  nivel50               : Real;
+  nivel79               : Real;
+  nivel886              : Real;
+
+  // Ordem Armada para a Abertura da Próxima Barra
+  armarCompra           : Booleano;
+  armarVenda            : Booleano;
+  stopArmado            : Real;
+
+  // Posição Aberta
+  precoEntrada          : Real;
+  precoStop             : Real;
+  precoAlvo             : Real;
+  riscoInicial          : Real;
+  travaAtivada          : Booleano;
+  posInicializada       : Booleano;
+
+  // Controle Diário de Trades
+  dataAtual             : Inteiro;
+  dataAnterior          : Inteiro;
+  tradesHoje            : Inteiro;
+  stopsSeguidosHoje     : Inteiro;
+  gainsHoje             : Inteiro;
+  diaBloqueado          : Booleano;
+  estavaPosicionado     : Booleano;
+  ultimoResultadoR      : Real;
+
+  // Variáveis Auxiliares de Cálculo de Candle
+  rngCandle             : Real;
+  pavioInferior         : Real;
+  pavioSuperior         : Real;
+  corpoMin              : Real;
+  corpoMax              : Real;
+  toqueMME              : Booleano;
+  condPavio             : Booleano;
+
+Inicio
+  // 1. Configurações Visuais
+  SetPlotColor(1, clAqua);
+  SetPlotColor(2, clFuchsia);
+  SetPlotWidth(1, 2);
+  SetPlotWidth(2, 2);
+
+  mme80 := MediaExp(PeriodoMME, Fechamento);
+
+  // 2. Controle de Virada de Dia (Reseta contadores diários)
+  dataAtual := Date;
+  Se (dataAtual <> dataAnterior) Entao
+  Inicio
+    dataAnterior := dataAtual;
+    tradesHoje := 0;
+    stopsSeguidosHoje := 0;
+    gainsHoje := 0;
+    diaBloqueado := Falso;
+    pernadaAltaAtiva := Falso;
+    pernadaBaixaAtiva := Falso;
+    armarCompra := Falso;
+    armarVenda := Falso;
+  Fim;
+
+  // 3. F-11: Detecção Fractal Estrita (Janela de 5 barras, atraso causal de 2 barras)
+  topoFractal := (Maxima[2] > Maxima[3]) e (Maxima[2] > Maxima[4]) e 
+                 (Maxima[2] >= Maxima[1]) e (Maxima[2] >= Maxima[0]);
+                 
+  fundoFractal := (Minima[2] < Minima[3]) e (Minima[2] < Minima[4]) e 
+                  (Minima[2] <= Minima[1]) e (Minima[2] <= Minima[0]);
+
+  Se topoFractal Entao
+  Inicio
+    ultimoTopo := Maxima[2];
+    ultimoTopoIdx := CurrentBar - 2;
+  Fim;
+
+  Se fundoFractal Entao
+  Inicio
+    ultimoFundo := Minima[2];
+    ultimoFundoIdx := CurrentBar - 2;
+  Fim;
+
+  // 4. Execução de Ordens Armadas no Fechamento da Barra Anterior
+  Se (Not HasPosition) e (Not diaBloqueado) e (Time >= HorarioInicioEntrada) e (Time < HorarioLimiteEntrada) Entao
+  Inicio
+    Se armarCompra Entao
+    Inicio
+      BuyAtMarket;
+      armarCompra := Falso;
+      pernadaAltaAtiva := Falso;
+    Fim
+    Senao Se armarVenda Entao
+    Inicio
+      SellShortAtMarket;
+      armarVenda := Falso;
+      pernadaBaixaAtiva := Falso;
+    Fim;
+  Fim
+  Senao
+  Inicio
+    armarCompra := Falso;
+    armarVenda := Falso;
+  Fim;
+
+  // 5. Atualização de Resultados quando o Trade é Encerrado
+  Se estavaPosicionado e (Not HasPosition) Entao
+  Inicio
+    tradesHoje := tradesHoje + 1;
+    // Verifica se encerrou com Gain ou Loss
+    Se ultimoResultadoR > 0.05 Entao
+    Inicio
+      gainsHoje := gainsHoje + 1;
+      stopsSeguidosHoje := 0;
+    Fim
+    Senao Se ultimoResultadoR < -0.05 Entao
+    Inicio
+      stopsSeguidosHoje := stopsSeguidosHoje + 1;
+    Fim;
+
+    // Checa travas diárias
+    Se (MaxGainsDia > 0) e (gainsHoje >= MaxGainsDia) Entao
+      diaBloqueado := Verdadeiro;
+    Se (MaxStopsDia > 0) e (stopsSeguidosHoje >= MaxStopsDia) Entao
+      diaBloqueado := Verdadeiro;
+    Se (MaxTradesDia > 0) e (tradesHoje >= MaxTradesDia) Entao
+      diaBloqueado := Verdadeiro;
+
+    posInicializada := Falso;
+    travaAtivada := Falso;
+  Fim;
+  estavaPosicionado := HasPosition;
+
+  // 6. Zeragem Compulsória de Fim de Sessão
+  Se (Time >= HorarioZeragem) Entao
+  Inicio
+    Se HasPosition Entao ClosePosition;
+    pernadaAltaAtiva := Falso;
+    pernadaBaixaAtiva := Falso;
+    armarCompra := Falso;
+    armarVenda := Falso;
+  Fim;
+
+  // 7. Gerenciamento de Posição Aberta (Stop, Trava +1R e Alvo 4R)
+  Se HasPosition Entao
+  Inicio
+    Se IsBought Entao
+      precoEntrada := BuyPrice
+    Senao Se IsSold Entao
+      precoEntrada := SellPrice;
+
+    // Barra de entrada: calcula e fixa stop, risco e alvo estruturais
+    Se (Not posInicializada) Entao
+    Inicio
+      posInicializada := Verdadeiro;
+      travaAtivada := Falso;
+      precoStop := stopArmado;
+      
+      Se IsBought Entao
+      Inicio
+        riscoInicial := precoEntrada - precoStop;
+        precoAlvo := precoEntrada + (AlvoMultiplicadorR * riscoInicial);
+      Fim
+      Senao
+      Inicio
+        riscoInicial := precoStop - precoEntrada;
+        precoAlvo := precoEntrada - (AlvoMultiplicadorR * riscoInicial);
+      Fim;
+    Fim;
+
+    // Trava de Proteção: ao atingir +1.618R, move stop para +1.0R garantido
+    Se (Not travaAtivada) e (riscoInicial > 0) Entao
+    Inicio
+      Se IsBought e (Maxima >= precoEntrada + (TravaGatilhoR * riscoInicial)) Entao
+      Inicio
+        precoStop := precoEntrada + (TravaGarantidaR * riscoInicial);
+        travaAtivada := Verdadeiro;
+      Fim
+      Senao Se IsSold e (Minima <= precoEntrada - (TravaGatilhoR * riscoInicial)) Entao
+      Inicio
+        precoStop := precoEntrada - (TravaGarantidaR * riscoInicial);
+        travaAtivada := Verdadeiro;
+      Fim;
+    Fim;
+
+    // Registra último resultado estimado em R
+    Se riscoInicial > 0 Entao
+    Inicio
+      Se IsBought Entao
+        ultimoResultadoR := (Fechamento - precoEntrada) / riscoInicial
+      Senao
+        ultimoResultadoR := (precoEntrada - Fechamento) / riscoInicial;
+    Fim;
+
+    // Reenvio obrigatório das ordens OCO no Profit a cada fechamento de barra
+    Se (Time < HorarioZeragem) Entao
+    Inicio
+      Se IsBought Entao
+      Inicio
+        SellToCoverStop(precoStop, precoStop - (OffsetStopTicks * MinPriceIncrement));
+        SellToCoverLimit(precoAlvo);
+      Fim
+      Senao Se IsSold Entao
+      Inicio
+        BuyToCoverStop(precoStop, precoStop + (OffsetStopTicks * MinPriceIncrement));
+        BuyToCoverLimit(precoAlvo);
+      Fim;
+    Fim;
+  Fim
+  Senao
+  Inicio
+    // 8. Detecção de Novo BOS (Quando livre de posição e dia não bloqueado)
+    Se (Not pernadaAltaAtiva) e (Not pernadaBaixaAtiva) e (Not diaBloqueado)
+       e (Time >= HorarioInicioEntrada) e (Time < HorarioLimiteEntrada)
+       e (ultimoTopo > 0) e (ultimoFundo > 0) Entao
+    Inicio
+      // BOS de Alta: Fechamento rompe topo prévio
+      Se (ultimoTopoIdx > ultimoFundoIdx) e (Fechamento > ultimoTopo) e
+         ((Maxima - ultimoFundo) > AmplitudeMinimaTicks * MinPriceIncrement) Entao
+      Inicio
+        pernadaAltaAtiva := Verdadeiro;
+        refTopo := Maxima;
+        refFundo := ultimoFundo;
+        barrasPerna := 0;
+        bosBarIdx := CurrentBar;
+        PaintBar(clAmarelo);
+      Fim
+      // BOS de Baixa: Fechamento rompe fundo prévio
+      Senao Se (ultimoFundoIdx > ultimoTopoIdx) e (Fechamento < ultimoFundo) e
+         ((ultimoTopo - Minima) > AmplitudeMinimaTicks * MinPriceIncrement) Entao
+      Inicio
+        pernadaBaixaAtiva := Verdadeiro;
+        refTopo := ultimoTopo;
+        refFundo := Minima;
+        barrasPerna := 0;
+        bosBarIdx := CurrentBar;
+        PaintBar(clAmarelo);
+      Fim;
+    Fim;
+
+    // 9. Perna Ativa: Avalia Gatilho de Rejeição na MME 80 com Pavio >= 50%
+    Se pernadaAltaAtiva ou pernadaBaixaAtiva Entao
+    Inicio
+      diffPernada := refTopo - refFundo;
+      barrasPerna := barrasPerna + 1;
+
+      // Expiração da perna
+      Se (barrasPerna > MaxBarrasPerna) ou (Time >= HorarioLimiteEntrada) Entao
+      Inicio
+        pernadaAltaAtiva := Falso;
+        pernadaBaixaAtiva := Falso;
+      Fim
+      Senao Se pernadaAltaAtiva Entao
+      Inicio
+        // Se romper a origem, invalida
+        Se Minima <= refFundo Entao
+        Inicio
+          pernadaAltaAtiva := Falso;
+        Fim
+        Senao
+        Inicio
+          nivel50  := refTopo - (diffPernada * FiboEntrada);
+          nivel79  := refTopo - (diffPernada * FiboRejeicaoMax);
+          nivel886 := refTopo - (diffPernada * FiboStop);
+
+          // Expansão da perna enquanto não retrair até 50%
+          Se (Minima > nivel50) e (Maxima > refTopo) Entao
+            refTopo := Maxima;
+
+          // Checa se tocou a zona [50% a 79%] e a MME 80 nesta barra
+          Se (Minima <= nivel50) Entao
+          Inicio
+            toqueMME := (Minima <= mme80) e (Maxima >= mme80);
+            rngCandle := Maxima - Minima;
+            corpoMin := Min(Abertura, Fechamento);
+            pavioInferior := corpoMin - Minima;
+            condPavio := (rngCandle > 0) e ((pavioInferior / rngCandle) >= MinPavioRatio);
+
+            // Gatilho de Rejeição Comprador:
+            // 1. Tocou MME 80;
+            // 2. Fechou acima da MME 80;
+            // 3. Fechou acima do nível de 79% e 88.6%;
+            // 4. Pavio inferior >= 50% do range.
+            Se toqueMME e (Fechamento > mme80) e (Fechamento > nivel79) e (Fechamento > nivel886) e condPavio Entao
+            Inicio
+              armarCompra := Verdadeiro;
+              stopArmado := nivel886;
+              PaintBar(clVerde); // Pinta barra de Verde confirmando o gatilho
+            Fim
+            Senao Se Minima <= nivel886 Entao
+            Inicio
+              // Violou invalidação de 88.6%: encerra perna
+              pernadaAltaAtiva := Falso;
+            Fim;
+          Fim;
+        Fim;
+      Fim
+      Senao Se pernadaBaixaAtiva Entao
+      Inicio
+        // Se romper a origem, invalida
+        Se Maxima >= refTopo Entao
+        Inicio
+          pernadaBaixaAtiva := Falso;
+        Fim
+        Senao
+        Inicio
+          nivel50  := refFundo + (diffPernada * FiboEntrada);
+          nivel79  := refFundo + (diffPernada * FiboRejeicaoMax);
+          nivel886 := refFundo + (diffPernada * FiboStop);
+
+          // Expansão da perna enquanto não retrair até 50%
+          Se (Maxima < nivel50) e (Minima < refFundo) Entao
+            refFundo := Minima;
+
+          // Checa se tocou a zona [50% a 79%] e a MME 80 nesta barra
+          Se (Maxima >= nivel50) Entao
+          Inicio
+            toqueMME := (Minima <= mme80) e (Maxima >= mme80);
+            rngCandle := Maxima - Minima;
+            corpoMax := Max(Abertura, Fechamento);
+            pavioSuperior := Maxima - corpoMax;
+            condPavio := (rngCandle > 0) e ((pavioSuperior / rngCandle) >= MinPavioRatio);
+
+            // Gatilho de Rejeição Vendedor:
+            // 1. Tocou MME 80;
+            // 2. Fechou abaixo da MME 80;
+            // 3. Fechou abaixo do nível de 79% e 88.6%;
+            // 4. Pavio superior >= 50% do range.
+            Se toqueMME e (Fechamento < mme80) e (Fechamento < nivel79) e (Fechamento < nivel886) e condPavio Entao
+            Inicio
+              armarVenda := Verdadeiro;
+              stopArmado := nivel886;
+              PaintBar(clFuchsia); // Pinta barra de Magenta confirmando o gatilho
+            Fim
+            Senao Se Maxima >= nivel886 Entao
+            Inicio
+              pernadaBaixaAtiva := Falso;
+            Fim;
+          Fim;
+        Fim;
+      Fim;
+    Fim;
+  Fim;
+
+  // 10. Plotagem de Níveis Visuais
+  Se ExibirLinhas Entao
+  Inicio
+    Se refTopo > 0 Entao Plot(refTopo) Senao NoPlot(1);
+    Se refFundo > 0 Entao Plot2(refFundo) Senao NoPlot(2);
+  Fim;
+
+Fim;

@@ -209,6 +209,9 @@ class FiboModelConfig(BaseModel):
     session_filter: bool = False
     session_windows: list[tuple[str, str]] | None = None
     force_close_time: str | None = None
+    max_trades_per_day: int = Field(0, ge=0)
+    max_stops_per_day: int = Field(0, ge=0)
+    max_gains_per_day: int = Field(0, ge=0)
 
 
 class TradingProductionConfig(BaseModel):

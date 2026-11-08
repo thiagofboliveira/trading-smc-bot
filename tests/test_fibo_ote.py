@@ -489,5 +489,48 @@ def test_f15_bos_swing_trailing_respeita_f03_e_move_stop_para_swing_confirmado()
     assert t.stop_loss == pytest.approx(98.5)
 
 
+def test_f16_limites_diarios_param_apos_1_gain_ou_2_stops_seguidos():
+    """Valida F-16 (regras de gerenciamento diário):
+    - max_gains_per_day=1: após 1 gain encerrado no dia, bloqueia novas entradas no mesmo dia (backtest e live).
+    - max_stops_per_day=2: após 2 stops consecutivos encerrados no dia, bloqueia a 3ª entrada no mesmo dia.
+    - Causalidade: o resultado do trade 1 só trava o dia após o fechamento do trade 1.
+    """
+    entry_bar = (107.0, 107.5, 98.5, 99.5)
+    tp_bar = (99.5, 108.5, 99.0, 108.0)
+    sl_bar = (99.5, 100.0, 97.0, 97.5)
+
+    cycle_win = PREFIX + [BOS_QUIET, entry_bar, tp_bar]
+    cycle_loss = PREFIX + [BOS_QUIET, entry_bar, sl_bar]
+
+    # 1. Sem trava diária: 2 ciclos de gain no mesmo dia geram 2 trades vencedores
+    bars_two_wins = cycle_win + cycle_win + FLAT_HIGH
+    trades_unlim = run(bars_two_wins, max_gains_per_day=0)
+    assert len(trades_unlim) == 2
+
+    # 2. Com max_gains_per_day=1: o 2º setup no mesmo dia é bloqueado (gera apenas 1 trade)
+    trades_1gain = run(bars_two_wins, max_gains_per_day=1)
+    assert len(trades_1gain) == 1
+    assert bool(trades_1gain[0].win) is True
+
+    # E no live (pending_setup), após o 1º gain encerrado e novo BOS no mesmo dia, retorna None
+    strat_1gain = FiboOTEStrategy(cfg(max_gains_per_day=1))
+    assert (
+        strat_1gain.pending_setup(
+            m1_from_m5(cycle_win + PREFIX + [BOS_QUIET]), SPREAD
+        )
+        is None
+    )
+
+    # 3. Com max_stops_per_day=2: 3 ciclos de stop no mesmo dia param no 2º stop
+    bars_three_losses = cycle_loss + cycle_loss + cycle_loss + FLAT_HIGH
+    trades_unlim_sl = run(bars_three_losses, max_stops_per_day=0)
+    assert len(trades_unlim_sl) == 3
+
+    trades_2stops = run(bars_three_losses, max_stops_per_day=2)
+    assert len(trades_2stops) == 2
+    assert all(not t.win for t in trades_2stops)
+
+
+
 
 

@@ -103,6 +103,9 @@ class FiboOTEConfig:
     force_close_time: str | None = None  # F-08: horário diário de zeragem forçada
     close_on_friday: bool = False  # F-08: zeragem na sexta-feira antes do fim de semana
     friday_close_time: str = "20:45"  # F-08: horário de zeragem na sexta
+    max_trades_per_day: int = 0  # F-16: máximo de trades encerrados no dia antes de bloquear novas entradas (0 = sem limite)
+    max_stops_per_day: int = 0  # F-16: máximo de stops consecutivos no dia antes de parar (0 = sem limite)
+    max_gains_per_day: int = 0  # F-16: máximo de gains no dia antes de bater a meta e parar (0 = sem limite)
     slippage: float = 0.0  # F-10: slippage por execução em pontos de preço
     commission_per_unit: float = (
         0.0  # F-10: comissão total por trade em pontos de preço
@@ -384,12 +387,41 @@ class FiboOTEStrategy:
                 return float(ask_opens[i] - opens[i])
             return spread
 
+        day_trades: dict = {}
+        day_consec_stops: dict = {}
+        day_gains: dict = {}
+
+        def is_day_locked(d_key) -> bool:
+            if (
+                cfg.max_trades_per_day > 0
+                and day_trades.get(d_key, 0) >= cfg.max_trades_per_day
+            ):
+                return True
+            if (
+                cfg.max_stops_per_day > 0
+                and day_consec_stops.get(d_key, 0) >= cfg.max_stops_per_day
+            ):
+                return True
+            if (
+                cfg.max_gains_per_day > 0
+                and day_gains.get(d_key, 0) >= cfg.max_gains_per_day
+            ):
+                return True
+            return False
+
         def close_trade(pos: _Position, i: int, price: float, reason: str) -> FiboTrade:
             unscaled_pnl = pos.d * (price - pos.entry_price) - cfg.commission_per_unit
             unscaled_r = unscaled_pnl / pos.risk
             remaining_frac = 1.0 - (cfg.partial_exit_pct if pos.partial_taken else 0.0)
             r = pos.realized_r + remaining_frac * unscaled_r
             pnl = r * pos.risk
+            d_key = ts[i].date()
+            day_trades[d_key] = day_trades.get(d_key, 0) + 1
+            if r > 0.05:
+                day_gains[d_key] = day_gains.get(d_key, 0) + 1
+                day_consec_stops[d_key] = 0
+            elif r < -0.05:
+                day_consec_stops[d_key] = day_consec_stops.get(d_key, 0) + 1
             return FiboTrade(
                 symbol=symbol,
                 stage=1,
@@ -828,6 +860,7 @@ class FiboOTEStrategy:
                     inv_level = leg.level(cfg.fibo_stop)
                     cond = (
                         in_session
+                        and (not is_day_locked(ts[i].date()))
                         and (d * (closes[i] - rej_bound) > 0)
                         and (d * (closes[i] - inv_level) > 0)
                     )
@@ -922,6 +955,10 @@ class FiboOTEStrategy:
                 ):
                     continue
 
+            # F-16: trava diária de risco (1 gain / 2 stops seguidos / max trades no dia)
+            if is_day_locked(ts[i].date()):
+                continue
+
             # F-04: toque contra o nível calculado até a barra i-1
             if d * (level - touch) >= 0:
                 # Modo "limit": a ordem executa no toque intrabar (close[i] ainda não existe);
@@ -968,7 +1005,12 @@ class FiboOTEStrategy:
                     leg.extreme = ext
         if live:
             if cfg.entry_mode == "m5_close_rejection":
-                if pos is not None or pending_open is None or n < 1:
+                if (
+                    pos is not None
+                    or pending_open is None
+                    or n < 1
+                    or is_day_locked(ts[n - 1].date())
+                ):
                     return None
                 po = pending_open
                 slip = cfg.slippage if po.d == 1 else -cfg.slippage
@@ -995,14 +1037,16 @@ class FiboOTEStrategy:
                 )
             if pos is not None or leg is None or leg.touched or n < 1:
                 return None
+            bar_mins = (
+                15
+                if cfg.timeframe in ("M15", "15min", "15m")
+                else (60 if cfg.timeframe in ("H1", "1h", "60min") else 5)
+            )
+            next_ts = ts[-1] + pd.Timedelta(minutes=bar_mins)
+            if is_day_locked(next_ts.date()):
+                return None
             # F-08: filtro de sessão para novas ordens limite pendentes na barra seguinte (n)
             if cfg.session_filter and cfg.session_windows:
-                bar_mins = (
-                    15
-                    if cfg.timeframe in ("M15", "15min", "15m")
-                    else (60 if cfg.timeframe in ("H1", "1h", "60min") else 5)
-                )
-                next_ts = ts[-1] + pd.Timedelta(minutes=bar_mins)
                 t_str = next_ts.strftime("%H:%M")
                 if not any(
                     w_start <= t_str < w_end for w_start, w_end in cfg.session_windows

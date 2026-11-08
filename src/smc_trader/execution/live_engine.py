@@ -179,6 +179,15 @@ class LiveTradingEngine:
                     force_close_time=(
                         model_def.force_close_time if model_def else None
                     ),
+                    max_trades_per_day=(
+                        model_def.max_trades_per_day if model_def else 0
+                    ),
+                    max_stops_per_day=(
+                        model_def.max_stops_per_day if model_def else 0
+                    ),
+                    max_gains_per_day=(
+                        model_def.max_gains_per_day if model_def else 0
+                    ),
                     trend_ma=(
                         model_def.trend_ma if model_def else None
                     ),

@@ -18,10 +18,29 @@ Uma decisão tomada no instante `t` só pode usar informação disponível em `t
 |---|---|
 | `if closes[i] <= ema80[i]: continue` para uma entrada limite executada na barra `i` | `if closes[i - 1] <= ema80[i - 1]: continue` |
 | Testar stop e alvo da barra de entrada como se a ordem dos eventos fosse conhecida | A barra de entrada só pode ser estopada, nunca alvejada |
+| `continue` logo após `if triggered:` ignorando o stop da própria barra `i` | Testar imediatamente `lows[i] <= stop` (long) ou `highs[i] + spread >= stop` (short) no momento do fill |
+| `exit_price = pos["stop_price"]` mesmo quando `open[i]` abre além do stop por gap | `exit_price = min(pos["stop_price"], opens[i])` (long) ou `max(pos["stop_price"], opens[i] + spread)` (short) |
+| Ordens a mercado / stop preenchidas no preço exato | Modelar slippage realista (mínimo 1.0 ponto em índices) |
+| Somar trades de loops de gatilhos independentes no mesmo ativo/tempo (contagem dupla) | Em modo unificado/carteira, no máximo 1 posição por barra/evento de sinal |
 | Entrar na barra que confirmou o BOS | Entrar a partir da barra seguinte (F-01) |
 | Short comparando stop e alvo com o bid | Short sai pelo ask (bid + spread) |
 
 **Caso real (2026-11-07):** o filtro `trend_ma` usava `closes[i]` e `trend_mas[i]` na barra do toque. A varredura reportou +150R, 35% de acerto e 6/6 ativos positivos com stop em 0,886. Com o filtro usando `i - 1`, o mesmo teste deu −103R e 0/6 ativos positivos. O resultado foi commitado em `production.yaml` e no NTSL antes de qualquer revisão.
+
+**Caso real (2026-11-08): Falhas de simulação de Trend Follower (omissão de stop na barra de entrada, gaps ignorados e contagem dupla)**
+1. **Omissão do stop na barra de entrada:** Ao simular a estratégia `TrendFollowerStrategy`, a ordem por rompimento era executada dentro da barra `i`. Logo após o disparo, o código executava um `continue`. Com isso, a barra `i` NUNCA era testada contra o `stop_price`! Se a barra rompia a máxima acionando a compra e em seguida despencava até a mínima do sinal, o trade sobrevivia no simulador. Pelo histórico em M1, isso aconteceu 110 vezes no NAS100 e US30, inflando o resultado em +40R de lucro fantasma.
+2. **Gaps no stop loss:** Ordens de stop loss eram preenchidas no nível exato do stop (`exit_price = pos["stop_price"]`), ignorando que em gaps noturnos ou de fim de semana o mercado abre além do stop, devendo ser executado no `open` da barra.
+3. **Contagem dupla no modo unificado:** Os gatilhos (Trap, Barra de Força, Engolfo) rodavam em laços independentes. Quando dois ou três gatilhos disparavam na mesma barra (167 casos, 360 trades), o simulador abria 2 ou 3 posições idênticas (mesma entrada, mesmo stop), concentrando 2R a 3R de risco no mesmo evento e inflando a contagem de trades e o retorno total.
+4. **Ordens stop sem slippage:** Ordens de stop não continham slippage (mínimo de 1 ponto em índices).
+5. **Atribuição falsa de alpha aos gatilhos:** O resultado foi anunciado com entusiasmo excessivo, atribuindo o mérito aos gatilhos gráficos. Uma entrada aleatória dentro do mesmo regime macro (ADX >= 25, MME 80/200, slope > 0.10, Sessão NY, saída na MME 20) rendeu praticamente o mesmo (+0,258R contra +0,303R), provando que os gatilhos gráficos não tinham vantagem estatística real. Além disso, a estratégia falhou catastroficamente em Forex e Commodities (XAUUSD −77R, EURUSD −135R, GBPUSD −59R, BRENT −31R).
+- **Impacto corrigido:** O retorno relatado de +281,0R (741 trades, PF 1.64) cai para +141,6R (562 trades, PF 1.50) com 1 pt de slippage (+0,252R/trade).
+
+### Regras obrigatórias para qualquer simulação de estratégia:
+- **Toda ordem executada dentro da barra `i` deve obrigatoriamente checar se a barra `i` atinge o stop loss.** A barra de entrada só pode ser estopada, nunca alvejada.
+- **Todo stop loss atingido com gap na abertura deve ser executado no preço de abertura (`open`), acrescido de slippage.**
+- **Toda ordem stop (entrada por rompimento ou stop loss) deve incluir parâmetro de slippage realista.**
+- **Estratégias multi-gatilho devem operar com controle estrito de concorrência:** no máximo 1 trade por sinal, com prioridade determinística entre os gatilhos.
+- **Nenhum gatilho pode ser creditado como produtor de alpha sem teste de controle de entrada aleatória** sob o mesmo regime macro e regra de saída. Se a diferença estiver dentro do desvio-padrão ($\sigma / \sqrt{N}$), a contribuição do gatilho é considerada estatisticamente nula.
 
 ## 2. Antes de afirmar que uma estratégia ou parâmetro "funciona"
 

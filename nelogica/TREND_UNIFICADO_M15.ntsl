@@ -111,6 +111,9 @@ Inicio
     ordemCompraArmada := Falso;
     ordemVendaArmada := Falso;
 
+    // Stop Loss Fixo da Operação
+    SellToCoverStop(precoStopLoss, precoStopLoss);
+
     // Condução Causal pela MME 20: Fecha se candle fechar abaixo da MME 20
     Se (Fechamento < mme20) entao
     Inicio
@@ -121,6 +124,9 @@ Inicio
   Inicio
     ordemCompraArmada := Falso;
     ordemVendaArmada := Falso;
+
+    // Stop Loss Fixo da Operação
+    BuyToCoverStop(precoStopLoss, precoStopLoss);
 
     // Condução Causal pela MME 20: Fecha se candle fechar acima da MME 20
     Se (Fechamento > mme20) entao

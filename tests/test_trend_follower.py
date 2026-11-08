@@ -183,3 +183,126 @@ def test_independent_vs_single_position_mode():
 
     assert strat_ind.config.execution_mode == "independent"
     assert strat_single.config.execution_mode == "single_position"
+
+
+def test_entry_candle_stop_loss_trigger():
+    """Teste sintético anti-viés (AGENTS.md Caso Real 2026-11-08):
+    Se a barra rompe a máxima acionando BuyStop e, na mesma barra, a mínima cai
+    até o stop do sinal, o trade DEVE ser estopado na barra de entrada e NÃO sobreviver.
+    """
+    bars = []
+    price = 10000.0
+    for _ in range(230):
+        bars.append((price, price + 15.0, price - 5.0, price + 10.0))
+        price += 10.0
+
+    # Barra 230: Barra de sinal (Trap na MME 8)
+    # Fecha com máxima em 12305 e mínima em 12275
+    p_prev = bars[-1][3]
+    bars.append((p_prev - 5.0, p_prev + 5.0, p_prev - 25.0, p_prev + 2.0))
+    trap_high = bars[-1][1]
+    trap_low = bars[-1][2]
+
+    # Barra 231: Aciona BuyStop rompendo a máxima, mas cai abaixo do stop (trap_low)
+    # Open: 12300, High: 12320 (aciona), Low: 12260 (estopa), Close: 12330 (fecha lindo no topo)
+    # Sem a checagem intrabar, o simulador olharia o Close e deixaria o trade continuar!
+    bars.append((trap_high - 5.0, trap_high + 15.0, trap_low - 15.0, trap_high + 25.0))
+
+    # Barra 232+: Preço continua subindo forte
+    curr_c = bars[-1][3]
+    for _ in range(10):
+        bars.append((curr_c, curr_c + 20.0, curr_c - 5.0, curr_c + 15.0))
+        curr_c += 15.0
+
+    df = make_df(bars)
+    cfg = TrendFollowerConfig(triggers=["trap"], use_session_filter=False, slippage_pts=1.0)
+    strat = TrendFollowerStrategy(cfg)
+    trades = strat.run_simulation(df, "NAS100", SPREAD)
+
+    assert len(trades) == 1
+    t = trades[0]
+    # Deve ter sido estopado na própria barra de entrada!
+    assert t.exit_reason == "STOP_LOSS_ENTRY_BAR"
+    assert t.entry_time == df.index[231]
+    assert t.exit_time == df.index[231]
+    assert t.win is False
+    assert t.r_multiple < 0
+
+
+def test_stop_loss_gap_fill():
+    """Teste sintético anti-viés: Stop loss com gap de abertura executa no Open, não no stop."""
+    bars = []
+    price = 10000.0
+    for _ in range(230):
+        bars.append((price, price + 15.0, price - 5.0, price + 10.0))
+        price += 10.0
+
+    # Barra 230: Trap
+    p_prev = bars[-1][3]
+    bars.append((p_prev - 5.0, p_prev + 5.0, p_prev - 25.0, p_prev + 2.0))
+    trap_high = bars[-1][1]
+    trap_low = bars[-1][2]
+
+    # Barra 231: Aciona BuyStop sem estopar
+    bars.append((trap_high - 1.0, trap_high + 20.0, trap_low + 5.0, trap_high + 15.0))
+
+    # Barra 232: Gap de abertura abaixo do stop loss!
+    # Stop estava em trap_low. O candle abre 20 pontos abaixo de trap_low!
+    gap_open = trap_low - 20.0
+    bars.append((gap_open, gap_open + 5.0, gap_open - 10.0, gap_open - 2.0))
+    # Barra 233: Barra seguinte para fechar o loop n - 1
+    bars.append((gap_open - 2.0, gap_open + 2.0, gap_open - 5.0, gap_open))
+
+    df = make_df(bars)
+    slip = 1.5
+    cfg = TrendFollowerConfig(triggers=["trap"], use_session_filter=False, slippage_pts=slip)
+    strat = TrendFollowerStrategy(cfg)
+    trades = strat.run_simulation(df, "NAS100", SPREAD)
+
+    assert len(trades) == 1
+    t = trades[0]
+    assert t.exit_reason == "STOP_LOSS"
+    assert t.exit_time == df.index[232]
+    # Execução deve ser no Open com gap menos slippage (gap_open - slip)
+    assert t.exit_price == gap_open - slip
+
+
+def test_unified_mode_no_duplicate_trades():
+    """Garante que no modo single_position uma barra que qualifica tanto Trap quanto Barra de Força
+    abre apenas UMA única posição com risco de 1R (sem contagem dupla).
+    """
+    bars = []
+    price = 10000.0
+    for _ in range(230):
+        bars.append((price, price + 15.0, price - 5.0, price + 10.0))
+        price += 10.0
+
+    # Barra 230: Qualifica Trap E Barra de Força (falso rompimento da mínima anterior + fecha nos 80% do topo)
+    p_prev = bars[-1][3]
+    # Range = 40.0. Minima viola anterior, fecha a 35 pontos da mínima (>70% range)
+    bars.append((p_prev - 5.0, p_prev + 30.0, p_prev - 20.0, p_prev + 25.0))
+    p_high = bars[-1][1]
+
+    # Barra 231: Rompe a máxima de 230
+    bars.append((p_high - 1.0, p_high + 30.0, p_high - 2.0, p_high + 25.0))
+
+    # Condução por 10 barras para MME 20 subir
+    curr_c = bars[-1][3]
+    for _ in range(10):
+        bars.append((curr_c, curr_c + 30.0, curr_c - 5.0, curr_c + 25.0))
+        curr_c += 25.0
+
+    # Barra 242: Fecha abaixo da MME 20
+    bars.append((curr_c, curr_c + 5.0, 12340.0, 12350.0))
+    bars.append((12350.0, 12360.0, 12340.0, 12345.0))
+    bars.append((12345.0, 12355.0, 12330.0, 12340.0))
+
+    df = make_df(bars)
+    cfg = TrendFollowerConfig(triggers=["trap", "force_bar"], execution_mode="single_position", use_session_filter=False)
+    strat = TrendFollowerStrategy(cfg)
+    trades = strat.run_simulation(df, "NAS100", SPREAD)
+
+    # Exatamente 1 trade deve ser gerado, atribuído ao primeiro gatilho de maior prioridade (TRAP)
+    assert len(trades) == 1
+    assert trades[0].setup_name == "TRAP"
+

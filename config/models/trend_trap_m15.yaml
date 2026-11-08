@@ -10,26 +10,29 @@
 # Execução: BuyStop/SellStop causal na barra i+1 na superação da barra de sinal.
 # Condução: Saída causal por fechamento além da MME 20 executada no Open da barra seguinte.
 #
-# Métricas 5 Anos (2021-11-01 a 2026-11-08) com spread real (NAS100: 1.5 pts, US30: 2.0 pts):
-# Total Carteira: +114.9R em 267 trades (+23.0R/ano, WR 34.8%, PF 1.75, MaxDD 15.3R)
-# In-Sample (3 anos, 2021-2024): +74.2R | Out-of-Sample (2 anos, 2024-2026): +40.7R
-# Detalhamento: NAS100 +70.1R (WR 37.3%, PF 1.96) | US30 +44.8R (WR 32.3%, PF 1.56)
+# Métricas 5 Anos Corrigidas (2021-11-01 a 2026-11-08) com spread real e stop intrabar:
+# Com Slippage Realista (1.0 pt nas ordens stop):
+# Total Carteira: +53.3R em 274 trades (+0.195 ± 0.143R/trade, WR 31.0%, PF 1.30, MaxDD 31.9R)
+# In-Sample (3 anos): +18.7R | Out-of-Sample (2 anos): +34.6R
+# Detalhamento: NAS100 +35.2R (WR 33.8%, PF 1.42) | US30 +18.2R (WR 28.3%, PF 1.20)
+# Sem Slippage Adicional: +66.1R em 274 trades (WR 31.0%, PF 1.39)
 # ===================================================================
 
 model:
   id: "trend_trap_m15"
   name: "Trend-Trap-M15"
-  version: "1.0.0"
-  description: "Super Tendência no M15 com Trap na MME 8 e condução por MME 20 (Sessão NY 13:00-17:30 UTC)"
+  version: "1.1.0"
+  description: "Super Tendência no M15 com Trap na MME 8 corrigido anti-viés"
 
 timeframes:
   operational: "M15"
 
 strategy:
   type: "trend_follower"
-  execution_mode: "independent"
+  execution_mode: "single_position"
   triggers:
     - "trap"
+  slippage_pts: 1.0
 
 filters:
   session:

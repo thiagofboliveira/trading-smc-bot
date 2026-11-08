@@ -11,26 +11,29 @@
 # Execução: BuyStop/SellStop causal na barra i+1 na superação da barra de sinal.
 # Condução: Saída causal por fechamento além da MME 20 executada no Open da barra seguinte.
 #
-# Métricas 5 Anos (2021-11-01 a 2026-11-08) com spread real (NAS100: 1.5 pts, US30: 2.0 pts):
-# Total Carteira: +122.6R em 360 trades (+24.5R/ano, WR 33.6%, PF 1.57, MaxDD 30.1R)
-# In-Sample (3 anos, 2021-2024): +74.3R | Out-of-Sample (2 anos, 2024-2026): +48.3R
-# Detalhamento: NAS100 +82.7R (WR 35.4%, PF 1.75) | US30 +40.0R (WR 31.6%, PF 1.37)
+# Métricas 5 Anos Corrigidas (2021-11-01 a 2026-11-08) com spread real e stop intrabar:
+# Com Slippage Realista (1.0 pt nas ordens stop):
+# Total Carteira: +63.3R em 376 trades (+0.168 ± 0.120R/trade, WR 30.6%, PF 1.26, MaxDD 31.4R)
+# In-Sample (3 anos): +33.6R | Out-of-Sample (2 anos): +29.7R
+# Detalhamento: NAS100 +43.9R (WR 31.8%, PF 1.35) | US30 +19.4R (WR 29.2%, PF 1.17)
+# Sem Slippage Adicional: +80.3R em 376 trades (WR 30.9%, PF 1.34)
 # ===================================================================
 
 model:
   id: "trend_barra_forca_m15"
   name: "Trend-Barra-Forca-M15"
-  version: "1.0.0"
-  description: "Super Tendência no M15 com Barra de Força (Ponto Contínuo) e condução por MME 20 (Sessão NY 13:00-17:30 UTC)"
+  version: "1.1.0"
+  description: "Super Tendência no M15 com Barra de Força corrigido anti-viés"
 
 timeframes:
   operational: "M15"
 
 strategy:
   type: "trend_follower"
-  execution_mode: "independent"
+  execution_mode: "single_position"
   triggers:
     - "force_bar"
+  slippage_pts: 1.0
 
 filters:
   session:

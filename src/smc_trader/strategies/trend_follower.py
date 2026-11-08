@@ -43,6 +43,7 @@ class TrendFollowerConfig:
     ema_slow: int = 200
     slope_min: float = 0.10
     slope_max: float = 1.00
+    slippage_pts: float = 0.0  # Slippage em pontos para ordens stop (rompimento e stop loss)
 
     def __post_init__(self):
         if self.triggers is None:
@@ -264,12 +265,15 @@ class TrendFollowerStrategy:
                         exit_by_ma = True
 
                 if hit_sl:
-                    exit_price = pos["stop_price"]
-                    r = (
-                        (exit_price - pos["entry_price"]) / pos["initial_risk"]
-                        if d == 1
-                        else (pos["entry_price"] - exit_price) / pos["initial_risk"]
-                    )
+                    if d == 1:
+                        raw_exit = min(pos["stop_price"], opens[i])
+                        exit_price = raw_exit - self.config.slippage_pts
+                        r = (exit_price - pos["entry_price"]) / pos["initial_risk"]
+                    else:
+                        raw_exit = max(pos["stop_price"], opens[i] + spread)
+                        exit_price = raw_exit + self.config.slippage_pts
+                        r = (pos["entry_price"] - exit_price) / pos["initial_risk"]
+
                     trades.append(
                         TrendTrade(
                             symbol=symbol,
@@ -325,23 +329,58 @@ class TrendFollowerStrategy:
                 if d == 1:
                     if highs[i] >= po["trigger_price"]:
                         triggered = True
-                        exec_price = max(opens[i], po["trigger_price"]) + spread
+                        exec_price = max(opens[i], po["trigger_price"]) + spread + self.config.slippage_pts
                 else:
                     if lows[i] <= po["trigger_price"]:
                         triggered = True
-                        exec_price = min(opens[i], po["trigger_price"])
+                        exec_price = min(opens[i], po["trigger_price"]) - self.config.slippage_pts
 
                 if triggered:
                     risk = abs(exec_price - po["stop_price"])
                     if risk > 0:
-                        open_pos = {
-                            "direction": po["direction"],
-                            "entry_idx": i,
-                            "entry_time": ts[i],
-                            "entry_price": exec_price,
-                            "stop_price": po["stop_price"],
-                            "initial_risk": risk,
-                        }
+                        # Checagem obrigatória anti-viés: stop na barra de entrada
+                        entry_stopped = False
+                        if d == 1:
+                            if lows[i] <= po["stop_price"]:
+                                entry_stopped = True
+                                raw_exit = min(po["stop_price"], opens[i])
+                                exit_price = raw_exit - self.config.slippage_pts
+                                r = (exit_price - exec_price) / risk
+                        else:
+                            if highs[i] + spread >= po["stop_price"]:
+                                entry_stopped = True
+                                raw_exit = max(po["stop_price"], opens[i] + spread)
+                                exit_price = raw_exit + self.config.slippage_pts
+                                r = (exec_price - exit_price) / risk
+
+                        if entry_stopped:
+                            trades.append(
+                                TrendTrade(
+                                    symbol=symbol,
+                                    setup_name=setup_id.upper(),
+                                    direction=po["direction"],
+                                    entry_time=ts[i],
+                                    exit_time=ts[i],
+                                    entry_price=exec_price,
+                                    stop_price=po["stop_price"],
+                                    exit_price=exit_price,
+                                    exit_reason="STOP_LOSS_ENTRY_BAR",
+                                    r_multiple=float(r),
+                                    win=bool(r > 0),
+                                )
+                            )
+                            open_pos = None
+                            pending_order = None
+                            continue
+                        else:
+                            open_pos = {
+                                "direction": po["direction"],
+                                "entry_idx": i,
+                                "entry_time": ts[i],
+                                "entry_price": exec_price,
+                                "stop_price": po["stop_price"],
+                                "initial_risk": risk,
+                            }
                     pending_order = None
                     continue
                 else:
@@ -461,12 +500,15 @@ class TrendFollowerStrategy:
                         exit_by_ma = True
 
                 if hit_sl:
-                    exit_price = pos["stop_price"]
-                    r = (
-                        (exit_price - pos["entry_price"]) / pos["initial_risk"]
-                        if d == 1
-                        else (pos["entry_price"] - exit_price) / pos["initial_risk"]
-                    )
+                    if d == 1:
+                        raw_exit = min(pos["stop_price"], opens[i])
+                        exit_price = raw_exit - self.config.slippage_pts
+                        r = (exit_price - pos["entry_price"]) / pos["initial_risk"]
+                    else:
+                        raw_exit = max(pos["stop_price"], opens[i] + spread)
+                        exit_price = raw_exit + self.config.slippage_pts
+                        r = (pos["entry_price"] - exit_price) / pos["initial_risk"]
+
                     trades.append(
                         TrendTrade(
                             symbol=symbol,
@@ -521,24 +563,58 @@ class TrendFollowerStrategy:
                 if d == 1:
                     if highs[i] >= po["trigger_price"]:
                         triggered = True
-                        exec_price = max(opens[i], po["trigger_price"]) + spread
+                        exec_price = max(opens[i], po["trigger_price"]) + spread + self.config.slippage_pts
                 else:
                     if lows[i] <= po["trigger_price"]:
                         triggered = True
-                        exec_price = min(opens[i], po["trigger_price"])
+                        exec_price = min(opens[i], po["trigger_price"]) - self.config.slippage_pts
 
                 if triggered:
                     risk = abs(exec_price - po["stop_price"])
                     if risk > 0:
-                        open_pos = {
-                            "setup": po["setup"],
-                            "direction": po["direction"],
-                            "entry_idx": i,
-                            "entry_time": ts[i],
-                            "entry_price": exec_price,
-                            "stop_price": po["stop_price"],
-                            "initial_risk": risk,
-                        }
+                        entry_stopped = False
+                        if d == 1:
+                            if lows[i] <= po["stop_price"]:
+                                entry_stopped = True
+                                raw_exit = min(po["stop_price"], opens[i])
+                                exit_price = raw_exit - self.config.slippage_pts
+                                r = (exit_price - exec_price) / risk
+                        else:
+                            if highs[i] + spread >= po["stop_price"]:
+                                entry_stopped = True
+                                raw_exit = max(po["stop_price"], opens[i] + spread)
+                                exit_price = raw_exit + self.config.slippage_pts
+                                r = (exec_price - exit_price) / risk
+
+                        if entry_stopped:
+                            trades.append(
+                                TrendTrade(
+                                    symbol=symbol,
+                                    setup_name=po["setup"],
+                                    direction=po["direction"],
+                                    entry_time=ts[i],
+                                    exit_time=ts[i],
+                                    entry_price=exec_price,
+                                    stop_price=po["stop_price"],
+                                    exit_price=exit_price,
+                                    exit_reason="STOP_LOSS_ENTRY_BAR",
+                                    r_multiple=float(r),
+                                    win=bool(r > 0),
+                                )
+                            )
+                            open_pos = None
+                            pending_order = None
+                            continue
+                        else:
+                            open_pos = {
+                                "setup": po["setup"],
+                                "direction": po["direction"],
+                                "entry_idx": i,
+                                "entry_time": ts[i],
+                                "entry_price": exec_price,
+                                "stop_price": po["stop_price"],
+                                "initial_risk": risk,
+                            }
                     pending_order = None
                     continue
                 else:
@@ -698,12 +774,15 @@ class TrendFollowerStrategy:
         tot_dd = cls.max_drawdown_r(trades)
         tot_is = sum(t.r_multiple for t in trades if t.entry_time < split_dt)
         tot_oos = sum(t.r_multiple for t in trades if t.entry_time >= split_dt)
+        r_per_tr = tot_r / tot_n if tot_n > 0 else 0.0
+        se = float(np.std([t.r_multiple for t in trades]) / np.sqrt(tot_n)) if tot_n > 0 else 0.0
 
         lines.extend([
             "",
             "#### 3. Total Consolidado",
             f"* **Total de Trades:** {tot_n}",
             f"* **Retorno Total:** {tot_r:+.1f}R ({tot_r / 5.0:+.1f}R/ano)",
+            f"* **Expectativa (R/trade):** {r_per_tr:+.3f} ± {se:.3f}R",
             f"* **Taxa de Acerto:** {tot_wr:.1f}%",
             f"* **Profit Factor:** {tot_pf:.2f}",
             f"* **Max Drawdown:** {tot_dd:.1f}R",

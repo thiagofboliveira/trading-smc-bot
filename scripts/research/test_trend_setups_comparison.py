@@ -177,8 +177,14 @@ def run_setup_simulation(
                     exit_by_ma = True
 
             if hit_sl:
-                exit_price = pos["stop_price"]
-                r = (exit_price - pos["entry_price"]) / pos["initial_risk"] if d == 1 else (pos["entry_price"] - exit_price) / pos["initial_risk"]
+                if d == 1:
+                    raw_exit = min(pos["stop_price"], opens[i])
+                    exit_price = raw_exit - 1.0
+                    r = (exit_price - pos["entry_price"]) / pos["initial_risk"]
+                else:
+                    raw_exit = max(pos["stop_price"], opens[i] + spread)
+                    exit_price = raw_exit + 1.0
+                    r = (pos["entry_price"] - exit_price) / pos["initial_risk"]
                 trades.append(Trade(
                     symbol=symbol,
                     setup_name=setup_name,
@@ -235,14 +241,46 @@ def run_setup_simulation(
             if triggered:
                 risk = abs(exec_price - po["stop_price"])
                 if risk > 0:
-                    open_pos = {
-                        "direction": po["direction"],
-                        "entry_idx": i,
-                        "entry_time": ts[i],
-                        "entry_price": exec_price,
-                        "stop_price": po["stop_price"],
-                        "initial_risk": risk,
-                    }
+                    entry_stopped = False
+                    if d == 1:
+                        if lows[i] <= po["stop_price"]:
+                            entry_stopped = True
+                            raw_exit = min(po["stop_price"], opens[i])
+                            exit_price = raw_exit - 1.0
+                            r = (exit_price - exec_price) / risk
+                    else:
+                        if highs[i] + spread >= po["stop_price"]:
+                            entry_stopped = True
+                            raw_exit = max(po["stop_price"], opens[i] + spread)
+                            exit_price = raw_exit + 1.0
+                            r = (exec_price - exit_price) / risk
+
+                    if entry_stopped:
+                        trades.append(Trade(
+                            symbol=symbol,
+                            setup_name=setup_name,
+                            direction=po["direction"],
+                            entry_time=ts[i],
+                            exit_time=ts[i],
+                            entry_price=exec_price,
+                            stop_price=po["stop_price"],
+                            exit_price=exit_price,
+                            exit_reason="STOP_LOSS_ENTRY",
+                            r_multiple=r,
+                            win=r > 0,
+                        ))
+                        open_pos = None
+                        pending_order = None
+                        continue
+                    else:
+                        open_pos = {
+                            "direction": po["direction"],
+                            "entry_idx": i,
+                            "entry_time": ts[i],
+                            "entry_price": exec_price,
+                            "stop_price": po["stop_price"],
+                            "initial_risk": risk,
+                        }
                     pending_order = None
                     continue
                 else:

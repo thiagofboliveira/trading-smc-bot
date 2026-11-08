@@ -11,26 +11,29 @@
 # Execução: BuyStop/SellStop causal na barra i+1 na superação da barra de sinal.
 # Condução: Saída causal por fechamento além da MME 20 executada no Open da barra seguinte.
 #
-# Métricas 5 Anos (2021-11-01 a 2026-11-08) com spread real (NAS100: 1.5 pts, US30: 2.0 pts):
-# Total Carteira: +43.5R em 114 trades (+8.7R/ano, WR 31.6%, PF 1.64, MaxDD 13.4R)
-# In-Sample (3 anos, 2021-2024): +14.8R | Out-of-Sample (2 anos, 2024-2026): +28.6R
-# Detalhamento: NAS100 +27.6R (WR 35.7%, PF 1.85) | US30 +15.9R (WR 27.6%, PF 1.45)
+# Métricas 5 Anos Corrigidas (2021-11-01 a 2026-11-08) com spread real e stop intrabar:
+# Com Slippage Realista (1.0 pt nas ordens stop):
+# Total Carteira: +25.8R em 114 trades (+0.226 ± 0.248R/trade, WR 28.1%, PF 1.35, MaxDD 20.2R)
+# In-Sample (3 anos): +6.9R | Out-of-Sample (2 anos): +18.9R
+# Detalhamento: NAS100 +18.4R (WR 32.1%, PF 1.52) | US30 +7.4R (WR 24.1%, PF 1.19)
+# Sem Slippage Adicional: +30.9R em 114 trades (WR 28.1%, PF 1.42)
 # ===================================================================
 
 model:
   id: "trend_engolfo_m15"
   name: "Trend-Engolfo-M15"
-  version: "1.0.0"
-  description: "Super Tendência no M15 com Engolfo na Média e condução por MME 20 (Sessão NY 13:00-17:30 UTC)"
+  version: "1.1.0"
+  description: "Super Tendência no M15 com Engolfo na Média corrigido anti-viés"
 
 timeframes:
   operational: "M15"
 
 strategy:
   type: "trend_follower"
-  execution_mode: "independent"
+  execution_mode: "single_position"
   triggers:
     - "engulfing"
+  slippage_pts: 1.0
 
 filters:
   session:

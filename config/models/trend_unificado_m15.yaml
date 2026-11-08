@@ -1,40 +1,53 @@
 # ===================================================================
-# SMC TRADER — MODELO: TREND UNIFICADO M15 (MULTI-GATILHO PARALELO COM ATRIBUIÇÃO)
+# SMC TRADER — MODELO: TREND UNIFICADO M15 (MULTI-GATILHO SINGLE-POSITION)
 # ===================================================================
 # Nomenclatura Padrão: <estrategia>_<conceito> (M-03)
 # ===================================================================
 # Conceito: Seguidor de Super Tendência intraday no M15 durante a Sessão de Nova York
-# (13:00 às 17:30 UTC). Opera em paralelo com 3 gatilhos complementares rastreáveis:
-# 1. TRAP (falso rompimento da mínima/máxima anterior absorvido na MME 8);
-# 2. FORCE_BAR (Barra de Força / Ignição na média com fechamento direcional nos 30% extremos);
-# 3. ENGULFING (Engolfo na zona das médias).
+# (13:00 às 17:30 UTC). Opera em modo single-position (máximo 1 trade ativo por vez,
+# sem contagem dupla) com 3 gatilhos priorizados: Trap > Force Bar > Engulfing.
 # Condução: Saída causal por fechamento além da MME 20 executada no Open da barra seguinte.
 #
-# Métricas 5 Anos (2021-11-01 a 2026-11-08) com spread real (NAS100: 1.5 pts, US30: 2.0 pts):
-# Total Carteira: +281.0R em 741 trades (+56.2R/ano, WR 33.7%, PF 1.64, MaxDD 53.3R)
-# In-Sample (3 anos, 2021-2024): +163.4R | Out-of-Sample (2 anos, 2024-2026): +117.6R
-# Desempenho Anual: 6 de 6 anos positivos (+1.1R em 2021, +86.7R em 2022, +14.3R em 2023,
-#                   +101.0R em 2024, +17.3R em 2025, +60.6R em 2026)
-# Desdobramento por Ativo: NAS100 +180.3R (PF 1.84) | US30 +100.7R (PF 1.45)
-# Desdobramento por Gatilho: TRAP +114.9R | FORCE_BAR +122.6R | ENGULFING +43.5R
+# AUDITORIA ANTI-VIÉS (2026-11-08 — AGENTS.md Caso Real):
+# O valor originalmente relatado (+281.0R / 741 trades) continha falhas de simulação:
+# 1. Omissão de stop na barra de entrada (-40R);
+# 2. Gaps de stop preenchidos no nível exato em vez do Open (-1.9R);
+# 3. Contagem dupla no modo independente (360 trades duplicados em 167 candles);
+# 4. Falta de slippage em ordens stop.
+#
+# MÉTRICAS CORRIGIDAS (5 Anos: 2021-11-01 a 2026-11-08, spreads reais: NAS100 1.5, US30 2.0):
+# Com Slippage Realista (1.0 pt nas ordens stop):
+# Total Carteira: +54.7R em 457 trades (Expectativa: +0.120 ± 0.112R/trade, WR 28.9%, PF 1.18, MaxDD 29.9R)
+# In-Sample (3 anos): +8.5R | Out-of-Sample (2 anos): +46.2R
+# NAS100: +39.9R (236 trades, WR 30.9%, PF 1.26) | US30: +14.7R (221 trades, WR 26.7%, PF 1.10)
+#
+# Sem Slippage Adicional (apenas spread):
+# Total Carteira: +76.2R em 457 trades (+0.167 ± 0.115R/trade, WR 29.1%, PF 1.25, MaxDD 26.2R)
+#
+# FONTE DE VANTAGEM (BASELINE DE CONTROLE):
+# Entrada aleatória no mesmo regime macro (MME 80/200, ADX >= 25, NY 13-17:30 UTC, saída MME 20):
+# Rende entre -21.4R e +86.7R dependendo da semente. Os gatilhos gráficos não geram
+# alpha estatisticamente significativo além do regime de momentum do índice.
+# Fora de índices de ações americanos (Forex/Commodities), o modelo produz perdas (-33R a -63R).
 # ===================================================================
 
 model:
   id: "trend_unificado_m15"
   name: "Trend-Unificado-M15"
-  version: "1.0.0"
-  description: "Super Tendência no M15 multi-gatilho (Trap + Barra de Força + Engolfo) conduzido por MME 20 na Sessão NY"
+  version: "1.1.0"
+  description: "Super Tendência no M15 multi-gatilho single-position corrigido anti-viés"
 
 timeframes:
   operational: "M15"
 
 strategy:
   type: "trend_follower"
-  execution_mode: "independent"
+  execution_mode: "single_position"
   triggers:
     - "trap"
     - "force_bar"
     - "engulfing"
+  slippage_pts: 1.0
 
 filters:
   session:

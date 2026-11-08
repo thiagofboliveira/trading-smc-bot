@@ -110,30 +110,31 @@ models:
     status: "paper_only"
 
 # ===================================================================
-# SÍMBOLOS: Ativados em paper trading apenas a cesta com expectativa positiva (BRENT, US30, NAS100).
-# Demais ativos mantidos como 'enabled: false'.
+# SÍMBOLOS: Pausados em paper trading ('enabled: false') após o estresse de 5 anos
+# (2021-2026) constatar fragilidade do Fibo M5 em regimes macro adversos.
+# A carteira foi migrada para avaliação dos modelos M15 de Super Tendência.
 # ===================================================================
 symbols:
   BRENT:
     model: "smc_fibo_rejeicao_ema80_pavio"
-    description: "Petróleo Brent — SMC-Fibo-Rejeicao-EMA80-Pavio M5 (Paper Trading)"
+    description: "Petróleo Brent — SMC-Fibo-Rejeicao-EMA80-Pavio M5 (Pausado após estresse 5 anos)"
     macro_tf: "M5"
     order_type: "market"
-    enabled: true
+    enabled: false
 
   US30:
     model: "smc_fibo_rejeicao_ema80_pavio"
-    description: "Dow Jones 30 — SMC-Fibo-Rejeicao-EMA80-Pavio M5 (Paper Trading)"
+    description: "Dow Jones 30 — SMC-Fibo-Rejeicao-EMA80-Pavio M5 (Pausado após estresse 5 anos)"
     macro_tf: "M5"
     order_type: "market"
-    enabled: true
+    enabled: false
 
   NAS100:
     model: "smc_fibo_rejeicao_ema80_pavio"
-    description: "Nasdaq 100 — SMC-Fibo-Rejeicao-EMA80-Pavio M5 (Paper Trading)"
+    description: "Nasdaq 100 — SMC-Fibo-Rejeicao-EMA80-Pavio M5 (Pausado após estresse 5 anos)"
     macro_tf: "M5"
     order_type: "market"
-    enabled: true
+    enabled: false
 
   XAUUSD:
     model: "smc_fibo_gold_session"

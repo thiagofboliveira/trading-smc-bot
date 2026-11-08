@@ -148,6 +148,7 @@ uv run smc live --config config/production.yaml
 
 ## ⚠️ 5. Diretrizes para Futuras Alterações e Novos Agentes
 
+0. **Leia `AGENTS.md` antes de mexer em estratégia, filtros, parâmetros ou modelos.** Ele tem as regras que evitam o erro mais repetido neste projeto (filtro usando o fechamento da barra em que a ordem é executada) e o que é proibido fazer com resultado de backtest.
 1. **Nunca quebre o teste de Invariância de Prefixo (`tests/test_prefix_invariance.py`):**
    Qualquer decisão tomada no instante $t$ não pode depender de candles posteriores a $t$. Se o teste falhar, há lookahead.
 2. **Short SEMPRE paga spread na saída:**

@@ -1,0 +1,60 @@
+# ===================================================================
+# SMC TRADER — MODELO: TREND UNIFICADO M15 (MULTI-GATILHO PARALELO COM ATRIBUIÇÃO)
+# ===================================================================
+# Nomenclatura Padrão: <estrategia>_<conceito> (M-03)
+# ===================================================================
+# Conceito: Seguidor de Super Tendência intraday no M15 durante a Sessão de Nova York
+# (13:00 às 17:30 UTC). Opera em paralelo com 3 gatilhos complementares rastreáveis:
+# 1. TRAP (falso rompimento da mínima/máxima anterior absorvido na MME 8);
+# 2. FORCE_BAR (Barra de Força / Ignição na média com fechamento direcional nos 30% extremos);
+# 3. ENGULFING (Engolfo na zona das médias).
+# Condução: Saída causal por fechamento além da MME 20 executada no Open da barra seguinte.
+#
+# Métricas 5 Anos (2021-11-01 a 2026-11-08) com spread real (NAS100: 1.5 pts, US30: 2.0 pts):
+# Total Carteira: +281.0R em 741 trades (+56.2R/ano, WR 33.7%, PF 1.64, MaxDD 53.3R)
+# In-Sample (3 anos, 2021-2024): +163.4R | Out-of-Sample (2 anos, 2024-2026): +117.6R
+# Desempenho Anual: 6 de 6 anos positivos (+1.1R em 2021, +86.7R em 2022, +14.3R em 2023,
+#                   +101.0R em 2024, +17.3R em 2025, +60.6R em 2026)
+# Desdobramento por Ativo: NAS100 +180.3R (PF 1.84) | US30 +100.7R (PF 1.45)
+# Desdobramento por Gatilho: TRAP +114.9R | FORCE_BAR +122.6R | ENGULFING +43.5R
+# ===================================================================
+
+model:
+  id: "trend_unificado_m15"
+  name: "Trend-Unificado-M15"
+  version: "1.0.0"
+  description: "Super Tendência no M15 multi-gatilho (Trap + Barra de Força + Engolfo) conduzido por MME 20 na Sessão NY"
+
+timeframes:
+  operational: "M15"
+
+strategy:
+  type: "trend_follower"
+  execution_mode: "independent"
+  triggers:
+    - "trap"
+    - "force_bar"
+    - "engulfing"
+
+filters:
+  session:
+    use_filter: true
+    start_utc: "13:00"
+    end_utc: "17:30"
+  macro:
+    adx_period: 14
+    adx_min: 25.0
+    ema_fast: 80
+    ema_slow: 200
+    slope_min: 0.10
+    slope_max: 1.00
+
+conduction:
+  ma_type: "mme20"
+  exit_on_next_open: true
+  profit_lock: false
+
+limits:
+  max_trades_per_day: 3
+  max_stops_per_day: 2
+  max_gains_per_day: 1

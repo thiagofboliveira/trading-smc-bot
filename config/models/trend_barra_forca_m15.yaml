@@ -1,0 +1,56 @@
+# ===================================================================
+# SMC TRADER — MODELO: TREND BARRA DE FORÇA M15 (PONTO CONTÍNUO / IGNIÇÃO)
+# ===================================================================
+# Nomenclatura Padrão: <estrategia>_<conceito> (M-03)
+# ===================================================================
+# Conceito: Seguidor de Super Tendência intraday no M15 durante a Sessão de Nova York
+# (13:00 às 17:30 UTC). Filtro macro causal: MME 80 e MME 200 alinhadas em i-1,
+# ADX(14) >= 25 em i-1 e inclinação normalizada da MME 80 por ATR(14) entre 0.10 e 1.00.
+# Gatilho: Barra de Força / Ignição (pullback tocando a MME 8 ou MME 20 e fechando nos
+# 30% extremos da barra com amplitude direcional e acima/abaixo da MME 8).
+# Execução: BuyStop/SellStop causal na barra i+1 na superação da barra de sinal.
+# Condução: Saída causal por fechamento além da MME 20 executada no Open da barra seguinte.
+#
+# Métricas 5 Anos (2021-11-01 a 2026-11-08) com spread real (NAS100: 1.5 pts, US30: 2.0 pts):
+# Total Carteira: +122.6R em 360 trades (+24.5R/ano, WR 33.6%, PF 1.57, MaxDD 30.1R)
+# In-Sample (3 anos, 2021-2024): +74.3R | Out-of-Sample (2 anos, 2024-2026): +48.3R
+# Detalhamento: NAS100 +82.7R (WR 35.4%, PF 1.75) | US30 +40.0R (WR 31.6%, PF 1.37)
+# ===================================================================
+
+model:
+  id: "trend_barra_forca_m15"
+  name: "Trend-Barra-Forca-M15"
+  version: "1.0.0"
+  description: "Super Tendência no M15 com Barra de Força (Ponto Contínuo) e condução por MME 20 (Sessão NY 13:00-17:30 UTC)"
+
+timeframes:
+  operational: "M15"
+
+strategy:
+  type: "trend_follower"
+  execution_mode: "independent"
+  triggers:
+    - "force_bar"
+
+filters:
+  session:
+    use_filter: true
+    start_utc: "13:00"
+    end_utc: "17:30"
+  macro:
+    adx_period: 14
+    adx_min: 25.0
+    ema_fast: 80
+    ema_slow: 200
+    slope_min: 0.10
+    slope_max: 1.00
+
+conduction:
+  ma_type: "mme20"
+  exit_on_next_open: true
+  profit_lock: false
+
+limits:
+  max_trades_per_day: 3
+  max_stops_per_day: 2
+  max_gains_per_day: 1

@@ -206,8 +206,8 @@ Até o sistema no celular (E0 a E4): cerca de 7 a 10 semanas.
 |---|---|---|---|
 | PQ-1 | Protocolo de pesquisa por escrito: divisão IS/OOS fixa, walk-forward, número máximo de variantes testadas, correção para testes múltiplos | P | Documento aprovado por você antes de rodar a grade. |
 | PQ-2 | Histórico longo (≥ 5 anos) dos ativos Dukascopy e, se possível, WIN/WDO | M | `smc fetch --years 5` concluído e checado. |
-| PQ-3 | Variações do Fibo OTE com hipótese prévia (timeframe, filtro de tendência, sessão, alvo) | G | Cada variante gera relatório E1-6; ranking só pelo IS, revelando o OOS depois. |
-| PQ-4 | Estratégias de controle simples (rompimento, média móvel) como régua | M | Se o Fibo não superar o controle no OOS, isso fica registrado. |
+| PQ-3 | Testar os candidatos de [PESQUISA_ESTRATEGIAS_INTRADAY.md](PESQUISA_ESTRATEGIAS_INTRADAY.md) na ordem da seção 9: controles sobre o Fibo, filtros de custo, H3 (BOS como continuação), H1 (noise area + VWAP), H4 (ORB), H2/H5 | G | Cada candidato roda primeiro sem custo contra a entrada aleatória pareada; só os que superam o controle seguem para custos, walk-forward e holdout. |
+| PQ-4 | Controles C0 (entrada aleatória pareada) e C1 (Fibo com níveis placebo) implementados como estratégias reutilizáveis | M | Todo relatório de candidato mostra a comparação com C0 e C1. |
 | PQ-5 | Candidatos aprovados entram como funcionários "em experiência" | P | Critérios da E2-6 atendidos. |
 
 ## Ordem sugerida

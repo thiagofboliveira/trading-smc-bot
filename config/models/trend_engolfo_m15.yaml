@@ -1,0 +1,56 @@
+# ===================================================================
+# SMC TRADER — MODELO: TREND ENGOLFO M15 (REVERSÃO NA ZONA DA MÉDIA)
+# ===================================================================
+# Nomenclatura Padrão: <estrategia>_<conceito> (M-03)
+# ===================================================================
+# Conceito: Seguidor de Super Tendência intraday no M15 durante a Sessão de Nova York
+# (13:00 às 17:30 UTC). Filtro macro causal: MME 80 e MME 200 alinhadas em i-1,
+# ADX(14) >= 25 em i-1 e inclinação normalizada da MME 80 por ATR(14) entre 0.10 e 1.00.
+# Gatilho: Engolfo na zona da média (MME 8 ou MME 20), onde a barra fecha engolfando o
+# corpo do candle anterior após tocar a média.
+# Execução: BuyStop/SellStop causal na barra i+1 na superação da barra de sinal.
+# Condução: Saída causal por fechamento além da MME 20 executada no Open da barra seguinte.
+#
+# Métricas 5 Anos (2021-11-01 a 2026-11-08) com spread real (NAS100: 1.5 pts, US30: 2.0 pts):
+# Total Carteira: +43.5R em 114 trades (+8.7R/ano, WR 31.6%, PF 1.64, MaxDD 13.4R)
+# In-Sample (3 anos, 2021-2024): +14.8R | Out-of-Sample (2 anos, 2024-2026): +28.6R
+# Detalhamento: NAS100 +27.6R (WR 35.7%, PF 1.85) | US30 +15.9R (WR 27.6%, PF 1.45)
+# ===================================================================
+
+model:
+  id: "trend_engolfo_m15"
+  name: "Trend-Engolfo-M15"
+  version: "1.0.0"
+  description: "Super Tendência no M15 com Engolfo na Média e condução por MME 20 (Sessão NY 13:00-17:30 UTC)"
+
+timeframes:
+  operational: "M15"
+
+strategy:
+  type: "trend_follower"
+  execution_mode: "independent"
+  triggers:
+    - "engulfing"
+
+filters:
+  session:
+    use_filter: true
+    start_utc: "13:00"
+    end_utc: "17:30"
+  macro:
+    adx_period: 14
+    adx_min: 25.0
+    ema_fast: 80
+    ema_slow: 200
+    slope_min: 0.10
+    slope_max: 1.00
+
+conduction:
+  ma_type: "mme20"
+  exit_on_next_open: true
+  profit_lock: false
+
+limits:
+  max_trades_per_day: 3
+  max_stops_per_day: 2
+  max_gains_per_day: 1

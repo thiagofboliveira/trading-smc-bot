@@ -4,6 +4,11 @@ from smc_trader.strategies.trend_follower import (
     TrendFollowerStrategy,
     TrendTrade,
 )
+from smc_trader.strategies.turtle_trend import (
+    TurtleTrendConfig,
+    TurtleTrendStrategy,
+    TurtleTrade,
+)
 
 __all__ = [
     "FiboOTEConfig",
@@ -12,4 +17,7 @@ __all__ = [
     "TrendFollowerConfig",
     "TrendFollowerStrategy",
     "TrendTrade",
+    "TurtleTrendConfig",
+    "TurtleTrendStrategy",
+    "TurtleTrade",
 ]

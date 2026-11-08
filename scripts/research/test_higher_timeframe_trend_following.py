@@ -277,7 +277,8 @@ def simulate_strategy(
             # Avaliar regras de entrada em i-1
             long_armed = False
             short_armed = False
-            trigger_price = 0.0
+            long_trigger = 0.0
+            short_trigger = 0.0
             stop_dist = 0.0
 
             if strategy_name == "TF_EMA_CONDUCTION":
@@ -294,45 +295,45 @@ def simulate_strategy(
                 )
                 if is_uptrend and not np.isnan(dh20[i]):
                     long_armed = True
-                    trigger_price = dh20[i]
+                    long_trigger = dh20[i]
                     stop_dist = 2.0 * atr14[i - 1]
                 elif is_downtrend and not np.isnan(dl20[i]):
                     short_armed = True
-                    trigger_price = dl20[i]
+                    short_trigger = dl20[i]
                     stop_dist = 2.0 * atr14[i - 1]
 
             elif strategy_name == "TURTLE_20_10":
                 # Donchian 20 sem filtro de média (Turtle clássico)
                 if not np.isnan(dh20[i]):
                     long_armed = True
-                    trigger_price = dh20[i]
+                    long_trigger = dh20[i]
                     stop_dist = 2.0 * atr20[i - 1]
                 if not np.isnan(dl20[i]):
                     short_armed = True
-                    trigger_price = dl20[i]
+                    short_trigger = dl20[i]
                     stop_dist = 2.0 * atr20[i - 1]
 
             elif strategy_name == "TURTLE_50_20":
                 # Donchian 50 clássico
                 if not np.isnan(dh50[i]):
                     long_armed = True
-                    trigger_price = dh50[i]
+                    long_trigger = dh50[i]
                     stop_dist = 3.0 * atr20[i - 1]
                 if not np.isnan(dl50[i]):
                     short_armed = True
-                    trigger_price = dl50[i]
+                    short_trigger = dl50[i]
                     stop_dist = 3.0 * atr20[i - 1]
 
             # Verificar disparos na barra i
-            long_triggered = long_armed and (highs[i] >= trigger_price)
-            short_triggered = short_armed and (lows[i] <= trigger_price)
+            long_triggered = long_armed and (highs[i] >= long_trigger)
+            short_triggered = short_armed and (lows[i] <= short_trigger)
 
             # Prioridade se ambos dispararem na mesma barra: sem entrada (conflito)
             if long_triggered and short_triggered:
                 continue
 
             if long_triggered:
-                exec_price = max(opens[i], trigger_price) + spread + slippage
+                exec_price = max(opens[i], long_trigger) + spread + slippage
                 stop_price = exec_price - stop_dist
                 risk = exec_price - stop_price
 
@@ -369,7 +370,7 @@ def simulate_strategy(
                     }
 
             elif short_triggered:
-                exec_price = min(opens[i], trigger_price) - slippage
+                exec_price = min(opens[i], short_trigger) - slippage
                 stop_price = exec_price + stop_dist
                 risk = stop_price - exec_price
 

@@ -39,12 +39,21 @@ Uma decisão tomada no instante `t` só pode usar informação disponível em `t
   - Nos primeiros 3 anos (2021-2024), o retorno acumulado foi de apenas **+8,5R** (PF 1.05, praticamente nulo), com anos negativos em 2023 (−16,9R) e 2025 (−11,1R).
   - O número intermediário de "+141,6R em 562 trades" decorria de uma etapa em que posições sobrepostas de gatilhos distintos eram mantidas. No modo independente (com até 3 posições abertas simultaneamente), o resultado é +142,4R (+0,186 ± 0,087R/trade), decorrente puramente de triplicar a exposição ao regime direcional do índice, e não de qualquer vantagem dos gatilhos.
 
+**Caso real (2026-11-08 - Parte 2): Sobrescrita de gatilho em Trend Following (Turtle transformado em "Sempre Comprado")**
+1. **O bug de variável:** Nos scripts `test_higher_timeframe_trend_following.py` e `test_timeframe_decay_gradient.py`, a variável `trigger_price` foi usada tanto para compra quanto para venda. O bloco de venda sobrescrevia `trigger_price = dl20[i]` (fundo do canal). A checagem de compra `highs[i] >= trigger_price` virou `highs[i] >= dl20[i]`, que é verdadeira em praticamente 100% dos candles. Como o `open[i]` quase sempre é maior que a mínima de 20 barras, o simulador preenchia a compra no `open` imediatamente ao ficar desposicionado (746 compras contra 9 vendas no D1; 15.754 compras contra 46 vendas no H1; 100% das entradas saindo no `open`).
+2. **Impacto mascarado:** Em um período de forte alta secular (2021-2026 nos índices e ouro), uma estratégia que fica permanentemente comprada no `open` colhe o drift positivo do mercado, gerando "+113R no D1" e "+1.168R no H1" falsos. O teste sintético de passeio aleatório deu 0.00R porque em um passeio sem tendência uma estratégia sempre comprada também dá zero, não detectando a falha de lógica.
+3. **Resultado Corrigido (separando `long_trigger` e `short_trigger`):**
+   - **No D1:** O retorno do Turtle 20/10 cai de +113.7R para **+13.8R em 396 trades** (+0.035 ± 0.069 R/trade, $t = 0.51$, PF 1.08), estatisticamente nulo. Compras dão +46R e vendas dão −32R (pura assimetria da alta dos mercados). Turtle 50/20 dá +0.1R ($t = 0.01$). Holdouts D1: SPX500 −0.9R, GER40 −9.3R, NAS100 pré-2021 +5.1R.
+   - **No Intradiário:** Rompimentos de canal perdem maciçamente mesmo sem custo: H4 com custo −411.6R ($t = -6.30$, sem custo −321.6R); H1 com custo −2.167.5R ($t = -14.78$, sem custo −1.403.4R); M30 com custo −4.871.1R ($t = -20.44$, sem custo −2.221.4R). Rompimentos intradiários falham sistematicamente e revertem à média.
+
 ### Regras obrigatórias para qualquer simulação de estratégia:
 - **Toda ordem executada dentro da barra `i` deve obrigatoriamente checar se a barra `i` atinge o stop loss.** A barra de entrada só pode ser estopada, nunca alvejada.
 - **Todo stop loss atingido com gap na abertura deve ser executado no preço de abertura (`open`), acrescido de slippage.**
 - **Toda ordem stop (entrada por rompimento ou stop loss) deve incluir parâmetro de slippage realista.**
 - **Estratégias multi-gatilho devem operar com controle estrito de concorrência:** no máximo 1 trade por sinal, com prioridade determinística entre os gatilhos.
 - **Nenhum gatilho pode ser creditado como produtor de alpha sem teste de controle de entrada aleatória** sob o mesmo regime macro e regra de saída. Se a diferença estiver dentro do desvio-padrão ($\sigma / \sqrt{N}$), a contribuição do gatilho é considerada estatisticamente nula.
+- **Checagem obrigatória de simetria e preenchimento:** Estratégias bidirecionais de rompimento devem auditar a proporção de compras vs vendas e a porcentagem de entradas no preço do gatilho vs no Open. Se a assimetria for > 80% ou as entradas no Open forem > 50% em rompimento, o teste é considerado inválido por bug de sobrescrita.
+- **Benchmark contra "Sempre Comprado" (Drift Macro):** Todo resultado positivo em ativos com viés de alta deve ser comparado contra uma entrada passiva sempre comprada com as mesmas saídas. Se o ganho não superar a compra passiva, não há alpha de timing.
 
 ## 2. Antes de afirmar que uma estratégia ou parâmetro "funciona"
 

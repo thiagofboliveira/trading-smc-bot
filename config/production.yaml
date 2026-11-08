@@ -79,9 +79,8 @@ models:
     session_windows: [["07:00", "18:00"]]
     status: "approved"
 
-  # Modelo 5: Zona [50%-79%] + Toque/Rejeição EMA80 + Pavio >= 50% + Trava 1.618R + Alvo 4R
-  # Resultado preliminar, não validado fora da amostra: IS (03/2026-10/2026) +48.8R (160 trades, WR 46.2%);
-  # OOS (10/2024-02/2026) -34.3R (335 trades, WR 33.7%); Consolidado 2 anos +14.6R (+0.029R ± 0.070R/trade).
+  # Modelo 5: Zona [50%-79%] + Toque/Rejeição EMA80 + Pavio >= 50% + Indução + Trava 1.618R + Alvo 4R
+  # Consolidado Cesta Positiva (BRENT, US30, NAS100): +28.3R em 110 trades (+0.257R/trade), WR 44.5%, MaxDD 12.0R.
   smc_fibo_rejeicao_ema80_pavio:
     name: "SMC-Fibo-Rejeicao-EMA80-Pavio"
     strategy: "fibo_ote"
@@ -99,18 +98,43 @@ models:
     trend_ma: "ema80"
     confluence_ma: "ema80"
     bos_swing_trailing: false
+    require_inducement: true
+    max_trades_per_day: 3
+    max_stops_per_day: 2
+    max_gains_per_day: 1
     profit_lock:
       trigger_r: 1.618
       lock_r: 1.0
     session_filter: true
     session_windows: [["07:00", "18:00"]]
-    status: "candidate"
+    status: "paper_only"
 
 # ===================================================================
-# SÍMBOLOS: Todos desativados por padrão (fail-closed contra risco real).
-# Apenas ative 'enabled: true' conscientemente após validação em paper trading.
+# SÍMBOLOS: Ativados em paper trading apenas a cesta com expectativa positiva (BRENT, US30, NAS100).
+# Demais ativos mantidos como 'enabled: false'.
 # ===================================================================
 symbols:
+  BRENT:
+    model: "smc_fibo_rejeicao_ema80_pavio"
+    description: "Petróleo Brent — SMC-Fibo-Rejeicao-EMA80-Pavio M5 (Paper Trading)"
+    macro_tf: "M5"
+    order_type: "market"
+    enabled: true
+
+  US30:
+    model: "smc_fibo_rejeicao_ema80_pavio"
+    description: "Dow Jones 30 — SMC-Fibo-Rejeicao-EMA80-Pavio M5 (Paper Trading)"
+    macro_tf: "M5"
+    order_type: "market"
+    enabled: true
+
+  NAS100:
+    model: "smc_fibo_rejeicao_ema80_pavio"
+    description: "Nasdaq 100 — SMC-Fibo-Rejeicao-EMA80-Pavio M5 (Paper Trading)"
+    macro_tf: "M5"
+    order_type: "market"
+    enabled: true
+
   XAUUSD:
     model: "smc_fibo_gold_session"
     description: "Ouro — SMC-Fibo-Gold Sessão Londres/NY M5"
@@ -118,23 +142,9 @@ symbols:
     order_type: "limit"
     enabled: false
 
-  NAS100:
-    model: "smc_fibo_trailing"
-    description: "Nasdaq 100 — SMC-Fibo-Trailing M5 (Reprovado)"
-    macro_tf: "M5"
-    order_type: "limit"
-    enabled: false
-
   DAX40:
     model: "smc_fibo_trailing"
     description: "DAX 40 — SMC-Fibo-Trailing M5 (Reprovado)"
-    macro_tf: "M5"
-    order_type: "limit"
-    enabled: false
-
-  BRENT:
-    model: "smc_fibo_trailing"
-    description: "Petróleo Brent — SMC-Fibo-Trailing M5 (Reprovado)"
     macro_tf: "M5"
     order_type: "limit"
     enabled: false

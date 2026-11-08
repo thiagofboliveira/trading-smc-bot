@@ -37,6 +37,7 @@ fibonacci:
   pivot_k: 2
   max_holding_candles: 60
   enable_reentry_79: false
+  require_inducement: true
 
 filters:
   trend_ma: "ema80"
@@ -53,8 +54,9 @@ trailing:
 risk_management:
   risk_pct_per_trade: 1.0
   max_open_trades_total: 4
-  max_trades_per_day: 5
+  max_trades_per_day: 3
   max_stops_per_day: 2
+  max_gains_per_day: 1
 
 session:
   session_filter: true

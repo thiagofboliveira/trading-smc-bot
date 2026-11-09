@@ -370,6 +370,9 @@
         <button onclick="switchTab('integrations'); loadIntegrationsData();" id="tab-btn-integrations" class="px-4 py-2 text-xs font-semibold rounded-t-lg border-b-2 border-transparent text-cyan-300 hover:text-cyan-200">
           <i class="fa-solid fa-plug-circle-bolt mr-1.5 text-cyan-400"></i> 🔌 Integrações & Conexões
         </button>
+        <button onclick="switchTab('news'); loadNewsData();" id="tab-btn-news" class="px-4 py-2 text-xs font-semibold rounded-t-lg border-b-2 border-transparent text-amber-300 hover:text-amber-200">
+          <i class="fa-solid fa-newspaper mr-1.5 text-amber-400"></i> 📰 Notícias & Calendário
+        </button>
         <button onclick="switchTab('grid')" id="tab-btn-grid" class="px-4 py-2 text-xs font-semibold rounded-t-lg border-b-2 border-transparent text-gray-400 hover:text-gray-200">
           <i class="fa-solid fa-trophy mr-1.5 text-yellow-400"></i> Ranking da Grade
         </button>
@@ -857,6 +860,132 @@
                 </button>
               </div>
             </div>
+          </div>
+
+        </div>
+
+        <!-- Tab 9: Notícias em Tempo Real & Calendário Macroeconômico (E7 / Opções) -->
+        <div id="tab-news" class="hidden h-full overflow-y-auto space-y-6 custom-scrollbar pb-8">
+
+          <!-- Header Banner -->
+          <div class="bg-gradient-to-r from-gray-900 via-gray-900 to-amber-950/40 border border-gray-800 rounded-xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-2xl">📰</span>
+                <h2 class="text-base font-bold text-white tracking-wide">Radar de Notícias & Calendário Macroeconômico</h2>
+                <span class="text-[10px] bg-amber-950/80 border border-amber-700/60 text-amber-300 px-2 py-0.5 rounded-full font-mono">100% Público & Aberto</span>
+                <span class="text-[10px] bg-gray-800 border border-gray-700 text-gray-400 px-2 py-0.5 rounded-full font-mono">Cache TTL 15m</span>
+              </div>
+              <p class="text-xs text-gray-400 mt-1">
+                Monitore eventos que afetam o risco do dia (CPI, Payroll, Decisões de Juros Fed/Copom) e notícias de última hora (CNBC, MarketWatch, InfoMoney, G1).
+              </p>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="news-last-updated" class="text-[11px] font-mono text-gray-500">Atualizado: --</span>
+              <button onclick="refreshNewsData()" id="btn-refresh-news" class="bg-amber-600 hover:bg-amber-500 text-white text-xs px-3.5 py-2 rounded-lg font-bold shadow-md shadow-amber-600/30 flex items-center gap-1.5 transition">
+                <i class="fa-solid fa-rotate" id="icon-refresh-news"></i> Atualizar Feeds
+              </button>
+            </div>
+          </div>
+
+          <!-- Banner de Alerta de Alto Impacto para Hoje -->
+          <div id="macro-alert-banner" class="hidden bg-rose-950/40 border border-rose-600/60 rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-lg shadow-rose-950/20">
+            <div class="flex items-center gap-3">
+              <span class="text-2xl text-rose-400 animate-pulse"><i class="fa-solid fa-triangle-exclamation"></i></span>
+              <div>
+                <h3 class="text-sm font-bold text-rose-200" id="macro-alert-title">ALERTA MACRO: Eventos de Alto Impacto Programados para Hoje</h3>
+                <p class="text-xs text-rose-300/80 mt-0.5" id="macro-alert-desc">Risco de volatilidade severa e spreads dilatados no horário dos anúncios.</p>
+              </div>
+            </div>
+            <div id="macro-alert-chips" class="flex flex-wrap gap-2">
+              <!-- Inserido dinamicamente via JS -->
+            </div>
+          </div>
+
+          <!-- Conteúdo Dividido em 2 Colunas -->
+          <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+
+            <!-- Coluna da Esquerda: Calendário Macroeconômico (7 colunas) -->
+            <div class="xl:col-span-7 bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col space-y-4">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-800/80 pb-3">
+                <div class="flex items-center gap-2">
+                  <i class="fa-solid fa-calendar-days text-amber-400"></i>
+                  <h3 class="text-sm font-bold text-white">Calendário Econômico da Semana</h3>
+                  <span id="calendar-count-badge" class="text-[10px] font-mono bg-gray-800 text-gray-300 px-2 py-0.5 rounded-full">0 eventos</span>
+                </div>
+
+                <!-- Campo de busca rápida -->
+                <div class="relative w-full sm:w-48">
+                  <input type="text" id="input-search-calendar" oninput="renderCalendarTable()" placeholder="Buscar evento ou país..." class="w-full bg-gray-950 border border-gray-800 rounded-lg pl-7 pr-2 py-1 text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-amber-500">
+                  <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-2 text-[10px] text-gray-500"></i>
+                </div>
+              </div>
+
+              <!-- Filtros de Impacto e País -->
+              <div class="flex flex-wrap gap-1.5 text-xs">
+                <button onclick="setCalendarFilter('all')" id="cal-filter-all" class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/40">Todos</button>
+                <button onclick="setCalendarFilter('high')" id="cal-filter-high" class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-gray-950 text-gray-400 border border-gray-800 hover:text-white">🔴 Alto Impacto</button>
+                <button onclick="setCalendarFilter('today')" id="cal-filter-today" class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-gray-950 text-gray-400 border border-gray-800 hover:text-white">⚡ Apenas Hoje</button>
+                <button onclick="setCalendarFilter('usd')" id="cal-filter-usd" class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-gray-950 text-gray-400 border border-gray-800 hover:text-white">🇺🇸 USD (EUA)</button>
+                <button onclick="setCalendarFilter('brl')" id="cal-filter-brl" class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-gray-950 text-gray-400 border border-gray-800 hover:text-white">🇧🇷 BRL (Brasil)</button>
+              </div>
+
+              <!-- Tabela do Calendário -->
+              <div class="overflow-x-auto max-h-[560px] custom-scrollbar border border-gray-800/80 rounded-lg">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-gray-950/80 sticky top-0 text-[10px] uppercase font-mono text-gray-400 border-b border-gray-800">
+                    <tr>
+                      <th class="py-2.5 px-3">Data / Hora</th>
+                      <th class="py-2.5 px-2">Moeda</th>
+                      <th class="py-2.5 px-2">Impacto</th>
+                      <th class="py-2.5 px-3">Evento Macroeconômico</th>
+                      <th class="py-2.5 px-2 text-right">Projeção</th>
+                      <th class="py-2.5 px-3 text-right">Anterior</th>
+                    </tr>
+                  </thead>
+                  <tbody id="calendar-table-body" class="divide-y divide-gray-800/60 font-sans">
+                    <tr>
+                      <td colspan="6" class="py-8 text-center text-gray-500">Carregando calendário macroeconômico...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="text-[10px] text-gray-500 flex items-center justify-between pt-1">
+                <span>Fonte: Forex Factory (Feed Público Semanal)</span>
+                <span>Horários padronizados em UTC / Local</span>
+              </div>
+            </div>
+
+            <!-- Coluna da Direita: Notícias em Tempo Real (5 colunas) -->
+            <div class="xl:col-span-5 bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col space-y-4">
+              <div class="flex items-center justify-between border-b border-gray-800/80 pb-3">
+                <div class="flex items-center gap-2">
+                  <i class="fa-solid fa-bolt text-amber-400"></i>
+                  <h3 class="text-sm font-bold text-white">Últimas Notícias dos Mercados</h3>
+                  <span id="news-count-badge" class="text-[10px] font-mono bg-gray-800 text-gray-300 px-2 py-0.5 rounded-full">0 notícias</span>
+                </div>
+              </div>
+
+              <!-- Filtro de Categorias de Notícias -->
+              <div class="flex flex-wrap gap-1.5 text-xs">
+                <button onclick="setNewsFilter('all')" id="news-filter-all" class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/40">Todas</button>
+                <button onclick="setNewsFilter('global')" id="news-filter-global" class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-gray-950 text-gray-400 border border-gray-800 hover:text-white">🌍 Global (NY/Fed)</button>
+                <button onclick="setNewsFilter('b3')" id="news-filter-b3" class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-gray-950 text-gray-400 border border-gray-800 hover:text-white">🇧🇷 B3 / Brasil</button>
+                <button onclick="setNewsFilter('commodities')" id="news-filter-commodities" class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-gray-950 text-gray-400 border border-gray-800 hover:text-white">🛢️ Commodities</button>
+              </div>
+
+              <!-- Lista de Notícias -->
+              <div id="news-feed-container" class="space-y-3 max-h-[560px] overflow-y-auto custom-scrollbar pr-1">
+                <div class="text-center py-10 text-gray-500 text-xs">
+                  Carregando notícias...
+                </div>
+              </div>
+              <div class="text-[10px] text-gray-500 flex items-center justify-between pt-1">
+                <span>Fontes: CNBC Markets, MarketWatch, InfoMoney, G1</span>
+                <span>Atualização automática</span>
+              </div>
+            </div>
+
           </div>
 
         </div>
@@ -1539,7 +1668,7 @@
     }
 
     function switchTab(tab) {
-      ['equity', 'trades', 'chart', 'dossier', 'office', 'history', 'grid', 'integrations'].forEach(t => {
+      ['equity', 'trades', 'chart', 'dossier', 'office', 'history', 'grid', 'integrations', 'news'].forEach(t => {
         const el = document.getElementById(`tab-${t}`);
         const btn = document.getElementById(`tab-btn-${t}`);
         if (el) el.classList.add('hidden');
@@ -1556,6 +1685,7 @@
       if (tab === 'dossier') renderModelDossier();
       if (tab === 'office') loadOfficeData();
       if (tab === 'integrations') loadIntegrationsData();
+      if (tab === 'news') loadNewsData();
     }
 
     async function loadIntegrationsData() {
@@ -1698,6 +1828,234 @@
       } catch (e) {
         alert('Erro ao verificar licença: ' + e);
       }
+    }
+
+    // ==========================================
+    // NOTÍCIAS & CALENDÁRIO MACROECONÔMICO
+    // ==========================================
+    window.newsDataCache = { calendar: [], news: [], updated_at: '' };
+    window.currentCalFilter = 'all';
+    window.currentNewsFilter = 'all';
+
+    async function loadNewsData(force = false) {
+      const icon = document.getElementById('icon-refresh-news');
+      if (icon) icon.classList.add('fa-spin');
+
+      try {
+        const url = force ? '/api/news/refresh' : '/api/news';
+        const method = force ? 'POST' : 'GET';
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' }
+        }).then(r => r.json());
+
+        if (res) {
+          window.newsDataCache = res;
+          renderNewsUI();
+        }
+      } catch (err) {
+        console.error('Erro ao carregar notícias:', err);
+      } finally {
+        if (icon) icon.classList.remove('fa-spin');
+      }
+    }
+
+    async function refreshNewsData() {
+      await loadNewsData(true);
+    }
+
+    function renderNewsUI() {
+      const data = window.newsDataCache;
+      if (!data) return;
+
+      // Data de atualização
+      const updatedEl = document.getElementById('news-last-updated');
+      if (updatedEl && data.updated_at) {
+        try {
+          const dt = new Date(data.updated_at);
+          updatedEl.textContent = `Atualizado: ${dt.toLocaleTimeString()} (${dt.toLocaleDateString()})`;
+        } catch {
+          updatedEl.textContent = `Atualizado: ${data.updated_at}`;
+        }
+      }
+
+      // Alerta de Alto Impacto para Hoje
+      const alertBanner = document.getElementById('macro-alert-banner');
+      const alertChips = document.getElementById('macro-alert-chips');
+      const highImpactToday = (data.calendar || []).filter(e => e.is_today && e.is_high_impact);
+
+      if (alertBanner && alertChips) {
+        if (highImpactToday.length > 0) {
+          alertBanner.classList.remove('hidden');
+          alertChips.innerHTML = highImpactToday.map(ev => `
+            <div class="bg-rose-900/80 border border-rose-500 px-2.5 py-1 rounded text-xs font-mono text-rose-100 flex items-center gap-1.5 shadow">
+              <span class="font-bold">${ev.country}</span>
+              <span>${ev.title}</span>
+              <span class="text-rose-300 font-semibold">[Proj: ${ev.forecast}]</span>
+            </div>
+          `).join('');
+        } else {
+          alertBanner.classList.add('hidden');
+        }
+      }
+
+      // Badges de contagem
+      const calBadge = document.getElementById('calendar-count-badge');
+      if (calBadge) calBadge.textContent = `${(data.calendar || []).length} eventos`;
+
+      const newsBadge = document.getElementById('news-count-badge');
+      if (newsBadge) newsBadge.textContent = `${(data.news || []).length} notícias`;
+
+      renderCalendarTable();
+      renderNewsFeed();
+    }
+
+    function setCalendarFilter(filter) {
+      window.currentCalFilter = filter;
+      ['all', 'high', 'today', 'usd', 'brl'].forEach(f => {
+        const btn = document.getElementById(`cal-filter-${f}`);
+        if (!btn) return;
+        if (f === filter) {
+          btn.className = 'px-2.5 py-1 rounded-md text-[11px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/40';
+        } else {
+          btn.className = 'px-2.5 py-1 rounded-md text-[11px] font-medium bg-gray-950 text-gray-400 border border-gray-800 hover:text-white';
+        }
+      });
+      renderCalendarTable();
+    }
+
+    function renderCalendarTable() {
+      const tbody = document.getElementById('calendar-table-body');
+      if (!tbody) return;
+
+      const events = window.newsDataCache.calendar || [];
+      const search = (document.getElementById('input-search-calendar')?.value || '').toLowerCase().trim();
+      const filter = window.currentCalFilter;
+
+      const filtered = events.filter(e => {
+        if (filter === 'high' && !e.is_high_impact) return false;
+        if (filter === 'today' && !e.is_today) return false;
+        if (filter === 'usd' && e.country.toUpperCase() !== 'USD') return false;
+        if (filter === 'brl' && e.country.toUpperCase() !== 'BRL') return false;
+        if (search) {
+          const matchTitle = (e.title || '').toLowerCase().includes(search);
+          const matchCountry = (e.country || '').toLowerCase().includes(search);
+          if (!matchTitle && !matchCountry) return false;
+        }
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" class="py-8 text-center text-gray-500 text-xs">
+              Nenhum evento macroeconômico encontrado com os filtros selecionados.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(ev => {
+        let impactBadge = '';
+        if (ev.impact.toLowerCase() === 'high') {
+          impactBadge = '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-950 border border-rose-500 text-rose-300">🔴 ALTO</span>';
+        } else if (ev.impact.toLowerCase() === 'medium') {
+          impactBadge = '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-950 border border-amber-500 text-amber-300">🟡 MÉDIO</span>';
+        } else {
+          impactBadge = '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-900 border border-gray-700 text-gray-400">⚪ BAIXO</span>';
+        }
+
+        let dateDisplay = ev.date_iso;
+        try {
+          const d = new Date(ev.date_iso);
+          dateDisplay = `${d.toLocaleDateString(undefined, {month: 'short', day: 'numeric'})} ${d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`;
+        } catch {
+          dateDisplay = ev.date_iso.replace('T', ' ').substring(0, 16);
+        }
+
+        const todayHighlight = ev.is_today ? 'bg-amber-950/20' : '';
+
+        return `
+          <tr class="hover:bg-gray-800/40 transition ${todayHighlight}">
+            <td class="py-2.5 px-3 font-mono text-[11px] text-gray-300 whitespace-nowrap">
+              ${dateDisplay} ${ev.is_today ? '<span class="ml-1 text-[9px] bg-amber-500/20 text-amber-300 px-1 rounded font-bold">HOJE</span>' : ''}
+            </td>
+            <td class="py-2.5 px-2 font-mono text-xs font-bold text-gray-200">
+              <span class="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700">${ev.country}</span>
+            </td>
+            <td class="py-2.5 px-2 whitespace-nowrap">${impactBadge}</td>
+            <td class="py-2.5 px-3 text-xs font-medium text-gray-100">${ev.title}</td>
+            <td class="py-2.5 px-2 text-right font-mono text-xs text-amber-300">${ev.forecast}</td>
+            <td class="py-2.5 px-3 text-right font-mono text-xs text-gray-400">${ev.previous}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function setNewsFilter(category) {
+      window.currentNewsFilter = category;
+      ['all', 'global', 'b3', 'commodities'].forEach(c => {
+        const btn = document.getElementById(`news-filter-${c}`);
+        if (!btn) return;
+        if (c === category) {
+          btn.className = 'px-2.5 py-1 rounded-md text-[11px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/40';
+        } else {
+          btn.className = 'px-2.5 py-1 rounded-md text-[11px] font-medium bg-gray-950 text-gray-400 border border-gray-800 hover:text-white';
+        }
+      });
+      renderNewsFeed();
+    }
+
+    function renderNewsFeed() {
+      const container = document.getElementById('news-feed-container');
+      if (!container) return;
+
+      const news = window.newsDataCache.news || [];
+      const filter = window.currentNewsFilter;
+
+      const filtered = news.filter(n => {
+        if (filter !== 'all' && n.category !== filter) return false;
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-10 text-gray-500 text-xs">
+            Nenhuma notícia encontrada nesta categoria.
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = filtered.map(item => {
+        let badgeColor = 'bg-blue-950 border-blue-600 text-blue-300';
+        if (item.source.includes('CNBC')) badgeColor = 'bg-sky-950 border-sky-600 text-sky-300';
+        else if (item.source.includes('MarketWatch')) badgeColor = 'bg-emerald-950 border-emerald-600 text-emerald-300';
+        else if (item.source.includes('InfoMoney')) badgeColor = 'bg-purple-950 border-purple-600 text-purple-300';
+        else if (item.source.includes('G1')) badgeColor = 'bg-rose-950 border-rose-600 text-rose-300';
+
+        let categoryTag = item.category.toUpperCase();
+        if (item.category === 'global') categoryTag = 'GLOBAL / NY';
+        else if (item.category === 'b3') categoryTag = 'B3 / BRASIL';
+        else if (item.category === 'commodities') categoryTag = 'COMMODITIES';
+
+        return `
+          <div class="bg-gray-950/70 border border-gray-800 hover:border-gray-700 rounded-xl p-3.5 space-y-2 transition shadow">
+            <div class="flex items-center justify-between text-[10px]">
+              <div class="flex items-center gap-1.5">
+                <span class="px-2 py-0.5 rounded font-bold border ${badgeColor}">${item.source}</span>
+                <span class="px-1.5 py-0.5 rounded font-mono bg-gray-800 text-gray-400 text-[9px]">${categoryTag}</span>
+              </div>
+              <span class="text-gray-500 font-mono">${item.published_at.substring(0, 22)}</span>
+            </div>
+            <a href="${item.url}" target="_blank" rel="noopener noreferrer" class="block text-xs font-bold text-gray-100 hover:text-amber-300 transition leading-snug">
+              ${item.title} <i class="fa-solid fa-arrow-up-right-from-square text-[9px] text-gray-500 ml-1"></i>
+            </a>
+            ${item.summary ? `<p class="text-[11px] text-gray-400 leading-relaxed">${item.summary}</p>` : ''}
+          </div>
+        `;
+      }).join('');
     }
 
     async function loadOfficeData() {

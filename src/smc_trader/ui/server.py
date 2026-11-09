@@ -96,6 +96,8 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
             self._handle_get_integrations_status()
         elif path.startswith("/api/integrations/card-preview"):
             self._handle_get_card_preview()
+        elif path == "/api/news":
+            self._handle_get_news()
         elif path.startswith("/api/files/"):
             file_rel = path.replace("/api/files/", "")
             self._serve_audit_file(file_rel)
@@ -542,6 +544,22 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
             os.environ["SMC_LICENSE_KEY"] = key
         self._send_json({"valid": ok, "message": msg, "payload": data})
 
+    def _handle_get_news(self) -> None:
+        """Retorna notícias de mercado e calendário macroeconômico (E7)."""
+        from smc_trader.services.news_service import NewsService
+
+        service = NewsService()
+        feed = service.get_feed(force_refresh=False)
+        self._send_json(feed)
+
+    def _handle_post_news_refresh(self) -> None:
+        """Força a atualização dos feeds de notícias e calendário."""
+        from smc_trader.services.news_service import NewsService
+
+        service = NewsService()
+        feed = service.get_feed(force_refresh=True)
+        self._send_json(feed)
+
     def _serve_audit_file(self, rel_path: str) -> None:
         """Serve imagens PNG, planilhas XLSX e TXT da pasta out/backtests com segurança."""
         clean_rel = urllib.parse.unquote(rel_path).lstrip("/\\")
@@ -626,6 +644,8 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
             self._handle_post_profit_sample(payload)
         elif path == "/api/integrations/license/verify":
             self._handle_post_license_verify(payload)
+        elif path == "/api/news/refresh":
+            self._handle_post_news_refresh()
         else:
             self.send_error(HTTPStatus.NOT_FOUND, "Rota não encontrada")
 

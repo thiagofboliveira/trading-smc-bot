@@ -198,6 +198,78 @@ def _build_parser() -> argparse.ArgumentParser:
         default="3R",
         help="modo de alvo",
     )
+
+    # Gestão de Funcionários (E2-5)
+    emp = sub.add_parser("employee", help="gestão de funcionários e ciclo de vida da empresa")
+    emp_sub = emp.add_subparsers(dest="emp_action", required=True)
+
+    emp_list = emp_sub.add_parser("list", help="lista funcionários cadastrados")
+    emp_list.add_argument(
+        "--stage",
+        choices=["candidato", "em_experiencia", "contratado", "afastado", "desligado"],
+        default=None,
+    )
+    emp_list.add_argument("--db-path", default="data/smc_trader.db")
+
+    emp_show = emp_sub.add_parser("show", help="exibe ficha funcional detalhada")
+    emp_show.add_argument("id", help="ID do funcionário")
+    emp_show.add_argument("--db-path", default="data/smc_trader.db")
+
+    emp_add = emp_sub.add_parser("add", help="cadastra novo funcionário")
+    emp_add.add_argument("id", help="ID único (ex: arthur-d1-rev)")
+    emp_add.add_argument("--name", default=None, help="Nome do funcionário")
+    emp_add.add_argument("--strategy", required=True, help="ID da estratégia (ex: d1_mean_reversion)")
+    emp_add.add_argument("--symbol", required=True, help="Símbolo (ex: NAS100)")
+    emp_add.add_argument("--tf", default="M15", help="Timeframe (ex: M15, D1)")
+    emp_add.add_argument("--capital", type=float, default=10000.0, help="Capital virtual inicial")
+    emp_add.add_argument(
+        "--stage",
+        choices=["candidato", "em_experiencia", "contratado", "afastado", "desligado"],
+        default="candidato",
+    )
+    emp_add.add_argument("--params", default=None, help="JSON de parâmetros")
+    emp_add.add_argument("--avatar", default="💼", help="Emoji ou avatar")
+    emp_add.add_argument("--notes", default="", help="Observações / tese")
+    emp_add.add_argument("--db-path", default="data/smc_trader.db")
+
+    emp_promote = emp_sub.add_parser("promote", help="avança o estágio do funcionário")
+    emp_promote.add_argument("id", help="ID do funcionário")
+    emp_promote.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="força promoção sob decisão do usuário (P4)",
+    )
+    emp_promote.add_argument("--db-path", default="data/smc_trader.db")
+
+    emp_suspend = emp_sub.add_parser("suspend", help="afasta funcionário temporariamente")
+    emp_suspend.add_argument("id", help="ID do funcionário")
+    emp_suspend.add_argument("--db-path", default="data/smc_trader.db")
+
+    emp_fire = emp_sub.add_parser("fire", help="desliga funcionário")
+    emp_fire.add_argument("id", help="ID do funcionário")
+    emp_fire.add_argument("--db-path", default="data/smc_trader.db")
+
+    emp_seed = emp_sub.add_parser("seed", help="inicializa o time padrão de funcionários")
+    emp_seed.add_argument("--mock", action="store_true", default=False, help="popula com dados simulados/mock para visualização do Escritório")
+    emp_seed.add_argument("--db-path", default="data/smc_trader.db")
+
+    emp_company = emp_sub.add_parser("company", help="exibe status consolidado da empresa")
+    emp_company.add_argument("--source", choices=["paper", "live"], default="paper")
+    emp_company.add_argument("--db-path", default="data/smc_trader.db")
+
+    # Auditoria de Estratégias (E2-8)
+    strat = sub.add_parser("strategy", help="inspeção e validação anti-viés de estratégias")
+    strat_sub = strat.add_subparsers(dest="strat_action", required=True)
+    strat_check = strat_sub.add_parser("check", help="roda suíte de testes causais e de invariância de prefixo")
+    strat_check.add_argument("name", help="nome da estratégia a auditar (ex: d1_mean_reversion, orb, fibo_trap)")
+
+    # Serviço de Paper Trading (E3)
+    pap = sub.add_parser("paper", help="executa serviço de paper trading em tempo real ou replay (Dia 0)")
+    pap.add_argument("--replay", type=Path, default=None, help="arquivo parquet/csv para simulação de replay")
+    pap.add_argument("--dry-run", action="store_true", default=False, help="avaliação inicial sem loop contínuo")
+    pap.add_argument("--db-path", default="data/smc_trader.db", help="caminho do banco SQLite")
+
     return parser
 
 
@@ -675,6 +747,24 @@ def _cmd_fibo_backtest(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def _cmd_employee(args: argparse.Namespace, cfg: Config) -> int:
+    from smc_trader.commands.employee_cmd import handle_employee_cmd
+
+    return handle_employee_cmd(args)
+
+
+def _cmd_strategy(args: argparse.Namespace, cfg: Config) -> int:
+    from smc_trader.commands.strategy_cmd import handle_strategy_cmd
+
+    return handle_strategy_cmd(args)
+
+
+def _cmd_paper(args: argparse.Namespace, cfg: Config) -> int:
+    from smc_trader.commands.paper_cmd import handle_paper_cmd
+
+    return handle_paper_cmd(args)
+
+
 _COMMANDS = {
     "fetch": _cmd_fetch,
     "check-data": _cmd_check_data,
@@ -685,13 +775,21 @@ _COMMANDS = {
     "ui": _cmd_ui,
     "live": _cmd_live,
     "fibo-backtest": _cmd_fibo_backtest,
+    "employee": _cmd_employee,
+    "strategy": _cmd_strategy,
+    "paper": _cmd_paper,
 }
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    if args.command in ("live", "fibo-backtest"):
+    if args.command in ("live", "fibo-backtest", "employee", "strategy", "paper"):
         cfg = load_config(Path("config/default.yaml"))
     else:
         cfg = load_config(args.config)
     return _COMMANDS[args.command](args, cfg)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+

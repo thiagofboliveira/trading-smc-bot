@@ -15,7 +15,6 @@ import pytest
 from smc_trader.strategies.turtle_trend import (
     TurtleTrendConfig,
     TurtleTrendStrategy,
-    TurtleTrade,
 )
 
 

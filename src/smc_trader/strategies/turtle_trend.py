@@ -22,6 +22,7 @@ AVISO DE AUDITORIA:
 
 from dataclasses import dataclass
 from typing import Any, Literal
+
 import numpy as np
 import pandas as pd
 

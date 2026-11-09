@@ -8,9 +8,7 @@ Verifica:
 5. Relatório granular de atribuição.
 """
 
-import numpy as np
 import pandas as pd
-import pytest
 
 from smc_trader.strategies.trend_follower import (
     TrendFollowerConfig,

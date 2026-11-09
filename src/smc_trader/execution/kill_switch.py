@@ -63,6 +63,18 @@ class KillSwitch:
             )
         return False, ""
 
+    def is_blocked(self, current_equity: float | None = None) -> tuple[bool, str]:
+        """Informa se novas operações estão bloqueadas pelo Kill Switch."""
+        if self.is_active:
+            return True, self.trigger_reason
+        if current_equity is not None:
+            tripped, reason = self.check_daily_loss(current_equity)
+            if tripped:
+                self.is_active = True
+                self.trigger_reason = reason
+                return True, reason
+        return False, ""
+
     def check_consecutive_losses(self, consecutive_stops: int) -> tuple[bool, str]:
         """Verifica se o número de stops consecutivos atingiu o limite."""
         if consecutive_stops >= self.config.max_consecutive_losses:

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import plotly.graph_objects as go
 
 from smc_trader.analysis import analyze
 from smc_trader.backtest.engine import BacktestEngine
@@ -26,6 +27,20 @@ from smc_trader.config import (
 )
 from smc_trader.data.resample import resample_ohlc
 from smc_trader.data.store import load_candles
+from smc_trader.strategies import (
+    D1MeanReversionConfig,
+    D1MeanReversionStrategy,
+    FiboTrapConfig,
+    FiboTrapStrategy,
+    ORBConfig,
+    ORBStrategy,
+    SMCMacroMicroConfig,
+    SMCMacroMicroStrategy,
+    TrendFollowerConfig,
+    TrendFollowerStrategy,
+    TurtleTrendConfig,
+    TurtleTrendStrategy,
+)
 from smc_trader.viz.chart import build_chart
 
 
@@ -60,6 +75,16 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
             self._serve_static_index()
         elif path == "/api/symbols":
             self._handle_get_symbols()
+        elif path == "/api/company":
+            self._handle_get_company()
+        elif path == "/api/employees":
+            self._handle_get_employees()
+        elif path.startswith("/api/employees/") and path.endswith("/equity"):
+            emp_id = path.replace("/api/employees/", "").replace("/equity", "")
+            self._handle_get_employee_equity(emp_id)
+        elif path.startswith("/api/employees/") and path.endswith("/trades"):
+            emp_id = path.replace("/api/employees/", "").replace("/trades", "")
+            self._handle_get_employee_trades(emp_id)
         elif path == "/api/history":
             self._handle_get_history()
         elif path.startswith("/api/history/"):
@@ -70,6 +95,84 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
             self._serve_audit_file(file_rel)
         else:
             self.send_error(HTTPStatus.NOT_FOUND, "Rota não encontrada")
+
+    def _handle_get_company(self) -> None:
+        """Retorna o status consolidado da empresa desde o Dia 0 (SPEC_PRODUTO.md 5.4)."""
+        from smc_trader.store.database import Database
+        from smc_trader.store.repository import StoreRepository
+
+        repo = StoreRepository(Database())
+        status = repo.get_company_status(source="paper")
+        self._send_json(status)
+
+    def _handle_get_employees(self) -> None:
+        """Retorna a lista de todos os funcionários com seus estágios e avatares (E5)."""
+        from smc_trader.store.database import Database
+        from smc_trader.store.repository import StoreRepository
+        from smc_trader.store.seed import seed_default_roster
+
+        repo = StoreRepository(Database())
+        emps = repo.list_employees()
+        if not emps:
+            seed_default_roster(repo)
+            emps = repo.list_employees()
+        data = [
+            {
+                "id": e.id,
+                "name": e.name,
+                "strategy_id": e.strategy_id,
+                "symbol": e.symbol,
+                "timeframe": e.timeframe,
+                "stage": e.stage.value,
+                "virtual_capital": e.virtual_capital,
+                "avatar": e.avatar,
+                "notes": e.notes,
+                "params": e.params,
+            }
+            for e in emps
+        ]
+        self._send_json({"employees": data})
+
+    def _handle_get_employee_equity(self, emp_id: str) -> None:
+        """Retorna a curva de patrimônio do funcionário em paper trading (E7)."""
+        from smc_trader.store.database import Database
+        from smc_trader.store.repository import StoreRepository
+
+        repo = StoreRepository(Database())
+        curve = repo.get_equity_curve(emp_id, source="paper")
+        self._send_json(
+            {
+                "employee_id": emp_id,
+                "curve": [{"time": pt.timestamp, "equity": pt.equity} for pt in curve],
+            }
+        )
+
+    def _handle_get_employee_trades(self, emp_id: str) -> None:
+        """Retorna o histórico de operações fechadas do funcionário (E7)."""
+        from smc_trader.store.database import Database
+        from smc_trader.store.repository import StoreRepository
+
+        repo = StoreRepository(Database())
+        trades = repo.get_trades(emp_id, source="paper")
+        self._send_json(
+            {
+                "employee_id": emp_id,
+                "trades": [
+                    {
+                        "id": t.id,
+                        "direction": t.direction,
+                        "entry_time": t.entry_time,
+                        "entry_price": t.entry_price,
+                        "exit_time": t.exit_time,
+                        "exit_price": t.exit_price,
+                        "r_multiple": t.r_multiple,
+                        "pnl": t.pnl,
+                        "exit_reason": t.exit_reason,
+                    }
+                    for t in trades
+                ],
+            }
+        )
 
     def _handle_get_history(self) -> None:
         """Retorna a lista de todos os backtests e auditorias salvos no disco local."""
@@ -149,6 +252,22 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
             self._handle_post_chart(payload)
         elif path == "/api/grid":
             self._handle_post_grid(payload)
+        elif path == "/api/office/mock":
+            from smc_trader.store.database import Database
+            from smc_trader.store.repository import StoreRepository
+            from smc_trader.store.seed import seed_mock_office_data
+
+            repo = StoreRepository(Database())
+            seed_mock_office_data(repo)
+            self._send_json({"status": "ok", "message": "Cenário Mock populado com sucesso!"})
+        elif path == "/api/office/reset":
+            from smc_trader.store.database import Database
+            from smc_trader.store.repository import StoreRepository
+            from smc_trader.store.seed import seed_default_roster
+
+            repo = StoreRepository(Database())
+            seed_default_roster(repo)
+            self._send_json({"status": "ok", "message": "Escritório resetado para estado inicial."})
         else:
             self.send_error(HTTPStatus.NOT_FOUND, "Rota não encontrada")
 
@@ -195,10 +314,105 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
 
         self._send_json({"symbols": symbols_info})
 
+    @staticmethod
+    def _format_custom_trades(
+        trades: list[Any],
+        symbol: str,
+        start_time: pd.Timestamp,
+        default_zone: str,
+        default_entry_mode: str,
+        spread: float,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+        cum_r = 0.0
+        equity_curve: list[dict[str, Any]] = [
+            {"time": start_time.isoformat(), "cum_r": 0.0, "pnl": 0.0}
+        ]
+        trades_list: list[dict[str, Any]] = []
+
+        total = len(trades)
+        wins = [t for t in trades if t.r_multiple > 0]
+        losses = [t for t in trades if t.r_multiple <= 0]
+        win_count = len(wins)
+        loss_count = len(losses)
+        win_rate = (win_count / total * 100.0) if total > 0 else 0.0
+        sum_gain_r = sum(t.r_multiple for t in wins)
+        sum_loss_r = abs(sum(t.r_multiple for t in losses))
+        avg_win_r = (sum_gain_r / win_count) if win_count > 0 else 0.0
+        avg_loss_r = (sum_loss_r / loss_count) if loss_count > 0 else 0.0
+        p_win = win_count / total if total > 0 else 0.0
+        p_loss = loss_count / total if total > 0 else 0.0
+        expectancy = (p_win * avg_win_r) - (p_loss * avg_loss_r)
+        profit_factor = (
+            (sum_gain_r / sum_loss_r)
+            if sum_loss_r > 0
+            else (999.0 if sum_gain_r > 0 else 0.0)
+        )
+        avg_r = (sum(t.r_multiple for t in trades) / total) if total > 0 else 0.0
+
+        peak_r = 0.0
+        max_dd_r = 0.0
+
+        for idx, t in enumerate(trades, 1):
+            cum_r += t.r_multiple
+            peak_r = max(peak_r, cum_r)
+            dd = peak_r - cum_r
+            max_dd_r = max(max_dd_r, dd)
+            pnl = round(t.r_multiple * 100.0, 2)
+
+            equity_curve.append(
+                {
+                    "time": t.exit_time.isoformat(),
+                    "cum_r": round(cum_r, 2),
+                    "pnl": round(cum_r * 100.0, 2),
+                }
+            )
+            stop_price = getattr(t, "stop_price", getattr(t, "stop_loss", 0.0))
+            target_price = getattr(t, "target_price", getattr(t, "take_profit", None))
+            entry_mode = getattr(t, "setup_name", default_entry_mode)
+
+            trades_list.append(
+                {
+                    "id": idx,
+                    "trade_id": f"{symbol}-{idx}",
+                    "symbol": symbol,
+                    "direction": t.direction,
+                    "status": "GAIN" if t.r_multiple > 0 else "STOP",
+                    "is_gain": t.r_multiple > 0,
+                    "zone_kind": default_zone,
+                    "entry_mode": entry_mode,
+                    "entry_time": t.entry_time.isoformat(),
+                    "entry_price": round(t.entry_price, 3),
+                    "stop_loss": round(stop_price, 3),
+                    "take_profit": round(target_price, 3)
+                    if target_price is not None
+                    else None,
+                    "exit_time": t.exit_time.isoformat(),
+                    "exit_price": round(t.exit_price, 3),
+                    "exit_reason": str(t.exit_reason).upper(),
+                    "r_multiple": round(t.r_multiple, 2),
+                    "pnl": pnl,
+                    "costs": round(spread + 1.0, 2),
+                }
+            )
+
+        metrics = {
+            "total_trades": total,
+            "win_trades": win_count,
+            "loss_trades": loss_count,
+            "win_rate": round(win_rate, 2),
+            "avg_r": round(avg_r, 2),
+            "expectancy": round(expectancy, 2),
+            "profit_factor": round(profit_factor, 2),
+            "max_drawdown_r": round(max_dd_r, 2),
+            "total_pnl": round(cum_r * 100.0, 2),
+        }
+        return trades_list, equity_curve, metrics
+
     def _handle_post_backtest(self, payload: dict[str, Any]) -> None:
         symbol = payload.get("symbol", "XAUUSD")
         start_str = payload.get("start")
         end_str = payload.get("end")
+        model = payload.get("model", "smc_dayflow")
 
         start_dt = pd.Timestamp(start_str, tz="UTC") if start_str else None
         end_dt = pd.Timestamp(end_str, tz="UTC") if end_str else None
@@ -213,6 +427,183 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
             self._send_json(
                 {"error": "Nenhum candle M1 encontrado para o intervalo"}, status=400
             )
+            return
+
+        # Roteamento de modelos quantitativos especiais
+        if model == "smc_macro_micro":
+            spread = self.app_cfg.backtest.costs.spread_pips.get(symbol, 1.0)
+            strat = SMCMacroMicroStrategy(SMCMacroMicroConfig(slippage_pts=1.0))
+            trades = strat.run_simulation(c_m1, symbol=symbol, spread=spread)
+
+            trades_list, equity_curve, metrics = self._format_custom_trades(
+                trades, symbol, c_m1.index[0], "FIBO_OTE_H1", "choch_m15", spread
+            )
+            response_payload = {
+                "symbol": symbol,
+                "metrics": metrics,
+                "trades": trades_list,
+                "equity_curve": equity_curve,
+                "total_candles": len(c_m1),
+                "macro_tf": "H1",
+                "audit_package": None,
+            }
+            self._send_json(response_payload)
+            return
+
+        if model == "orb_15_ny":
+            spread = self.app_cfg.backtest.costs.spread_pips.get(symbol, 1.0)
+            strat = ORBStrategy(
+                ORBConfig(orb_minutes=15, stop_mode="midpoint", target_r=2.0, slippage_pts=1.0)
+            )
+            trades = strat.run_simulation(c_m1, symbol=symbol, spread=spread)
+
+            trades_list, equity_curve, metrics = self._format_custom_trades(
+                trades, symbol, c_m1.index[0], "ORB_15", "breakout_cash_open", spread
+            )
+            response_payload = {
+                "symbol": symbol,
+                "metrics": metrics,
+                "trades": trades_list,
+                "equity_curve": equity_curve,
+                "total_candles": len(c_m1),
+                "macro_tf": "M15",
+                "audit_package": None,
+            }
+            self._send_json(response_payload)
+            return
+
+        if model == "fibo_trap_mme8":
+            macro_tf = payload.get("macro_tf", "M15")
+            candles = c_m1 if macro_tf == "M1" else resample_ohlc(c_m1, macro_tf)
+            spread = self.app_cfg.backtest.costs.spread_pips.get(symbol, 1.0)
+            strat = FiboTrapStrategy(FiboTrapConfig(slippage_pts=1.0))
+            trades = strat.run_simulation(candles, symbol=symbol, spread=spread)
+
+            trades_list, equity_curve, metrics = self._format_custom_trades(
+                trades, symbol, c_m1.index[0], "FIBO_OTE", "trap_mme8", spread
+            )
+            response_payload = {
+                "symbol": symbol,
+                "metrics": metrics,
+                "trades": trades_list,
+                "equity_curve": equity_curve,
+                "total_candles": len(c_m1),
+                "macro_tf": macro_tf,
+                "audit_package": None,
+            }
+            self._send_json(response_payload)
+            return
+
+        if model == "trend_follower_mme20":
+            macro_tf = payload.get("macro_tf", "M15")
+            candles = c_m1 if macro_tf == "M1" else resample_ohlc(c_m1, macro_tf)
+            spread = self.app_cfg.backtest.costs.spread_pips.get(symbol, 1.0)
+            strat = TrendFollowerStrategy(TrendFollowerConfig(slippage_pts=1.0))
+            trades = strat.run_simulation(candles, symbol=symbol, spread=spread)
+
+            trades_list, equity_curve, metrics = self._format_custom_trades(
+                trades, symbol, c_m1.index[0], "MME80_200", "trend_breakout", spread
+            )
+            response_payload = {
+                "symbol": symbol,
+                "metrics": metrics,
+                "trades": trades_list,
+                "equity_curve": equity_curve,
+                "total_candles": len(c_m1),
+                "macro_tf": macro_tf,
+                "audit_package": None,
+            }
+            self._send_json(response_payload)
+            return
+
+        if model == "d1_mean_reversion":
+            macro_tf = "D1"
+            spread = self.app_cfg.backtest.costs.spread_pips.get(symbol, 1.0)
+            d1_raw = (
+                c_m1.resample("1D")
+                .agg({
+                    "open": "first",
+                    "high": "max",
+                    "low": "min",
+                    "close": "last",
+                    "volume": "sum",
+                })
+                .dropna()
+            )
+            med_vol = d1_raw["volume"].median() if not d1_raw.empty else 1.0
+            d1_clean = d1_raw[d1_raw["volume"] > 0.20 * med_vol].copy()
+
+            if len(d1_clean) < 210:
+                self._send_json(
+                    {
+                        "error": "D1 Mean Reversion requer pelo menos 210 candles diários para calcular a SMA 200. Selecione 'Todo Histórico' no período."
+                    },
+                    status=400,
+                )
+                return
+
+            strat = D1MeanReversionStrategy(D1MeanReversionConfig(slippage_pts=1.0))
+            trades = strat.run_simulation(d1_clean, symbol=symbol, spread=spread)
+
+            trades_list, equity_curve, metrics = self._format_custom_trades(
+                trades, symbol, c_m1.index[0], "SMA200", "connors_rsi2_ibs", spread
+            )
+            response_payload = {
+                "symbol": symbol,
+                "metrics": metrics,
+                "trades": trades_list,
+                "equity_curve": equity_curve,
+                "total_candles": len(c_m1),
+                "macro_tf": macro_tf,
+                "audit_package": None,
+            }
+            self._send_json(response_payload)
+            return
+
+        if model == "turtle_trend_20_10":
+            macro_tf = payload.get("macro_tf", "D1")
+            if macro_tf == "D1":
+                d1_raw = (
+                    c_m1.resample("1D")
+                    .agg({
+                        "open": "first",
+                        "high": "max",
+                        "low": "min",
+                        "close": "last",
+                        "volume": "sum",
+                    })
+                    .dropna()
+                )
+                med_vol = d1_raw["volume"].median() if not d1_raw.empty else 1.0
+                candles = d1_raw[d1_raw["volume"] > 0.20 * med_vol].copy()
+            else:
+                candles = resample_ohlc(c_m1, macro_tf)
+
+            spread = self.app_cfg.backtest.costs.spread_pips.get(symbol, 1.0)
+            strat = TurtleTrendStrategy(
+                TurtleTrendConfig(
+                    timeframe=macro_tf,
+                    entry_channel_period=20,
+                    exit_channel_period=10,
+                    spread=spread,
+                    slippage=1.0,
+                )
+            )
+            trades = strat.simulate(candles, symbol=symbol)
+
+            trades_list, equity_curve, metrics = self._format_custom_trades(
+                trades, symbol, c_m1.index[0], "DONCHIAN_20", "turtle_breakout", spread
+            )
+            response_payload = {
+                "symbol": symbol,
+                "metrics": metrics,
+                "trades": trades_list,
+                "equity_curve": equity_curve,
+                "total_candles": len(c_m1),
+                "macro_tf": macro_tf,
+                "audit_package": None,
+            }
+            self._send_json(response_payload)
             return
 
         # Montar configurações
@@ -353,6 +744,7 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
         start_str = payload.get("start")
         end_str = payload.get("end")
         tf = payload.get("tf", "M15")
+        model = payload.get("model", "smc_dayflow")
 
         start_dt = pd.Timestamp(start_str, tz="UTC") if start_str else None
         end_dt = pd.Timestamp(end_str, tz="UTC") if end_str else None
@@ -368,7 +760,26 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
             return
 
         # Para o gráfico não ficar pesado no navegador, limitamos as últimas 600 barras do timeframe solicitado
-        candles = c_m1 if tf == "M1" else resample_ohlc(c_m1, tf)
+        if tf == "D1":
+            d1_raw = (
+                c_m1.resample("1D")
+                .agg({
+                    "open": "first",
+                    "high": "max",
+                    "low": "min",
+                    "close": "last",
+                    "volume": "sum",
+                })
+                .dropna()
+            )
+            med_vol = d1_raw["volume"].median() if not d1_raw.empty else 1.0
+            candles = d1_raw[d1_raw["volume"] > 0.20 * med_vol].copy()
+            candles["close_time"] = candles.index + pd.Timedelta(days=1)
+        elif tf == "M1":
+            candles = c_m1
+        else:
+            candles = resample_ohlc(c_m1, tf)
+
         if len(candles) > 600:
             candles = candles.iloc[-600:]
 
@@ -376,7 +787,136 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
         zone_cfg = ZoneConfig(blocks_filter=blocks_filter)
         analysis = analyze(candles, self.app_cfg.structure.pivot_k_htf, zone_cfg)
 
-        fig = build_chart(candles, analysis, f"{symbol} ({tf}) — Análise SMC")
+        fig = build_chart(
+            candles, analysis, f"{symbol} ({tf}) — Análise SMC & Indicadores"
+        )
+
+        # Sobreposição de Médias Móveis conforme o modelo
+        if model in ("fibo_trap_mme8", "trend_follower_mme20"):
+            mme8 = candles["close"].ewm(span=8, adjust=False).mean()
+            mme20 = candles["close"].ewm(span=20, adjust=False).mean()
+            mme80 = candles["close"].ewm(span=80, adjust=False).mean()
+            mme200 = candles["close"].ewm(span=200, adjust=False).mean()
+            fig.add_trace(
+                go.Scatter(
+                    x=candles.index,
+                    y=mme8,
+                    mode="lines",
+                    line=dict(color="#f59e0b", width=1.5),
+                    name="MME 8",
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=candles.index,
+                    y=mme20,
+                    mode="lines",
+                    line=dict(color="#3b82f6", width=1.5),
+                    name="MME 20",
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=candles.index,
+                    y=mme80,
+                    mode="lines",
+                    line=dict(color="#a855f7", width=2),
+                    name="MME 80",
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=candles.index,
+                    y=mme200,
+                    mode="lines",
+                    line=dict(color="#ec4899", width=2),
+                    name="MME 200",
+                )
+            )
+        elif model == "turtle_trend_20_10":
+            dh20 = candles["high"].shift(1).rolling(20).max()
+            dl20 = candles["low"].shift(1).rolling(20).min()
+            dl10 = candles["low"].shift(1).rolling(10).min()
+            dh10 = candles["high"].shift(1).rolling(10).max()
+            fig.add_trace(
+                go.Scatter(
+                    x=candles.index,
+                    y=dh20,
+                    mode="lines",
+                    line=dict(color="#10b981", width=1.5, dash="dot"),
+                    name="Donchian Máx 20 (Compra)",
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=candles.index,
+                    y=dl20,
+                    mode="lines",
+                    line=dict(color="#ef4444", width=1.5, dash="dot"),
+                    name="Donchian Mín 20 (Venda)",
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=candles.index,
+                    y=dl10,
+                    mode="lines",
+                    line=dict(color="#f59e0b", width=1.5, dash="dash"),
+                    name="Saída Mín 10",
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=candles.index,
+                    y=dh10,
+                    mode="lines",
+                    line=dict(color="#f59e0b", width=1.5, dash="dash"),
+                    name="Saída Máx 10",
+                )
+            )
+        elif model == "smc_macro_micro":
+            mme8 = candles["close"].ewm(span=8, adjust=False).mean()
+            mme20 = candles["close"].ewm(span=20, adjust=False).mean()
+            fig.add_trace(
+                go.Scatter(
+                    x=candles.index,
+                    y=mme8,
+                    mode="lines",
+                    line=dict(color="#f59e0b", width=1.5),
+                    name="MME 8 Micro",
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=candles.index,
+                    y=mme20,
+                    mode="lines",
+                    line=dict(color="#3b82f6", width=1.5),
+                    name="MME 20 Micro",
+                )
+            )
+        elif model == "d1_mean_reversion" or tf == "D1":
+            sma5 = candles["close"].rolling(5).mean()
+            sma200 = candles["close"].rolling(200).mean()
+            fig.add_trace(
+                go.Scatter(
+                    x=candles.index,
+                    y=sma5,
+                    mode="lines",
+                    line=dict(color="#06b6d4", width=1.5),
+                    name="SMA 5 (Saída)",
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=candles.index,
+                    y=sma200,
+                    mode="lines",
+                    line=dict(color="#eab308", width=2),
+                    name="SMA 200 (Tendência)",
+                )
+            )
+
         # Layout responsivo e dark theme
         fig.update_layout(
             template="plotly_dark",

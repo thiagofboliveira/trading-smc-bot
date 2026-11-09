@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  smc-trader:
+    build: .
+    container_name: smc_trader_office
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./plugins:/app/plugins
+      - ./config:/app/config
+    environment:
+      - SMC_DB_PATH=/app/data/smc_trader.db
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_AUTHORIZED_CHAT_IDS=${TELEGRAM_AUTHORIZED_CHAT_IDS:-}
+      - MT5_LOGIN=${MT5_LOGIN:-}
+      - MT5_PASSWORD=${MT5_PASSWORD:-}
+      - MT5_SERVER=${MT5_SERVER:-}

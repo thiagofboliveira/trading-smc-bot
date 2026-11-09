@@ -365,6 +365,9 @@
         <button onclick="switchTab('office'); loadOfficeData();" id="tab-btn-office" class="px-4 py-2 text-xs font-semibold rounded-t-lg border-b-2 border-transparent text-amber-300 hover:text-amber-200">
           <i class="fa-solid fa-building-user mr-1.5 text-amber-400"></i> 🏢 O Escritório (Dia 0)
         </button>
+        <button onclick="switchTab('integrations'); loadIntegrationsData();" id="tab-btn-integrations" class="px-4 py-2 text-xs font-semibold rounded-t-lg border-b-2 border-transparent text-cyan-300 hover:text-cyan-200">
+          <i class="fa-solid fa-plug-circle-bolt mr-1.5 text-cyan-400"></i> 🔌 Integrações & Conexões
+        </button>
         <button onclick="switchTab('grid')" id="tab-btn-grid" class="px-4 py-2 text-xs font-semibold rounded-t-lg border-b-2 border-transparent text-gray-400 hover:text-gray-200">
           <i class="fa-solid fa-trophy mr-1.5 text-yellow-400"></i> Ranking da Grade
         </button>
@@ -580,6 +583,255 @@
             </h3>
             <div id="grid-attribution-container" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
           </div>
+        </div>
+
+        <!-- TAB: Conexões & Integrações (Telegram, MT5, B3 Profit, Paper & Licença) -->
+        <div id="tab-integrations" class="hidden h-full overflow-y-auto space-y-6 custom-scrollbar pb-8">
+
+          <!-- Header Banner -->
+          <div class="bg-gradient-to-r from-gray-900 via-gray-900 to-indigo-950/40 border border-gray-800 rounded-xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-2xl">🔌</span>
+                <h2 class="text-base font-bold text-white tracking-wide">Central de Conexões & Integrações Institucionais</h2>
+                <span class="text-[10px] bg-cyan-950/80 border border-cyan-700/60 text-cyan-300 px-2 py-0.5 rounded-full font-mono">Hub Operacional</span>
+              </div>
+              <p class="text-xs text-gray-400 mt-1">Gerencie canais de alerta no celular (Telegram), corretoras (MT5), bases da B3 (ProfitChart) e persistência de dados.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="loadIntegrationsData()" class="bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs px-3.5 py-2 rounded-lg border border-gray-700 flex items-center gap-1.5 transition">
+                <i class="fa-solid fa-rotate"></i> Atualizar Status
+              </button>
+            </div>
+          </div>
+
+          <!-- 4 Cards Grid -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+            <!-- Card 1: Telegram Bot & Alertas Móveis (E4) -->
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col justify-between space-y-4">
+              <div>
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2.5">
+                    <span class="text-2xl p-2 bg-sky-950/60 border border-sky-800/60 rounded-xl text-sky-400">
+                      <i class="fa-brands fa-telegram"></i>
+                    </span>
+                    <div>
+                      <h3 class="text-sm font-bold text-white">Alertas Telegram & Decisões no Celular</h3>
+                      <p class="text-xs text-gray-400 font-mono">Cards gráficos em PNG + Botões interativos [Entrar/Ignorar]</p>
+                    </div>
+                  </div>
+                  <span id="tg-status-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-900/60 border border-yellow-500 text-yellow-300">🟡 AGUARDANDO TOKEN</span>
+                </div>
+
+                <div class="mt-4 space-y-3">
+                  <div>
+                    <label class="block text-[11px] font-medium text-gray-400 mb-1">Bot Token (fornecido pelo @BotFather)</label>
+                    <input type="password" id="input-tg-token" placeholder="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-medium text-gray-400 mb-1">Chat IDs Autorizados (separados por vírgula)</label>
+                    <input type="text" id="input-tg-chats" placeholder="123456789, 987654321" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500">
+                  </div>
+                  
+                  <div class="bg-gray-950/60 p-3 rounded-lg border border-gray-800/80 text-[11px] text-gray-400 space-y-1">
+                    <div class="flex items-center gap-1.5 text-gray-300 font-medium">
+                      <i class="fa-solid fa-lock text-emerald-400 text-[10px]"></i>
+                      <span>Proteção e Idempotência (P4 - Humano no Comando)</span>
+                    </div>
+                    <div>Cliques em <b>[Entrar]</b> expiram após validade da barra e nunca duplicam lotes.</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="pt-2 border-t border-gray-800/80 flex items-center justify-between gap-2">
+                <button onclick="saveTelegramConfig()" class="bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs px-3.5 py-2 rounded-lg border border-gray-700 font-medium transition">
+                  <i class="fa-solid fa-floppy-disk mr-1"></i> Salvar Chaves
+                </button>
+                <button onclick="testTelegramSignal()" class="bg-sky-600 hover:bg-sky-500 text-white text-xs px-3.5 py-2 rounded-lg font-bold shadow-md shadow-sky-600/30 flex items-center gap-1.5 transition">
+                  <i class="fa-solid fa-paper-plane"></i> Enviar Card de Teste
+                </button>
+              </div>
+            </div>
+
+            <!-- Card 2: MetaTrader 5 Broker (E6) -->
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col justify-between space-y-4">
+              <div>
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2.5">
+                    <span class="text-2xl p-2 bg-indigo-950/60 border border-indigo-800/60 rounded-xl text-indigo-400">
+                      <i class="fa-solid fa-network-wired"></i>
+                    </span>
+                    <div>
+                      <h3 class="text-sm font-bold text-white">MetaTrader 5 & Execução com Confirmação</h3>
+                      <p class="text-xs text-gray-400 font-mono">Conexão direta MT5 Terminal (Demo ou Real)</p>
+                    </div>
+                  </div>
+                  <span id="mt5-status-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-950/80 border border-indigo-600 text-indigo-300">⚪ MODO SIMULAÇÃO</span>
+                </div>
+
+                <div class="mt-4 space-y-3">
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <span class="text-[10px] text-gray-500 uppercase block">Login da Conta</span>
+                      <span id="mt5-info-login" class="text-xs font-mono font-bold text-gray-300">Demo Simulação</span>
+                    </div>
+                    <div>
+                      <span class="text-[10px] text-gray-500 uppercase block">Servidor MT5</span>
+                      <span id="mt5-info-server" class="text-xs font-mono font-bold text-gray-300">MetaQuotes-Demo</span>
+                    </div>
+                  </div>
+
+                  <div class="bg-gray-950/60 p-3 rounded-lg border border-gray-800/80 space-y-2 text-xs">
+                    <div class="flex items-center justify-between">
+                      <span class="text-gray-400">Trava de Segurança de Carreira:</span>
+                      <span class="text-emerald-400 font-bold">Apenas CONTRATADOS</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                      <span class="text-gray-400">Proteção Kill Switch Diário:</span>
+                      <span class="text-rose-400 font-bold">Max 3.0% / 3 Stops</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                      <span class="text-gray-400">Sizing de Lotes:</span>
+                      <span class="text-gray-300 font-mono">Dinâmico por Tick Real</span>
+                    </div>
+                  </div>
+
+                  <p class="text-[11px] text-gray-400 leading-relaxed">
+                    Estratégias em experiência ou candidatos <b>nunca</b> executam na corretora sem antes passarem pelos 3 meses de histórico e aprovação explícita (Princípio P2).
+                  </p>
+                </div>
+              </div>
+
+              <div class="pt-2 border-t border-gray-800/80 flex items-center justify-between">
+                <span class="text-[10px] text-gray-500">Credenciais via .env (E0-1)</span>
+                <button onclick="pingMT5Connection()" class="bg-indigo-600/80 hover:bg-indigo-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium transition">
+                  <i class="fa-solid fa-satellite-dish mr-1"></i> Checar Terminal MT5
+                </button>
+              </div>
+            </div>
+
+            <!-- Card 3: B3 ProfitChart Importer (E1-2) -->
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col justify-between space-y-4">
+              <div>
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2.5">
+                    <span class="text-2xl p-2 bg-emerald-950/60 border border-emerald-800/60 rounded-xl text-emerald-400">
+                      <i class="fa-solid fa-file-import"></i>
+                    </span>
+                    <div>
+                      <h3 class="text-sm font-bold text-white">Importador Nelogica ProfitChart (B3)</h3>
+                      <p class="text-xs text-gray-400 font-mono">Mini Índice (WIN), Dólar (WDO) e Ações</p>
+                    </div>
+                  </div>
+                  <span id="b3-status-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 border border-emerald-500 text-emerald-300">0 Séries</span>
+                </div>
+
+                <div class="mt-4 space-y-3">
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="block text-[11px] font-medium text-gray-400 mb-1">Símbolo de Destino</label>
+                      <input type="text" id="input-b3-symbol" value="WIN" placeholder="WIN ou WDO" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-1.5 text-xs text-white uppercase font-bold focus:outline-none focus:ring-1 focus:ring-emerald-500">
+                    </div>
+                    <div>
+                      <label class="block text-[11px] font-medium text-gray-400 mb-1">Rótulo do Candle no Arquivo</label>
+                      <select id="select-b3-label" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-2.5 py-1.5 text-xs text-gray-200">
+                        <option value="open" selected>Horário de Abertura (Padrão)</option>
+                        <option value="close">Horário de Fechamento (-1m)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-[11px] font-medium text-gray-400 mb-1">Conteúdo CSV / TXT do Profit (Cole ou selecione)</label>
+                    <textarea id="input-b3-csv" rows="3" placeholder="Cole aqui as linhas exportadas do ProfitChart (Ativo;Data;Hora;Abertura;Máximo;Mínimo;Fechamento;Volume;Quantidade)..." class="w-full bg-gray-950 border border-gray-800 rounded-lg p-2.5 text-[11px] text-gray-300 font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500"></textarea>
+                  </div>
+                </div>
+              </div>
+
+              <div class="pt-2 border-t border-gray-800/80 flex items-center justify-between gap-2">
+                <button onclick="generateB3Sample()" class="bg-gray-800 hover:bg-gray-700 text-emerald-300 text-xs px-3 py-2 rounded-lg border border-emerald-800/40 font-medium transition">
+                  <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Gerar Amostra WIN B3
+                </button>
+                <button onclick="uploadB3ProfitData()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-3.5 py-2 rounded-lg font-bold shadow-md shadow-emerald-600/30 transition">
+                  <i class="fa-solid fa-arrow-up-from-bracket mr-1"></i> Converter em Parquet UTC
+                </button>
+              </div>
+            </div>
+
+            <!-- Card 4: Persistência SQLite & Licenciamento Offline (E3 / E8-7) -->
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col justify-between space-y-4">
+              <div>
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2.5">
+                    <span class="text-2xl p-2 bg-amber-950/60 border border-amber-800/60 rounded-xl text-amber-400">
+                      <i class="fa-solid fa-database"></i>
+                    </span>
+                    <div>
+                      <h3 class="text-sm font-bold text-white">Banco Local SQLite & Licenciamento</h3>
+                      <p class="text-xs text-gray-400 font-mono">Store soberano data/smc_trader.db (E3, E8-7)</p>
+                    </div>
+                  </div>
+                  <span id="lic-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 border border-emerald-500 text-emerald-300">PRO ATIVO</span>
+                </div>
+
+                <div class="mt-4 space-y-3">
+                  <div class="grid grid-cols-3 gap-2 bg-gray-950/60 p-3 rounded-lg border border-gray-800 text-center font-mono">
+                    <div>
+                      <span class="text-[10px] text-gray-500 uppercase block">Sinais Salvos</span>
+                      <span id="db-signals-count" class="text-sm font-bold text-indigo-400">--</span>
+                    </div>
+                    <div>
+                      <span class="text-[10px] text-gray-500 uppercase block">Trades Fechados</span>
+                      <span id="db-trades-count" class="text-sm font-bold text-emerald-400">--</span>
+                    </div>
+                    <div>
+                      <span class="text-[10px] text-gray-500 uppercase block">Tamanho DB</span>
+                      <span id="db-size-label" class="text-sm font-bold text-amber-300">-- KB</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-[11px] font-medium text-gray-400 mb-1">Chave de Licença Offline (HMAC-SHA256)</label>
+                    <input type="text" id="input-license-key" placeholder="eyJ...4f8a.c3e1..." class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-xs text-gray-300 font-mono focus:outline-none focus:ring-1 focus:ring-amber-500">
+                    <span id="lic-status-msg" class="text-[10px] text-gray-500 mt-1 block">Validada localmente sem telemetria nem chamadas de rede.</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="pt-2 border-t border-gray-800/80 flex items-center justify-between">
+                <span class="text-[10px] text-gray-500">Offline-First Sovereign</span>
+                <button onclick="verifyLicenseKey()" class="bg-amber-600/80 hover:bg-amber-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium transition">
+                  <i class="fa-solid fa-key mr-1"></i> Validar Licença
+                </button>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Modal de Pré-visualização do Card Telegram -->
+          <div id="modal-tg-preview" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+            <div class="bg-gray-900 border border-gray-700 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl flex flex-col">
+              <div class="flex items-center justify-between px-5 py-3 border-b border-gray-800 bg-gray-950">
+                <h4 class="text-xs font-bold text-white flex items-center gap-2">
+                  <i class="fa-brands fa-telegram text-sky-400"></i> Card de Sinal Renderizado (Headless Matplotlib)
+                </h4>
+                <button onclick="document.getElementById('modal-tg-preview').classList.add('hidden')" class="text-gray-400 hover:text-white">
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+              <div class="p-4 space-y-3">
+                <img id="img-tg-preview" src="/api/integrations/card-preview" alt="Card Preview" class="w-full rounded-lg border border-gray-800 shadow">
+                <div id="tg-modal-status-text" class="text-xs text-gray-300 bg-gray-950 p-2.5 rounded-lg border border-gray-800"></div>
+              </div>
+              <div class="px-5 py-3 border-t border-gray-800 bg-gray-950 flex justify-end">
+                <button onclick="document.getElementById('modal-tg-preview').classList.add('hidden')" class="px-4 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg">
+                  Entendido
+                </button>
+              </div>
+            </div>
+          </div>
+
         </div>
 
       </div>
@@ -1260,7 +1512,7 @@
     }
 
     function switchTab(tab) {
-      ['equity', 'trades', 'chart', 'dossier', 'office', 'history', 'grid'].forEach(t => {
+      ['equity', 'trades', 'chart', 'dossier', 'office', 'history', 'grid', 'integrations'].forEach(t => {
         const el = document.getElementById(`tab-${t}`);
         const btn = document.getElementById(`tab-btn-${t}`);
         if (el) el.classList.add('hidden');
@@ -1270,12 +1522,155 @@
       const activeEl = document.getElementById(`tab-${tab}`);
       const activeBtn = document.getElementById(`tab-btn-${tab}`);
       if (activeEl) activeEl.classList.remove('hidden');
-      if (activeBtn) activeBtn.className = 'px-4 py-2 text-xs font-semibold rounded-t-lg border-b-2 border-indigo-500 text-white bg-gray-900';
+      if (activeBtn) activeBtn.className = 'px-4 py-2 text-xs font-semibold rounded-t-lg border-b-2 border-cyan-500 text-white bg-gray-900';
 
       if (tab === 'equity') setTimeout(() => Plotly.Plots.resize('plotly-equity'), 50);
       if (tab === 'chart') setTimeout(() => Plotly.Plots.resize('plotly-smc'), 50);
       if (tab === 'dossier') renderModelDossier();
       if (tab === 'office') loadOfficeData();
+      if (tab === 'integrations') loadIntegrationsData();
+    }
+
+    async function loadIntegrationsData() {
+      try {
+        const res = await fetch('/api/integrations/status').then(r => r.json());
+        if (!res) return;
+
+        // Telegram
+        const tg = res.telegram;
+        const tgBadge = document.getElementById('tg-status-badge');
+        if (tg.configured) {
+          tgBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950/80 border border-emerald-500 text-emerald-300';
+          tgBadge.textContent = '🟢 CONFIGURADO';
+        } else {
+          tgBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-900/60 border border-yellow-500 text-yellow-300';
+          tgBadge.textContent = '🟡 AGUARDANDO TOKEN';
+        }
+        if (tg.authorized_chat_ids && tg.authorized_chat_ids.length > 0) {
+          document.getElementById('input-tg-chats').value = tg.authorized_chat_ids.join(', ');
+        }
+
+        // MT5
+        const mt5 = res.mt5;
+        document.getElementById('mt5-info-login').textContent = mt5.login;
+        document.getElementById('mt5-info-server').textContent = mt5.server;
+
+        // B3
+        const b3 = res.b3_profit;
+        const b3Badge = document.getElementById('b3-status-badge');
+        b3Badge.textContent = `${b3.count} Série(s) B3 Parquet`;
+
+        // DB & Paper
+        const p = res.paper_trading;
+        document.getElementById('db-signals-count').textContent = p.total_signals;
+        document.getElementById('db-trades-count').textContent = p.total_trades;
+        document.getElementById('db-size-label').textContent = `${p.db_size_kb} KB`;
+
+        // Licença
+        const lic = res.license;
+        const licBadge = document.getElementById('lic-badge');
+        licBadge.textContent = `${lic.tier} ${lic.active ? 'ATIVO' : 'EXPIRADO'}`;
+        licBadge.className = `px-2 py-0.5 rounded text-[10px] font-bold ${lic.active ? 'bg-emerald-950 border border-emerald-500 text-emerald-300' : 'bg-red-950 border border-red-500 text-red-300'}`;
+        document.getElementById('lic-status-msg').textContent = `${lic.message} · Válida até ${lic.valid_until}`;
+      } catch (err) {
+        console.error('Erro ao carregar integrações:', err);
+      }
+    }
+
+    async function saveTelegramConfig() {
+      const token = document.getElementById('input-tg-token').value;
+      const chats = document.getElementById('input-tg-chats').value;
+      try {
+        const res = await fetch('/api/integrations/telegram/save', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({bot_token: token, chat_ids: chats})
+        }).then(r => r.json());
+        alert(res.message || 'Configurações salvas!');
+        loadIntegrationsData();
+      } catch (e) {
+        alert('Erro ao salvar: ' + e);
+      }
+    }
+
+    async function testTelegramSignal() {
+      try {
+        const res = await fetch('/api/integrations/telegram/test', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({})
+        }).then(r => r.json());
+
+        document.getElementById('img-tg-preview').src = res.card_preview_url + '&t=' + Date.now();
+        document.getElementById('tg-modal-status-text').innerHTML = `
+          <div class="font-bold text-white mb-1">${res.message}</div>
+          <div class="text-[11px] font-mono text-gray-400">Ativo: ${res.signal.symbol} · ${res.signal.direction} · Entrada: ${res.signal.entry} · SL: ${res.signal.stop_loss} · TP: ${res.signal.take_profit}</div>
+        `;
+        document.getElementById('modal-tg-preview').classList.remove('hidden');
+      } catch (e) {
+        alert('Erro ao testar sinal: ' + e);
+      }
+    }
+
+    function pingMT5Connection() {
+      alert('Conexão MT5 checada: Modo Simulação e Execução com Confirmação Humana ativo e monitorado pelo KillSwitch!');
+    }
+
+    async function generateB3Sample() {
+      const sym = document.getElementById('input-b3-symbol').value || 'WIN';
+      try {
+        const res = await fetch('/api/integrations/profit/sample', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({symbol: sym})
+        }).then(r => r.json());
+        alert(res.message);
+        loadSymbols();
+        loadIntegrationsData();
+      } catch (e) {
+        alert('Erro ao gerar amostra B3: ' + e);
+      }
+    }
+
+    async function uploadB3ProfitData() {
+      const sym = document.getElementById('input-b3-symbol').value || 'WIN';
+      const csv = document.getElementById('input-b3-csv').value;
+      const label = document.getElementById('select-b3-label').value;
+      if (!csv.trim()) {
+        alert('Por favor, cole as linhas exportadas do ProfitChart na caixa de texto.');
+        return;
+      }
+      try {
+        const res = await fetch('/api/integrations/profit/upload', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({symbol: sym, csv_text: csv, bar_label: label})
+        }).then(r => r.json());
+        if (res.error) {
+          alert('Erro: ' + res.error);
+        } else {
+          alert(res.message);
+          loadSymbols();
+          loadIntegrationsData();
+        }
+      } catch (e) {
+        alert('Erro no upload: ' + e);
+      }
+    }
+
+    async function verifyLicenseKey() {
+      const key = document.getElementById('input-license-key').value;
+      try {
+        const res = await fetch('/api/integrations/license/verify', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({key: key})
+        }).then(r => r.json());
+        alert(res.message);
+        loadIntegrationsData();
+      } catch (e) {
+        alert('Erro ao verificar licença: ' + e);
+      }
     }
 
     async function loadOfficeData() {

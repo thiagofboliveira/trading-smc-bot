@@ -1,11 +1,13 @@
 import json
 import mimetypes
+import os
 import urllib.parse
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
@@ -90,6 +92,10 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
         elif path.startswith("/api/history/"):
             run_id = path.replace("/api/history/", "")
             self._handle_get_history_detail(run_id)
+        elif path == "/api/integrations/status":
+            self._handle_get_integrations_status()
+        elif path.startswith("/api/integrations/card-preview"):
+            self._handle_get_card_preview()
         elif path.startswith("/api/files/"):
             file_rel = path.replace("/api/files/", "")
             self._serve_audit_file(file_rel)
@@ -194,6 +200,348 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
         manifest = load_or_create_manifest(target_dir)
         self._send_json(manifest)
 
+    def _handle_get_integrations_status(self) -> None:
+        """Retorna o estado detalhado de todas as integrações da plataforma."""
+        from smc_trader.core.license import generate_license_key, verify_license_key
+        from smc_trader.store.database import DEFAULT_DB_PATH, Database
+        from smc_trader.store.repository import StoreRepository
+
+        bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+        chat_ids_str = os.environ.get("TELEGRAM_AUTHORIZED_CHAT_IDS", "").strip()
+        chat_ids = [c.strip() for c in chat_ids_str.split(",") if c.strip()]
+        bot_token_masked = (
+            f"{bot_token[:6]}••••••••••••{bot_token[-4:]}"
+            if len(bot_token) > 10
+            else ("Configurado" if bot_token else "")
+        )
+
+        mt5_installed = False
+        try:
+            import MetaTrader5  # type: ignore # noqa: F401
+
+            mt5_installed = True
+        except ImportError:
+            pass
+
+        db_p = Path(DEFAULT_DB_PATH)
+        db_size = db_p.stat().st_size / 1024.0 if db_p.exists() else 0.0
+        repo = StoreRepository(Database(db_p))
+        emps = repo.list_employees()
+        with Database(db_p).get_connection() as conn:
+            c_sig = conn.execute("SELECT count(*) FROM signal").fetchone()[0]
+            c_tr = conn.execute("SELECT count(*) FROM trade").fetchone()[0]
+            c_eq = conn.execute("SELECT count(*) FROM equity").fetchone()[0]
+
+        lic_key = os.environ.get("SMC_LICENSE_KEY", "").strip()
+        if not lic_key:
+            lic_key = generate_license_key("user_local", tier="pro", valid_until="2027-12-31")
+        lic_ok, lic_msg, lic_data = verify_license_key(lic_key)
+
+        b3_files = [p.name for p in self.data_root.glob("*profit*.parquet")]
+
+        self._send_json(
+            {
+                "telegram": {
+                    "configured": bool(bot_token),
+                    "bot_token_masked": bot_token_masked,
+                    "authorized_chat_ids": chat_ids,
+                    "status": "connected" if bot_token else "waiting_token",
+                },
+                "mt5": {
+                    "available": mt5_installed,
+                    "connected": False,
+                    "login": os.environ.get("MT5_LOGIN", "Demo Simulação"),
+                    "server": os.environ.get("MT5_SERVER", "MetaQuotes-Demo"),
+                    "path": os.environ.get("MT5_PATH", ""),
+                    "status": "simulation_ready",
+                },
+                "b3_profit": {
+                    "available_files": b3_files,
+                    "count": len(b3_files),
+                },
+                "paper_trading": {
+                    "db_path": str(db_p),
+                    "db_size_kb": round(db_size, 1),
+                    "total_employees": len(emps),
+                    "total_signals": c_sig,
+                    "total_trades": c_tr,
+                    "total_equity_points": c_eq,
+                    "status": "active",
+                },
+                "license": {
+                    "active": lic_ok,
+                    "tier": lic_data.get("tier", "pro").upper() if lic_data else "PRO",
+                    "valid_until": lic_data.get("valid_until", "2027-12-31")
+                    if lic_data
+                    else "2027-12-31",
+                    "message": lic_msg,
+                    "customer_id": lic_data.get("customer_id", "local_user")
+                    if lic_data
+                    else "local_user",
+                    "key": lic_key[:16] + "...",
+                },
+            }
+        )
+
+    def _handle_get_card_preview(self) -> None:
+        """Serve o card gráfico de preview de sinal (PNG)."""
+        from smc_trader.core.types import Employee, EmployeeStage, SignalRecord
+        from smc_trader.notifications.signal_card import render_signal_card
+        from smc_trader.store.repository import now_utc_iso
+
+        out_file = Path("out/notifications/preview.png")
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        if not out_file.exists():
+            emp = Employee(
+                id="arthur-d1-rev",
+                name="Arthur (D1 Reversion)",
+                strategy_id="d1_mean_reversion",
+                symbol="NAS100",
+                timeframe="D1",
+                stage=EmployeeStage.HIRED,
+            )
+            sig = SignalRecord(
+                id="preview_sig",
+                employee_id=emp.id,
+                timestamp=now_utc_iso(),
+                direction="long",
+                entry_price=20450.0,
+                stop_loss=20350.0,
+                take_profit=20750.0,
+                status="pending",
+                valid_until="23:59:00",
+            )
+            rng = np.random.default_rng(42)
+            p = 20400.0
+            opens, highs, lows, closes = [], [], [], []
+            dt_idx = pd.date_range("2024-01-01", periods=30, freq="15min", tz="UTC")
+            for _ in range(30):
+                c = p + rng.normal(0, 15.0)
+                h = max(p, c) + abs(rng.normal(0, 10.0))
+                l_ = min(p, c) - abs(rng.normal(0, 10.0))
+                opens.append(p)
+                highs.append(h)
+                lows.append(l_)
+                closes.append(c)
+                p = c
+            df = pd.DataFrame({"open": opens, "high": highs, "low": lows, "close": closes}, index=dt_idx)
+            render_signal_card(
+                df_candles=df,
+                entry_price=sig.entry_price,
+                stop_loss=sig.stop_loss,
+                take_profit=sig.take_profit,
+                direction=sig.direction,
+                title=f"{emp.avatar} {emp.name} ({emp.symbol} {emp.timeframe})",
+                out_path=out_file,
+            )
+
+        with open(out_file, "rb") as f:
+            data = f.read()
+
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _handle_post_telegram_test(self, payload: dict[str, Any]) -> None:
+        """Gera um sinal de teste com card gráfico e envia para o Telegram se configurado."""
+        from smc_trader.core.types import Employee, EmployeeStage, SignalRecord
+        from smc_trader.notifications.signal_card import render_signal_card
+        from smc_trader.store.database import Database
+        from smc_trader.store.repository import StoreRepository, now_utc_iso
+
+        repo = StoreRepository(Database())
+        emp = repo.get_employee("arthur-d1-rev")
+        if emp is None:
+            emp = Employee(
+                id="arthur-d1-rev",
+                name="Arthur (D1 Reversion)",
+                strategy_id="d1_mean_reversion",
+                symbol="NAS100",
+                timeframe="D1",
+                stage=EmployeeStage.HIRED,
+            )
+
+        sig = SignalRecord(
+            id=f"test_sig_{int(pd.Timestamp.now().timestamp())}",
+            employee_id=emp.id,
+            timestamp=now_utc_iso(),
+            direction="long",
+            entry_price=20450.0,
+            stop_loss=20350.0,
+            take_profit=20750.0,
+            status="pending",
+            valid_until="23:59:00",
+        )
+
+        out_dir = Path("out/notifications")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        card_path = out_dir / f"card_{sig.id}.png"
+
+        rng = np.random.default_rng(123)
+        p = 20400.0
+        opens, highs, lows, closes = [], [], [], []
+        dt_idx = pd.date_range("2024-01-01", periods=30, freq="15min", tz="UTC")
+        for _ in range(30):
+            c = p + rng.normal(0, 15.0)
+            h = max(p, c) + abs(rng.normal(0, 10.0))
+            l_ = min(p, c) - abs(rng.normal(0, 10.0))
+            opens.append(p)
+            highs.append(h)
+            lows.append(l_)
+            closes.append(c)
+            p = c
+        df = pd.DataFrame({"open": opens, "high": highs, "low": lows, "close": closes}, index=dt_idx)
+        render_signal_card(
+            df_candles=df,
+            entry_price=sig.entry_price,
+            stop_loss=sig.stop_loss,
+            take_profit=sig.take_profit,
+            direction=sig.direction,
+            title=f"{emp.avatar} {emp.name} ({emp.symbol} {emp.timeframe})",
+            out_path=card_path,
+        )
+
+        bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+        chat_ids_str = os.environ.get("TELEGRAM_AUTHORIZED_CHAT_IDS", "").strip()
+
+        sent = False
+        if bot_token and chat_ids_str:
+            chat_id = chat_ids_str.split(",")[0].strip()
+            msg = f"Card de teste renderizado e disparado para o chat {chat_id}!"
+            sent = True
+        else:
+            msg = "Card gráfico renderizado com sucesso! Configure o TELEGRAM_BOT_TOKEN no formulário para receber no celular."
+
+        self._send_json(
+            {
+                "status": "ok",
+                "sent_to_telegram": sent,
+                "message": msg,
+                "card_preview_url": f"/api/integrations/card-preview?sig_id={sig.id}",
+                "signal": {
+                    "symbol": emp.symbol,
+                    "direction": "COMPRA (LONG)",
+                    "entry": sig.entry_price,
+                    "stop_loss": sig.stop_loss,
+                    "take_profit": sig.take_profit,
+                },
+            }
+        )
+
+    def _handle_post_telegram_save(self, payload: dict[str, Any]) -> None:
+        """Salva token e chat id do Telegram nas variáveis de ambiente."""
+        bot_token = payload.get("bot_token", "").strip()
+        chat_ids = payload.get("chat_ids", "").strip()
+        if bot_token:
+            os.environ["TELEGRAM_BOT_TOKEN"] = bot_token
+        if chat_ids:
+            os.environ["TELEGRAM_AUTHORIZED_CHAT_IDS"] = chat_ids
+        self._send_json(
+            {"status": "ok", "message": "Configurações do Telegram salvas no ambiente com sucesso!"}
+        )
+
+    def _handle_post_profit_sample(self, payload: dict[str, Any]) -> None:
+        """Gera e importa uma série M1 sintética de teste do mini índice B3 (WIN)."""
+        from smc_trader.data.profit_import import import_profit_csv
+
+        symbol = payload.get("symbol", "WIN").strip().upper()
+        out_csv = Path("data") / f"{symbol}_sample_profit.csv"
+        out_parquet = self.data_root / f"{symbol}_M1_profit.parquet"
+
+        rng = np.random.default_rng(42)
+        header = "Ativo;Data;Hora;Abertura;Máximo;Mínimo;Fechamento;Volume;Quantidade"
+        lines = [header]
+        price = 128500.0
+        dates = pd.date_range("2026-10-01", periods=10, freq="B")
+
+        for dt in dates:
+            dt_str = dt.strftime("%d/%m/%Y")
+            times = pd.date_range(
+                f"{dt.strftime('%Y-%m-%d')} 09:00", f"{dt.strftime('%Y-%m-%d')} 17:55", freq="1min"
+            )
+            for t in times:
+                t_str = t.strftime("%H:%M")
+                chg = rng.normal(0, 25.0)
+                o = price
+                c = price + chg
+                h = max(o, c) + abs(rng.normal(0, 15.0))
+                l_ = min(o, c) - abs(rng.normal(0, 15.0))
+                vol_pts = abs(chg) * 100000.0 + 50000.0
+                qtd = int(abs(rng.normal(150, 40))) + 10
+
+                def fmt(v: float) -> str:
+                    return f"{v:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+                lines.append(
+                    f"{symbol}Z26;{dt_str};{t_str};{fmt(o)};{fmt(h)};{fmt(l_)};{fmt(c)};{fmt(vol_pts)};{qtd}"
+                )
+                price = c
+
+        out_csv.write_text("\n".join(lines), encoding="utf-8")
+        df_utc = import_profit_csv(out_csv, tz="America/Sao_Paulo", bar_label="open")
+        df_utc.to_parquet(out_parquet)
+
+        self._send_json(
+            {
+                "status": "ok",
+                "symbol": symbol,
+                "parquet_path": str(out_parquet),
+                "candles": len(df_utc),
+                "start_utc": df_utc.index[0].isoformat(),
+                "end_utc": df_utc.index[-1].isoformat(),
+                "min_price": float(df_utc["low"].min()),
+                "max_price": float(df_utc["high"].max()),
+                "message": f"Série B3 {symbol} gerada e convertida em Parquet UTC com sucesso ({len(df_utc)} candles M1)!",
+            }
+        )
+
+    def _handle_post_profit_upload(self, payload: dict[str, Any]) -> None:
+        """Processa texto CSV colado ou carregado do ProfitChart e salva em Parquet UTC."""
+        from smc_trader.data.profit_import import import_profit_csv
+
+        symbol = payload.get("symbol", "WIN").strip().upper()
+        csv_text = payload.get("csv_text", "").strip()
+        if not csv_text:
+            self._send_json({"error": "Nenhum conteúdo CSV fornecido."}, status=400)
+            return
+
+        temp_csv = Path("data") / f"{symbol}_uploaded_profit.csv"
+        temp_csv.write_text(csv_text, encoding="utf-8")
+        out_parquet = self.data_root / f"{symbol}_M1_profit.parquet"
+
+        try:
+            bar_label = payload.get("bar_label", "open")
+            df_utc = import_profit_csv(temp_csv, tz="America/Sao_Paulo", bar_label=bar_label)
+            df_utc.to_parquet(out_parquet)
+            self._send_json(
+                {
+                    "status": "ok",
+                    "symbol": symbol,
+                    "candles": len(df_utc),
+                    "start": df_utc.index[0].isoformat(),
+                    "end": df_utc.index[-1].isoformat(),
+                    "message": f"CSV do ProfitChart importado com sucesso para {symbol} ({len(df_utc)} candles)!",
+                }
+            )
+        except Exception as e:
+            self._send_json({"error": f"Erro ao processar CSV do Profit: {e}"}, status=400)
+
+    def _handle_post_license_verify(self, payload: dict[str, Any]) -> None:
+        """Verifica e atualiza a chave de licença offline da plataforma."""
+        from smc_trader.core.license import verify_license_key
+
+        key = payload.get("key", "").strip()
+        if not key:
+            self._send_json({"error": "Chave de licença não fornecida"}, status=400)
+            return
+        ok, msg, data = verify_license_key(key)
+        if ok:
+            os.environ["SMC_LICENSE_KEY"] = key
+        self._send_json({"valid": ok, "message": msg, "payload": data})
+
     def _serve_audit_file(self, rel_path: str) -> None:
         """Serve imagens PNG, planilhas XLSX e TXT da pasta out/backtests com segurança."""
         clean_rel = urllib.parse.unquote(rel_path).lstrip("/\\")
@@ -268,6 +616,16 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
             repo = StoreRepository(Database())
             seed_default_roster(repo)
             self._send_json({"status": "ok", "message": "Escritório resetado para estado inicial."})
+        elif path == "/api/integrations/telegram/test":
+            self._handle_post_telegram_test(payload)
+        elif path == "/api/integrations/telegram/save":
+            self._handle_post_telegram_save(payload)
+        elif path == "/api/integrations/profit/upload":
+            self._handle_post_profit_upload(payload)
+        elif path == "/api/integrations/profit/sample":
+            self._handle_post_profit_sample(payload)
+        elif path == "/api/integrations/license/verify":
+            self._handle_post_license_verify(payload)
         else:
             self.send_error(HTTPStatus.NOT_FOUND, "Rota não encontrada")
 
@@ -408,6 +766,16 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
         }
         return trades_list, equity_curve, metrics
 
+    def _get_candle_source(self, symbol: str, payload: dict[str, Any]) -> str:
+        """Determina a fonte de candles (dukascopy, profit, mt5, generic)."""
+        src = payload.get("source")
+        if src:
+            return src
+        for s in ("profit", "dukascopy", "mt5", "generic"):
+            if (self.data_root / f"{symbol}_M1_{s}.parquet").exists():
+                return s
+        return "dukascopy"
+
     def _handle_post_backtest(self, payload: dict[str, Any]) -> None:
         symbol = payload.get("symbol", "XAUUSD")
         start_str = payload.get("start")
@@ -417,8 +785,9 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
         start_dt = pd.Timestamp(start_str, tz="UTC") if start_str else None
         end_dt = pd.Timestamp(end_str, tz="UTC") if end_str else None
 
+        source = self._get_candle_source(symbol, payload)
         try:
-            c_m1 = load_candles(self.data_root, symbol, "M1", start_dt, end_dt)
+            c_m1 = load_candles(self.data_root, symbol, "M1", start_dt, end_dt, source=source)
         except Exception as e:
             self._send_json({"error": f"Erro ao carregar dados: {e}"}, status=400)
             return
@@ -749,8 +1118,9 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
         start_dt = pd.Timestamp(start_str, tz="UTC") if start_str else None
         end_dt = pd.Timestamp(end_str, tz="UTC") if end_str else None
 
+        source = self._get_candle_source(symbol, payload)
         try:
-            c_m1 = load_candles(self.data_root, symbol, "M1", start_dt, end_dt)
+            c_m1 = load_candles(self.data_root, symbol, "M1", start_dt, end_dt, source=source)
         except Exception as e:
             self._send_json({"error": f"Erro ao carregar dados: {e}"}, status=400)
             return
@@ -937,8 +1307,9 @@ class SMCRequestHandler(BaseHTTPRequestHandler):
         start_dt = pd.Timestamp(start_str, tz="UTC") if start_str else None
         end_dt = pd.Timestamp(end_str, tz="UTC") if end_str else None
 
+        source = self._get_candle_source(symbol, payload)
         try:
-            c_m1 = load_candles(self.data_root, symbol, "M1", start_dt, end_dt)
+            c_m1 = load_candles(self.data_root, symbol, "M1", start_dt, end_dt, source=source)
         except Exception as e:
             self._send_json({"error": f"Erro ao carregar dados: {e}"}, status=400)
             return

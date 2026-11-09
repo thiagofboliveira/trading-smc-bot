@@ -8,6 +8,8 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Plotly.js CDN -->
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <!-- PixiJS 2D Engine CDN (E5-3, E7-2) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
   <!-- FontAwesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <script>
@@ -490,16 +492,41 @@
             </div>
           </div>
 
-          <!-- Mesas do Escritório (Grade de Funcionários) -->
-          <div>
-            <div class="flex items-center justify-between mb-4">
-              <h3 class="text-sm font-bold text-white flex items-center gap-2">
-                <i class="fa-solid fa-users text-indigo-400"></i> As Mesas do Escritório (Equipe de Estratégias)
-              </h3>
-              <span class="text-xs text-gray-500">Clique em qualquer mesa para inspecionar parâmetros e auditar o modelo</span>
+          <!-- Visualização da Sala do Escritório (PixiJS 2D & Grade) -->
+          <div class="space-y-4">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                  <i class="fa-solid fa-gamepad text-cyan-400"></i> A Sala de Operações (Trading Floor 2D)
+                </h3>
+                <span class="text-[10px] bg-cyan-950/80 border border-cyan-700/60 text-cyan-300 px-2 py-0.5 rounded-full font-mono">PixiJS Canvas (E5-3, E7-2)</span>
+              </div>
+              
+              <div class="flex items-center gap-2">
+                <button onclick="triggerPixiCelebration()" class="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition">
+                  <i class="fa-solid fa-champagne-glasses"></i> 🎉 Comemorar Ganho
+                </button>
+                <div class="flex items-center bg-gray-950 p-1 rounded-lg border border-gray-800 text-xs">
+                  <button id="btn-view-pixi" onclick="setOfficeViewMode('pixi')" class="px-3 py-1 rounded-md font-bold bg-indigo-600 text-white transition">
+                    <i class="fa-solid fa-gamepad mr-1"></i> Sala 2D
+                  </button>
+                  <button id="btn-view-cards" onclick="setOfficeViewMode('cards')" class="px-3 py-1 rounded-md text-gray-400 hover:text-white transition">
+                    <i class="fa-solid fa-table-cells mr-1"></i> Grade de Mesas
+                  </button>
+                </div>
+              </div>
             </div>
-            <div id="office-desks-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <!-- Renderizado dinamicamente por loadOfficeData() -->
+
+            <!-- Canvas PixiJS Container -->
+            <div id="office-pixi-container" class="w-full h-[540px] rounded-2xl border border-gray-800 bg-gray-950 overflow-hidden relative shadow-2xl flex items-center justify-center">
+              <div id="pixi-canvas-wrapper" class="w-full h-full"></div>
+            </div>
+
+            <!-- Grade de Mesas HTML (Alternativa / Complementar) -->
+            <div id="office-desks-container" class="hidden">
+              <div id="office-desks-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Renderizado dinamicamente por loadOfficeData() -->
+              </div>
             </div>
           </div>
         </div>
@@ -1745,12 +1772,489 @@
             `;
           }).join('');
         }
+
+        // Renderiza Cena PixiJS 2D da Sala de Operações (E5-3, E7-2)
+        if (empRes && empRes.employees) {
+          renderPixiOffice(empRes.employees, compRes);
+        }
       } catch (err) {
         console.error('Erro ao carregar dados do escritório:', err);
       }
     }
 
     let officeEmployeesData = [];
+    let pixiApp = null;
+    let pixiConfetti = [];
+    let currentOfficeViewMode = 'pixi';
+    let lastCompanyData = null;
+
+    function setOfficeViewMode(mode) {
+      currentOfficeViewMode = mode;
+      const pContainer = document.getElementById('office-pixi-container');
+      const dContainer = document.getElementById('office-desks-container');
+      const btnPixi = document.getElementById('btn-view-pixi');
+      const btnCards = document.getElementById('btn-view-cards');
+
+      if (mode === 'pixi') {
+        if (pContainer) pContainer.classList.remove('hidden');
+        if (dContainer) dContainer.classList.add('hidden');
+        if (btnPixi) btnPixi.className = 'px-3 py-1 rounded-md font-bold bg-indigo-600 text-white transition';
+        if (btnCards) btnCards.className = 'px-3 py-1 rounded-md text-gray-400 hover:text-white transition';
+        if (officeEmployeesData && officeEmployeesData.length > 0) {
+          renderPixiOffice(officeEmployeesData, lastCompanyData);
+        }
+      } else {
+        if (pContainer) pContainer.classList.add('hidden');
+        if (dContainer) dContainer.classList.remove('hidden');
+        if (btnCards) btnCards.className = 'px-3 py-1 rounded-md font-bold bg-indigo-600 text-white transition';
+        if (btnPixi) btnPixi.className = 'px-3 py-1 rounded-md text-gray-400 hover:text-white transition';
+      }
+    }
+
+    function renderPixiOffice(employees, compRes) {
+      lastCompanyData = compRes;
+      const wrapper = document.getElementById('pixi-canvas-wrapper');
+      if (!wrapper) return;
+
+      const width = wrapper.clientWidth || 980;
+      const height = 540;
+
+      // Se PixiJS estiver disponível via CDN
+      if (window.PIXI) {
+        if (pixiApp) {
+          try {
+            pixiApp.destroy(true, { children: true, texture: true, baseTexture: true });
+          } catch (e) {}
+          wrapper.innerHTML = '';
+        }
+
+        pixiApp = new PIXI.Application({
+          width: width,
+          height: height,
+          backgroundColor: 0x090d16,
+          antialias: true,
+          resolution: window.devicePixelRatio || 1,
+          autoDensity: true
+        });
+        wrapper.appendChild(pixiApp.view);
+
+        const stage = pixiApp.stage;
+
+        // 1. Parede de Fundo e Janela Panorâmica da Cidade
+        const wall = new PIXI.Graphics();
+        wall.beginFill(0x0f172a);
+        wall.drawRect(0, 0, width, 140);
+        wall.endFill();
+        stage.addChild(wall);
+
+        // Janelas da cidade ao fundo
+        const windowG = new PIXI.Graphics();
+        windowG.beginFill(0x050814);
+        windowG.drawRoundedRect(30, 15, 200, 110, 8);
+        windowG.drawRoundedRect(width - 230, 15, 200, 110, 8);
+        windowG.endFill();
+
+        // Prédios no horizonte (silhuetas iluminadas)
+        windowG.beginFill(0x1e293b);
+        windowG.drawRect(50, 40, 30, 85);
+        windowG.drawRect(90, 30, 40, 95);
+        windowG.drawRect(140, 50, 35, 75);
+        windowG.drawRect(width - 210, 35, 45, 90);
+        windowG.drawRect(width - 155, 45, 30, 80);
+        windowG.drawRect(width - 115, 25, 40, 100);
+        windowG.endFill();
+
+        // Luzes amarelas e azuis nos prédios
+        windowG.beginFill(0xfacc15, 0.7);
+        windowG.drawRect(95, 45, 5, 5);
+        windowG.drawRect(105, 45, 5, 5);
+        windowG.drawRect(95, 60, 5, 5);
+        windowG.drawRect(105, 75, 5, 5);
+        windowG.drawRect(width - 200, 50, 5, 5);
+        windowG.drawRect(width - 190, 65, 5, 5);
+        windowG.drawRect(width - 105, 40, 5, 5);
+        windowG.endFill();
+        stage.addChild(windowG);
+
+        // 2. Piso de Madeira / Escritório
+        const floor = new PIXI.Graphics();
+        floor.beginFill(0x111827);
+        floor.drawRect(0, 140, width, height - 140);
+        floor.endFill();
+
+        floor.lineStyle(1, 0x1f2937, 0.5);
+        for (let y = 140; y < height; y += 45) {
+          floor.moveTo(0, y);
+          floor.lineTo(width, y);
+        }
+        stage.addChild(floor);
+
+        // 3. Telão Corporativo Suspenso (Big Screen)
+        const screenG = new PIXI.Graphics();
+        const screenW = Math.min(width - 500, 460);
+        const screenX = (width - screenW) / 2;
+        screenG.beginFill(0x020617);
+        screenG.lineStyle(2, 0x38bdf8, 0.8);
+        screenG.drawRoundedRect(screenX, 15, screenW, 105, 12);
+        screenG.endFill();
+
+        screenG.lineStyle(2, 0x475569, 0.6);
+        screenG.moveTo(screenX + 30, 0);
+        screenG.lineTo(screenX + 30, 15);
+        screenG.moveTo(screenX + screenW - 30, 0);
+        screenG.lineTo(screenX + screenW - 30, 15);
+        stage.addChild(screenG);
+
+        const totalR = compRes ? (compRes.total_r || 0) : 0;
+        const totalPnl = compRes ? (compRes.total_pnl || 0) : 0;
+        const activeEmps = compRes ? (compRes.active_employees || 0) : 0;
+
+        const screenTitle = new PIXI.Text('THE OFFICE • TRADING FLOOR (DIA 0)', {
+          fontFamily: 'Courier, monospace',
+          fontSize: 11,
+          fill: 0x94a3b8,
+          fontWeight: 'bold',
+          letterSpacing: 1
+        });
+        screenTitle.x = screenX + (screenW - screenTitle.width) / 2;
+        screenTitle.y = 25;
+        stage.addChild(screenTitle);
+
+        const screenScore = new PIXI.Text(`${totalR >= 0 ? '+' : ''}${totalR.toFixed(1)}R  ($${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)})`, {
+          fontFamily: 'monospace',
+          fontSize: 22,
+          fill: totalR >= 0 ? 0x34d399 : 0xf87171,
+          fontWeight: 'bold'
+        });
+        screenScore.x = screenX + (screenW - screenScore.width) / 2;
+        screenScore.y = 48;
+        stage.addChild(screenScore);
+
+        const screenMeta = new PIXI.Text(`${activeEmps} MODELOS ATIVOS • 0% RISCO CAPITAL • PAPER TRADING`, {
+          fontFamily: 'sans-serif',
+          fontSize: 9,
+          fill: 0x38bdf8,
+          fontWeight: 'bold'
+        });
+        screenMeta.x = screenX + (screenW - screenMeta.width) / 2;
+        screenMeta.y = 86;
+        stage.addChild(screenMeta);
+
+        // 4. Plantas Decorativas e Coffee Corner
+        const plant1 = new PIXI.Text('🪴', { fontSize: 28 });
+        plant1.x = 245; plant1.y = 120;
+        stage.addChild(plant1);
+
+        const plant2 = new PIXI.Text('🪴', { fontSize: 28 });
+        plant2.x = width - 275; plant2.y = 120;
+        stage.addChild(plant2);
+
+        const coffee = new PIXI.Text('☕', { fontSize: 20 });
+        coffee.x = 40; coffee.y = 150;
+        stage.addChild(coffee);
+
+        // 5. Mesas dos Funcionários (Grid 4 colunas x 2 linhas)
+        const emps = employees || [];
+        const cols = 4;
+        const deskW = 160;
+        const spacingX = (width - 40 - (cols * deskW)) / (cols - 1);
+        const startY = 180;
+        const spacingY = 160;
+
+        const floatingBubbles = [];
+
+        emps.slice(0, 8).forEach((emp, idx) => {
+          const col = idx % cols;
+          const row = Math.floor(idx / cols);
+          const deskX = 20 + col * (deskW + spacingX);
+          const deskY = startY + row * spacingY;
+
+          const deskGroup = new PIXI.Container();
+          deskGroup.x = deskX;
+          deskGroup.y = deskY;
+          deskGroup.eventMode = 'static';
+          deskGroup.cursor = 'pointer';
+
+          // Cadeira atrás da mesa
+          const chair = new PIXI.Graphics();
+          chair.beginFill(0x1e293b);
+          chair.drawRoundedRect(deskW / 2 - 18, 5, 36, 32, 6);
+          chair.endFill();
+          deskGroup.addChild(chair);
+
+          // Personagem (Avatar Emoji)
+          const avatarText = new PIXI.Text(emp.avatar || '💼', { fontSize: 26 });
+          avatarText.x = deskW / 2 - 14;
+          avatarText.y = 6;
+          deskGroup.addChild(avatarText);
+
+          // Tampo da Mesa (Madeira estilizada com borda colorida)
+          const deskTable = new PIXI.Graphics();
+          deskTable.beginFill(0x1f2937);
+          const borderColor = emp.stage === 'contratado' ? 0x10b981 : (emp.stage === 'em_experiencia' ? 0xf59e0b : 0x475569);
+          deskTable.lineStyle(2, borderColor, 0.8);
+          deskTable.drawRoundedRect(0, 35, deskW, 60, 8);
+          deskTable.endFill();
+          deskGroup.addChild(deskTable);
+
+          // Computador / Monitor na mesa
+          const monitor = new PIXI.Graphics();
+          monitor.beginFill(0x0f172a);
+          monitor.lineStyle(1, 0x334155);
+          monitor.drawRoundedRect(deskW / 2 - 25, 40, 50, 30, 4);
+          monitor.endFill();
+          
+          const isPositive = emp.stage === 'contratado' || emp.stage === 'em_experiencia';
+          monitor.beginFill(isPositive ? 0x064e3b : 0x7f1d1d);
+          monitor.drawRect(deskW / 2 - 22, 43, 44, 24);
+          monitor.endFill();
+          
+          monitor.lineStyle(1, isPositive ? 0x34d399 : 0xf87171);
+          monitor.moveTo(deskW / 2 - 20, 60);
+          monitor.lineTo(deskW / 2 - 10, isPositive ? 52 : 55);
+          monitor.lineTo(deskW / 2, isPositive ? 48 : 62);
+          monitor.lineTo(deskW / 2 + 18, isPositive ? 45 : 64);
+          deskGroup.addChild(monitor);
+
+          // Teclado
+          const keyboard = new PIXI.Graphics();
+          keyboard.beginFill(0x334155);
+          keyboard.drawRect(deskW / 2 - 15, 75, 30, 10);
+          keyboard.endFill();
+          deskGroup.addChild(keyboard);
+
+          // Placa de Nome e Ativo na frente da mesa
+          const namePlate = new PIXI.Graphics();
+          namePlate.beginFill(0x0b0f19);
+          namePlate.drawRoundedRect(10, 88, deskW - 20, 16, 4);
+          namePlate.endFill();
+          deskGroup.addChild(namePlate);
+
+          const nameText = new PIXI.Text(`${emp.name.split(' ')[0]} • ${emp.symbol}`, {
+            fontFamily: 'sans-serif',
+            fontSize: 9,
+            fill: 0xe2e8f0,
+            fontWeight: 'bold'
+          });
+          nameText.x = (deskW - nameText.width) / 2;
+          nameText.y = 90;
+          deskGroup.addChild(nameText);
+
+          // Balão de Fala e Humor Flutuante (Speech Bubble)
+          const bubbleContainer = new PIXI.Container();
+          bubbleContainer.y = -22;
+
+          let bubbleMood = '☕ No controle';
+          let bubbleBg = 0x064e3b;
+          let bubbleBorder = 0x10b981;
+          let bubbleTxtColor = 0xa7f3d0;
+
+          if (emp.stage === 'contratado') {
+            bubbleMood = '+10.2R ☕ No controle';
+            bubbleBg = 0x064e3b;
+            bubbleBorder = 0x10b981;
+          } else if (emp.stage === 'em_experiencia') {
+            bubbleMood = '+2.4R ⏱️ Em teste';
+            bubbleBg = 0x451a03;
+            bubbleBorder = 0xf59e0b;
+            bubbleTxtColor = 0xfde68a;
+          } else if (emp.stage === 'afastado') {
+            bubbleMood = '⏸️ Pausado 💤';
+            bubbleBg = 0x1f2937;
+            bubbleBorder = 0x64748b;
+            bubbleTxtColor = 0x94a3b8;
+          } else {
+            bubbleMood = '🟡 Candidato';
+            bubbleBg = 0x1e1b4b;
+            bubbleBorder = 0x6366f1;
+            bubbleTxtColor = 0xc7d2fe;
+          }
+
+          const bubbleG = new PIXI.Graphics();
+          bubbleG.beginFill(bubbleBg, 0.95);
+          bubbleG.lineStyle(1.5, bubbleBorder, 0.9);
+          bubbleG.drawRoundedRect(10, 0, deskW - 20, 22, 6);
+          bubbleG.moveTo(deskW / 2 - 4, 22);
+          bubbleG.lineTo(deskW / 2, 27);
+          bubbleG.lineTo(deskW / 2 + 4, 22);
+          bubbleG.endFill();
+          bubbleContainer.addChild(bubbleG);
+
+          const bubbleTxt = new PIXI.Text(bubbleMood, {
+            fontFamily: 'sans-serif',
+            fontSize: 9,
+            fontWeight: 'bold',
+            fill: bubbleTxtColor
+          });
+          bubbleTxt.x = (deskW - bubbleTxt.width) / 2;
+          bubbleTxt.y = 5;
+          bubbleContainer.addChild(bubbleTxt);
+
+          deskGroup.addChild(bubbleContainer);
+          floatingBubbles.push({ container: bubbleContainer, base_y: -22, offset: idx * 0.8 });
+
+          // Interatividade
+          deskGroup.on('pointerover', () => {
+            deskGroup.scale.set(1.04);
+            deskGroup.y = deskY - 4;
+          });
+          deskGroup.on('pointerout', () => {
+            deskGroup.scale.set(1.0);
+            deskGroup.y = deskY;
+          });
+          deskGroup.on('pointerdown', () => {
+            openEmployeeModal(emp.id);
+          });
+
+          stage.addChild(deskGroup);
+        });
+
+        // 6. Loop de Animação do PixiJS (Ticker)
+        let tickerTime = 0;
+        pixiApp.ticker.add((delta) => {
+          tickerTime += 0.05 * delta;
+
+          floatingBubbles.forEach((b) => {
+            b.container.y = b.base_y + Math.sin(tickerTime + b.offset) * 2.5;
+          });
+
+          if (pixiConfetti.length > 0) {
+            for (let i = pixiConfetti.length - 1; i >= 0; i--) {
+              const p = pixiConfetti[i];
+              p.x += p.vx;
+              p.y += p.vy;
+              p.vy += 0.15;
+              p.rotation += p.vRot;
+              p.alpha -= 0.008;
+
+              if (p.alpha <= 0 || p.y > height) {
+                stage.removeChild(p);
+                pixiConfetti.splice(i, 1);
+              }
+            }
+          }
+        });
+
+      } else {
+        renderCanvas2DFallback(wrapper, width, height, employees, compRes);
+      }
+    }
+
+    function triggerPixiCelebration() {
+      if (!pixiApp) return;
+      const stage = pixiApp.stage;
+      const colors = [0xfacc15, 0x10b981, 0x38bdf8, 0xa855f7, 0xf43f5e];
+
+      for (let i = 0; i < 90; i++) {
+        const p = new PIXI.Graphics();
+        const color = colors[Math.floor(Math.random() * colors.length)];
+        p.beginFill(color);
+        p.drawRect(-4, -4, 8, 8);
+        p.endFill();
+
+        p.x = pixiApp.screen.width / 2 + (Math.random() - 0.5) * 80;
+        p.y = 80;
+        p.vx = (Math.random() - 0.5) * 12;
+        p.vy = -Math.random() * 8 - 2;
+        p.vRot = (Math.random() - 0.5) * 0.2;
+        p.alpha = 1.0;
+
+        stage.addChild(p);
+        pixiConfetti.push(p);
+      }
+    }
+
+    function renderCanvas2DFallback(wrapper, width, height, employees, compRes) {
+      wrapper.innerHTML = `<canvas id="fallback-canvas" width="${width}" height="${height}" class="w-full h-full"></canvas>`;
+      const canvas = document.getElementById('fallback-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, width, 140);
+      ctx.fillStyle = '#111827';
+      ctx.fillRect(0, 140, width, height - 140);
+
+      const screenW = Math.min(width - 500, 460);
+      const screenX = (width - screenW) / 2;
+      ctx.fillStyle = '#020617';
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(screenX, 15, screenW, 105, 12);
+      ctx.fill();
+      ctx.stroke();
+
+      const totalR = compRes ? (compRes.total_r || 0) : 0;
+      const totalPnl = compRes ? (compRes.total_pnl || 0) : 0;
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('THE OFFICE • TRADING FLOOR (DIA 0)', width / 2, 36);
+
+      ctx.fillStyle = totalR >= 0 ? '#34d399' : '#f87171';
+      ctx.font = 'bold 22px monospace';
+      ctx.fillText(`${totalR >= 0 ? '+' : ''}${totalR.toFixed(1)}R  ($${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)})`, width / 2, 68);
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 9px sans-serif';
+      ctx.fillText(`${(employees || []).length} MODELOS CADASTRADOS • 0% RISCO CAPITAL • PAPER TRADING`, width / 2, 98);
+
+      const cols = 4;
+      const deskW = 160;
+      const spacingX = (width - 40 - (cols * deskW)) / (cols - 1);
+      const startY = 180;
+      const spacingY = 160;
+
+      (employees || []).slice(0, 8).forEach((emp, idx) => {
+        const col = idx % cols;
+        const row = Math.floor(idx / cols);
+        const deskX = 20 + col * (deskW + spacingX);
+        const deskY = startY + row * spacingY;
+
+        ctx.fillStyle = '#1f2937';
+        ctx.strokeStyle = emp.stage === 'contratado' ? '#10b981' : (emp.stage === 'em_experiencia' ? '#f59e0b' : '#64748b');
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(deskX, deskY + 35, deskW, 60, 8);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.font = '26px sans-serif';
+        ctx.fillText(emp.avatar || '💼', deskX + deskW / 2, deskY + 28);
+
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(deskX + deskW / 2 - 25, deskY + 40, 50, 28);
+
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = 'bold 9px sans-serif';
+        ctx.fillText(`${emp.name.split(' ')[0]} • ${emp.symbol}`, deskX + deskW / 2, deskY + 98);
+
+        ctx.fillStyle = emp.stage === 'contratado' ? '#064e3b' : '#451a03';
+        ctx.beginPath();
+        ctx.roundRect(deskX + 15, deskY - 18, deskW - 30, 20, 6);
+        ctx.fill();
+        ctx.fillStyle = '#a7f3d0';
+        ctx.font = 'bold 8px sans-serif';
+        ctx.fillText(emp.stage === 'contratado' ? '+10.2R ☕ No controle' : '⏱️ Em teste', deskX + deskW / 2, deskY - 5);
+      });
+
+      canvas.onclick = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        (employees || []).slice(0, 8).forEach((emp, idx) => {
+          const col = idx % cols;
+          const row = Math.floor(idx / cols);
+          const deskX = 20 + col * (deskW + spacingX);
+          const deskY = startY + row * spacingY;
+          if (x >= deskX && x <= deskX + deskW && y >= deskY && y <= deskY + 110) {
+            openEmployeeModal(emp.id);
+          }
+        });
+      };
+    }
 
     async function openEmployeeModal(empId) {
       const emp = (officeEmployeesData || []).find(e => e.id === empId);

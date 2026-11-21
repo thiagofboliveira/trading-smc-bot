@@ -579,6 +579,47 @@ def test_f17_require_inducement_sweep():
     assert setup is not None
     assert setup.direction == "long"
 
+    # 3. Queda direta em múltiplas barras SEM repique pós-mínima NÃO pode criar indução falsa:
+    b9_drop1 = (107.0, 107.0, 104.0, 104.2)
+    b10_drop2 = (104.2, 104.3, 101.8, 102.0)  # cai sem repicar acima de 104.0 + 1.3 (105.3)
+    b11_rej = (102.0, 102.5, 98.5, 102.0)
+    bars_monotonic_drop = PREFIX + [BOS_QUIET, b9_drop1, b10_drop2, b11_rej, b12_tp] + FLAT_HIGH
+    assert run(bars_monotonic_drop, entry_mode="m5_close_rejection", require_inducement=True) == []
+
+
+def test_f03_barra_que_aciona_trava_e_fecha_abaixo_de_1r_sai_no_open_seguinte_sem_inflar_1r():
+    """F-03 & F-05: a trava é avaliada no fechamento de j (como no fibo_live). Se j bateu +2R
+    e fechou abaixo de +1R (99.5 < 100.14), j+1 abre em 99.5 (abaixo do stop +1R) e sai no open[j+1]
+    (99.5, ~+0.47R), sem inflar artificialmente o ganho para +1.0R."""
+    b10_spike_reversal = (99.5, 102.0, 99.2, 99.5)
+    b11_open_below_lock = (99.5, 109.0, 99.4, 108.5)
+    trades = run(long_entry_scenario([b10_spike_reversal, b11_open_below_lock]), use_lock_2to1=True)
+    assert len(trades) == 1
+    t = trades[0]
+    assert t.exit_reason == "LOCK_PROFIT_SL"
+    assert t.exit_time == bar_time(11)
+    assert t.r_multiple < 0.6  # Saiu no open[11] = 99.5, não em +1.0R!
+
+
+def test_b01_partial_exit_on_same_bar_as_take_profit_does_not_inflate_r():
+    """Se a mesma barra j > entry_idx cruza o nível da parcial (+1R, 50%) e bate o alvo final (+3R),
+    metade da posição saiu em +1R e metade em +3R => R total deve ser +2.0R, nunca +3.0R."""
+    b10_straight_to_tp = (99.5, 108.5, 99.0, 108.0)
+    trades = run(
+        long_entry_scenario([b10_straight_to_tp]),
+        partial_exit_trigger_r=1.0,
+        partial_exit_pct=0.5,
+        target_mode="3R",
+        target_r=3.0,
+    )
+    assert len(trades) == 1
+    t = trades[0]
+    assert t.exit_reason == "TAKE_PROFIT"
+    assert t.r_multiple == pytest.approx(2.0, abs=1e-3)
+
+
+
+
 
 
 

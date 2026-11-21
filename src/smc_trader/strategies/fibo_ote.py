@@ -107,6 +107,9 @@ class FiboOTEConfig:
     max_stops_per_day: int = 0  # F-16: máximo de stops consecutivos no dia antes de parar (0 = sem limite)
     max_gains_per_day: int = 0  # F-16: máximo de gains no dia antes de bater a meta e parar (0 = sem limite)
     require_inducement: bool = True  # F-17: exige que a retração capture liquidez/indução interna prévia
+    rejection_require_directional_body: bool = False  # Exige candle de rejeição com corpo a favor (close >= open p/ compra)
+    rejection_min_volume_mult: float = 0.0  # Exige volume do candle de rejeição >= mult * SMA20(volume) (0.0 = desativado)
+    require_leg_fvg: bool = False  # Exige Fair Value Gap (desbalanceamento de 3 velas) na perna impulsiva do BOS
     slippage: float = 0.0  # F-10: slippage por execução em pontos de preço
     commission_per_unit: float = (
         0.0  # F-10: comissão total por trade em pontos de preço
@@ -320,6 +323,9 @@ class FiboOTEStrategy:
             elif tma == "sma200":
                 df_res["trend_ma"] = df_res["close"].rolling(200).mean()
 
+        if self.config.rejection_min_volume_mult > 0 and "volume" in df_res.columns:
+            df_res["vol_ma20"] = df_res["volume"].rolling(20).mean()
+
         return df_res
 
     def run_backtest(
@@ -375,6 +381,8 @@ class FiboOTEStrategy:
         trend_mas = (
             df["trend_ma"].to_numpy() if "trend_ma" in df.columns else None
         )
+        vols = df["volume"].to_numpy() if "volume" in df.columns else None
+        vol_mas = df["vol_ma20"].to_numpy() if "vol_ma20" in df.columns else None
         swing_h, swing_l = _fractal_swings(highs, lows, k)
 
         # M-07: Resample de candles Ask reais se disponíveis
@@ -703,6 +711,26 @@ class FiboOTEStrategy:
                         cfg.target_mode != "trailing_only"
                         and d * (favorable - pos.target) >= 0
                     ):
+                        # Se havia parcial armada antes do alvo final e ela ainda não tinha sido executada,
+                        # o preço obrigatoriamente cruzou o nível da parcial antes de tocar o alvo final.
+                        if (
+                            cfg.partial_exit_trigger_r is not None
+                            and not pos.partial_taken
+                            and i > pos.entry_idx
+                            and d
+                            * (
+                                favorable
+                                - (
+                                    pos.entry_price
+                                    + d * pos.risk * cfg.partial_exit_trigger_r
+                                )
+                            )
+                            >= 0
+                        ):
+                            pos.realized_r += (
+                                cfg.partial_exit_pct * cfg.partial_exit_trigger_r
+                            )
+                            pos.partial_taken = True
                         tp_px = get_target_exit_price(pos, i)
                         exit_trade = close_trade(pos, i, tp_px, "TAKE_PROFIT")
 
@@ -711,8 +739,12 @@ class FiboOTEStrategy:
                     pos = None
                     leg = None
                 else:
-                    # Checa realização parcial intrabar
-                    if cfg.partial_exit_trigger_r is not None and not pos.partial_taken:
+                    # Checa realização parcial intrabar (apenas em barras posteriores à entrada)
+                    if (
+                        cfg.partial_exit_trigger_r is not None
+                        and not pos.partial_taken
+                        and i > pos.entry_idx
+                    ):
                         if (
                             d
                             * (
@@ -729,11 +761,12 @@ class FiboOTEStrategy:
                             )
                             pos.partial_taken = True
 
-                    # Checa trava 2:1 ou breakeven (a trava só protege a partir da próxima barra)
+                    # Checa trava 2:1 ou breakeven (F-03: avaliada no fechamento de i > entry_idx;
+                    # só protege a partir da barra i+1, e se i+1 abrir além da trava, sai no open[i+1]).
                     use_lock = cfg.use_lock_2to1 or (
                         cfg.profit_lock_trigger_r is not None
                     )
-                    if use_lock and not pos.locked:
+                    if use_lock and not pos.locked and i > pos.entry_idx:
                         trig_r = (
                             cfg.profit_lock_trigger_r
                             if cfg.profit_lock_trigger_r is not None
@@ -804,10 +837,13 @@ class FiboOTEStrategy:
 
             # 3. Nova perna por quebra de estrutura (BOS), confirmada no fechamento de i
             if leg is None and last_sh_price is not None and last_sl_price is not None:
+                origin_idx = None
                 if last_sh_idx > last_sl_idx and closes[i] > last_sh_price:
                     cand = _Leg(d=1, origin=last_sl_price, extreme=highs[i], bos_idx=i)
+                    origin_idx = last_sl_idx
                 elif last_sl_idx > last_sh_idx and closes[i] < last_sl_price:
                     cand = _Leg(d=-1, origin=last_sh_price, extreme=lows[i], bos_idx=i)
+                    origin_idx = last_sh_idx
                 else:
                     cand = None
                 if (
@@ -815,7 +851,26 @@ class FiboOTEStrategy:
                     and abs(cand.extreme - cand.origin)
                     > spread * cfg.min_leg_spread_mult
                 ):
-                    leg = cand
+                    has_fvg = True
+                    if cfg.require_leg_fvg and origin_idx is not None:
+                        if i - origin_idx < 2:
+                            has_fvg = False
+                        elif cand.d == 1:
+                            has_fvg = bool(
+                                np.any(
+                                    lows[origin_idx + 2 : i + 1]
+                                    > highs[origin_idx : i - 1]
+                                )
+                            )
+                        else:
+                            has_fvg = bool(
+                                np.any(
+                                    highs[origin_idx + 2 : i + 1]
+                                    < lows[origin_idx : i - 1]
+                                )
+                            )
+                    if has_fvg:
+                        leg = cand
 
             # 4. Perna ativa: F-01 só opera a partir da barra seguinte ao BOS
             if leg is None or leg.bos_idx >= i:
@@ -831,18 +886,32 @@ class FiboOTEStrategy:
             level = leg.level(cfg.fibo_entry)
             touch = lows[i] if d == 1 else highs[i]
 
-            # F-17: Rastreia Inducement (IDM) — pivô interno formado no recuo antes da zona
-            if leg.idm_level is None and i > leg.bos_idx + 1:
+            # F-17: Rastreia Inducement (IDM) — pivô interno formado no recuo ANTES da zona.
+            # O pivô interno deve estar acima/antes do nível de entrada (level) e o repique de >= 10%
+            # da perna deve ocorrer estritamente APÓS o candle do fundo/topo interno e ANTES da barra i.
+            if leg.idm_level is None and not leg.touched and i > leg.bos_idx + 1:
                 span_leg = leg.d * (leg.extreme - leg.origin)
                 if leg.d == 1:
                     sub_l = lows[leg.bos_idx + 1 : i]
-                    min_sub = float(np.min(sub_l))
-                    if np.any(highs[leg.bos_idx + 1 : i] > min_sub + 0.10 * span_leg):
+                    sub_h = highs[leg.bos_idx + 1 : i]
+                    min_idx = int(np.argmin(sub_l))
+                    min_sub = float(sub_l[min_idx])
+                    if (
+                        min_sub > level
+                        and min_idx < len(sub_h) - 1
+                        and np.any(sub_h[min_idx + 1 :] > min_sub + 0.10 * span_leg)
+                    ):
                         leg.idm_level = min_sub
                 else:
                     sub_h = highs[leg.bos_idx + 1 : i]
-                    max_sub = float(np.max(sub_h))
-                    if np.any(lows[leg.bos_idx + 1 : i] < max_sub - 0.10 * span_leg):
+                    sub_l = lows[leg.bos_idx + 1 : i]
+                    max_idx = int(np.argmax(sub_h))
+                    max_sub = float(sub_h[max_idx])
+                    if (
+                        max_sub < level
+                        and max_idx < len(sub_l) - 1
+                        and np.any(sub_l[max_idx + 1 :] < max_sub - 0.10 * span_leg)
+                    ):
                         leg.idm_level = max_sub
 
             if leg.idm_level is not None and not leg.idm_swept:
@@ -852,8 +921,9 @@ class FiboOTEStrategy:
                     leg.idm_swept = True
 
             if cfg.entry_mode == "m5_close_rejection":
-                # Se rompeu a origem estrutural (1.000), invalida a perna imediatamente
-                if d * (leg.origin - touch) >= 0:
+                inv_level = leg.level(cfg.fibo_stop)
+                # Se rompeu a origem estrutural (1.000) ou o nível de invalidação (fibo_stop), invalida a perna
+                if d * (leg.origin - touch) >= 0 or d * (inv_level - touch) >= 0:
                     leg = None
                     continue
                 in_zone = d * (level - touch) >= 0
@@ -880,7 +950,6 @@ class FiboOTEStrategy:
                         if cfg.fibo_rejection_max is not None
                         else level
                     )
-                    inv_level = leg.level(cfg.fibo_stop)
                     cond = (
                         in_session
                         and (not is_day_locked(ts[i].date()))
@@ -897,6 +966,17 @@ class FiboOTEStrategy:
                         )
                         cond = rng_b > 0 and (
                             wick_len >= cfg.rejection_min_wick_ratio * rng_b
+                        )
+                    if cond and cfg.rejection_require_directional_body:
+                        cond = d * (closes[i] - opens[i]) >= 0
+                    if (
+                        cond
+                        and cfg.rejection_min_volume_mult > 0
+                        and vols is not None
+                        and vol_mas is not None
+                    ):
+                        cond = (not np.isnan(vol_mas[i])) and (
+                            vols[i] >= cfg.rejection_min_volume_mult * vol_mas[i]
                         )
                     if (
                         cond
@@ -962,14 +1042,22 @@ class FiboOTEStrategy:
                                 bos_idx=leg.bos_idx,
                                 rej_extreme=rej_ext,
                             )
-                    leg = None
+                    if (
+                        pending_open is not None
+                        or d * (closes[i] - rej_bound) <= 0
+                        or d * (inv_level - touch) >= 0
+                    ):
+                        leg = None
                     continue
+                ext = highs[i] if d == 1 else lows[i]
                 if not leg.touched:
-                    ext = highs[i] if d == 1 else lows[i]
                     if d * (ext - leg.extreme) > 0:
                         leg.extreme = ext
                         leg.idm_level = None
                         leg.idm_swept = False
+                elif d * (ext - leg.extreme) >= 0:
+                    # Tocou a zona sem engatilhar e já voltou ao topo/fundo da perna: encerra a perna
+                    leg = None
                 continue
 
             # F-08: filtro de sessão para novas entradas (modo limit)

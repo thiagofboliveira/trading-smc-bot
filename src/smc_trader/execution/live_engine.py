@@ -191,6 +191,9 @@ class LiveTradingEngine:
                     require_inducement=(
                         model_def.require_inducement if model_def else True
                     ),
+                    require_leg_fvg=(
+                        model_def.require_leg_fvg if model_def else False
+                    ),
                     trend_ma=(
                         model_def.trend_ma if model_def else None
                     ),

@@ -15,17 +15,17 @@
 // 5. Gestão de Risco:
 //    - Stop Loss técnico na invalidação em 88.6% de Fibonacci;
 //    - Trava de Proteção: Ao atingir +1.618R, sobe o stop para +1.0R garantido no bolso;
-//    - Alvo Teto: 4.0R;
+//    - Alvo Teto: 3.0R;
 //    - Limites Diários: 1 gain bate meta e para; 2 stops seguidos para no dia; máx 3 trades/dia.
 // ==============================================================================
 
 Parametro
-  FiboEntrada(0.500);             // Início da zona de retração (50.0%)
+  FiboEntrada(0.618);             // Início da zona OTE de retração (61.8% Golden Ratio)
   FiboRejeicaoMax(0.790);         // Limite máximo da zona de rejeição (79.0%)
   FiboStop(0.886);                // Nível de invalidação estrutural (88.6%)
   PeriodoMME(80);                 // MME de tendência e confluência de rejeição (80 períodos)
   MinPavioRatio(0.50);            // Pavio mínimo de absorção (50% do range do candle)
-  AlvoMultiplicadorR(4.0);        // Alvo teto em R (4.0R)
+  AlvoMultiplicadorR(3.0);        // Alvo teto em R (3.0R)
   TravaGatilhoR(1.618);           // Nível para acionar a trava de lucro (+1.618R)
   TravaGarantidaR(1.0);           // Stop garantido ao travar (+1.0R)
   MaxBarrasPerna(60);             // Validade máxima da perna após o BOS (60 candles M5)

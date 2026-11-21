@@ -372,6 +372,7 @@ def test_fibo_live_m5_close_rejection_emits_market_entry_and_bos_swing_trail():
         target_r=10.0,
         trailing_exit_ma=None,
         pivot_k=1,
+        require_inducement=False,
     )
     evaluator = FiboLiveEvaluator(cfg, spread=0.0)
     b0_8 = [

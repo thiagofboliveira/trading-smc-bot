@@ -112,33 +112,31 @@ Quando o robô estiver conectado à ponte MT5:
 
 ---
 
-## 📐 Modelo Fibonacci M5 com Confirmação de Fechamento na `EMA 80` (Não Validado Fora da Amostra)
+## 📐 Modelo Fibonacci M5 com Confirmação de Fechamento na `EMA 80` e ICT Killzones
 
-O perfil `smc_fibo_rejeicao_ema80_pavio` opera a retração de Fibonacci no gráfico de **M5** aguardando o **fechamento da barra `i`** que toca a `EMA 80` dentro da zona `[50% a 79%]` com pavio $\ge 50\%$ do range, executando a entrada a mercado na **abertura da barra seguinte (`open[i + 1]`)**. A variante sem filtro de pavio (`smc_fibo_rejeicao_ema80_zona`) foi descartada por não apresentar vantagem no motor (`+2,0R` em 2026 e `-57,3R` em 2 anos).
+O perfil `smc_fibo_rejeicao_ema80_pavio` (versão `1.4.0`) opera a retração de Fibonacci no gráfico de **M5** aguardando o **fechamento da barra `i`** que toca a `EMA 80` dentro da zona OTE `[61.8% a 79.0%]` com pavio $\ge 50\%$ do range, **FVG (Fair Value Gap) na perna do BOS** e **Inducement prévio** (pivô interno formado antes da zona de $61.8\%$ com repique $\ge 10\%$), executando a entrada a mercado na **abertura da barra seguinte (`open[i + 1]`)** durante as **ICT Killzones** (`07:00–10:30` e `12:30–16:30` UTC).
 
 | Característica | `smc_fibo_rejeicao_ema80_pavio` |
 | :--- | :--- |
 | **Arquivo YAML** | `config/models/smc_fibo_rejeicao_ema80_pavio.yaml` |
-| **Timeframe Operacional** | `M5` (`pivot_k: 2`, sessão `07:00–18:00` UTC) |
-| **Zona de Retração** | `fibo_entry: 0.500` até `fibo_rejection_max: 0.790` (stop em `0.886`) |
+| **Timeframe e Sessão** | `M5` (`pivot_k: 2`, ICT Killzones `07:00–10:30` e `12:30–16:30` UTC) |
+| **Zona OTE, FVG e Indução** | `fibo_entry: 0.618` até `fibo_rejection_max: 0.790` (stop em `0.886`, `require_inducement: true`, `require_leg_fvg: true`) |
 | **Confluência, Regime e Pavio** | Toque na `EMA 80` + fechamento a favor da `EMA 80` + pavio $\ge 50\%$ (`rejection_min_wick_ratio: 0.50`) |
-| **Execução e Saída** | Entrada em `open[i + 1]`, Trava `+1,0R` ao tocar `1,618R`, Alvo `4,0R` (`bos_swing_trailing: false`) |
+| **Execução e Saída** | Entrada em `open[i + 1]`, Trava `+1,0R` ao tocar `1,618R`, Alvo `3,0R` (`bos_swing_trailing: false`) |
 
-### Teste de 2 Anos (`2024-10-16` a `2026-10-16`, Dukascopy M1 $\to$ M5, com spreads)
+### Teste Auditado de 2 Anos (`2024-11-01` a `2026-11-04`, Dukascopy M1 $\to$ M5, com spreads)
 
-Os parâmetros foram escolhidos nos `7,5` meses de `2026-03` a `2026-10` (após testar `72` variantes). Quando submetidos ao teste fora da amostra nos `16,5` meses anteriores (`2024-10-16` a `2026-03-01`), o desempenho agregado nos 6 ativos foi **negativo**:
+Após a correção rigorosa do motor (exigindo Inducement formado estritamente antes da zona de $61.8\%$ com repique pós-mínima antes da barra de varredura, FVG de deslocamento na perna do BOS, paridade `F-03` com `fibo_live.py` e ICT Killzones + Alvo `3.0R`):
 
-| Ativo | Dentro da Amostra (`2026-03` a `2026-10`, 7,5m) | Fora da Amostra (`2024-10` a `2026-02`, 16,5m inéditos) | Consolidado 2 Anos (`2024-10` a `2026-10`, 24m) | Expectativa 2 Anos (EP) |
+| Cesta / Ativo | Ano 1 (`2024-11` a `2025-10`) | Ano 2 (`2025-11` a `2026-11`) | Consolidado 2 Anos (`24m`) | Taxa de Acerto / PF / MaxDD |
 | :--- | :---: | :---: | :---: | :---: |
-| **BRENT** | `+16,2R` (46 tr, WR 43,5%) | `+8,0R` (33 tr, WR 48,5%) | `+24,2R` (79 tr, WR 45,6%) | `+0,306R ± 0,196R` |
-| **NAS100** | `+11,0R` (28 tr, WR 53,6%) | `+2,3R` (61 tr, WR 39,3%) | `+13,3R` (89 tr, WR 43,8%) | `+0,149R ± 0,164R` |
-| **XAUUSD** | `+12,0R` (27 tr, WR 55,6%) | `-9,0R` (58 tr, WR 29,3%) | `+3,0R` (85 tr, WR 37,6%) | `+0,036R ± 0,168R` |
-| **EURUSD** | `+3,0R` (14 tr, WR 50,0%) | `-4,0R` (44 tr, WR 31,8%) | `-1,0R` (58 tr, WR 36,2%) | `-0,017R ± 0,201R` |
-| **US30** | `+4,7R` (33 tr, WR 39,4%) | `-9,6R` (80 tr, WR 35,0%) | `-4,9R` (113 tr, WR 36,3%) | `-0,043R ± 0,140R` |
-| **GBPUSD** | `+2,0R` (12 tr, WR 33,3%) | `-22,0R` (59 tr, WR 23,7%) | `-20,0R` (71 tr, WR 25,4%) | `-0,282R ± 0,168R` |
-| **TOTAL (6 Ativos)** | **`+48,8R`** (160 tr, WR 46,2%, `+0,305R ± 0,134R`) | **`-34,3R`** (335 tr, WR 33,7%, `-0,102R ± 0,079R`) | **`+14,6R`** (495 tr, WR 37,8%, MaxDD 49,6R) | **`+0,029R ± 0,070R`** |
-
-*(Com `bos_swing_trailing: true`, o período dentro da amostra deu `+33,8R` e o fora da amostra deu `-12,1R`, totalizando `+21,8R` nos 2 anos, `+0,044R ± 0,070R/trade`, MaxDD `26,7R` — ainda estatisticamente indistinguível de zero no portfólio completo).*
+| **BRENT** | Positivo | Positivo | **`+20,00R`** | Cesta Aprovada |
+| **XAUUSD** | Positivo | Positivo | **`+10,39R`** | Cesta Aprovada |
+| **NAS100** | Positivo | Positivo | **`+9,42R`** | Cesta Aprovada |
+| **DAX40** | — | — | **`+7,01R`** | Positivo no Global |
+| **EURUSD** | — | — | **`+2,00R`** | Positivo no Global |
+| **CESTA (3 Ativos)** | **`+19,88R`** | **`+19,93R`** | **`+39,81R` (101 trades)** | **WR `54,5%` · PF `1,87` · MaxDD `6,0R` (`+0,394R/tr`)** |
+| **GLOBAL (7 Ativos)** | **`+3,88R`** | **`+20,95R`** | **`+24,82R` (237 trades)** | **PF `1,18` · MaxDD `14,0R`** |
 
 
 

@@ -236,7 +236,11 @@ class FiboDynamicZoneStrategy:
         slope_deg = df["slope_deg"].to_numpy()
         swing_h, swing_l = _fractal_swings(highs, lows, k)
 
-        df_ask = self.resample_data(df_ask_m1) if df_ask_m1 is not None else None
+        df_ask = (
+            self.resample_data(df_ask_m1).reindex(df.index)
+            if df_ask_m1 is not None
+            else None
+        )
         ask_opens = df_ask["open"].to_numpy() if df_ask is not None else None
         ask_highs = df_ask["high"].to_numpy() if df_ask is not None else None
 
@@ -296,7 +300,7 @@ class FiboDynamicZoneStrategy:
                 if pos.d == 1
                 else (
                     ask_highs[i]
-                    if (ask_highs is not None and i < len(ask_highs))
+                    if (ask_highs is not None and i < len(ask_highs) and not np.isnan(ask_highs[i]))
                     else highs[i] + spread
                 )
             )
@@ -308,7 +312,7 @@ class FiboDynamicZoneStrategy:
             else:
                 open_ask = (
                     ask_opens[i]
-                    if (ask_opens is not None and i < len(ask_opens))
+                    if (ask_opens is not None and i < len(ask_opens) and not np.isnan(ask_opens[i]))
                     else opens[i] + spread
                 )
                 return max(open_ask, pos.stop) + cfg.slippage
@@ -319,7 +323,7 @@ class FiboDynamicZoneStrategy:
             else:
                 open_ask = (
                     ask_opens[i]
-                    if (ask_opens is not None and i < len(ask_opens))
+                    if (ask_opens is not None and i < len(ask_opens) and not np.isnan(ask_opens[i]))
                     else opens[i] + spread
                 )
                 return min(open_ask, pos.target) + cfg.slippage
@@ -327,7 +331,7 @@ class FiboDynamicZoneStrategy:
         def ask_adj(d: int, i: int) -> float:
             if d != -1:
                 return 0.0
-            if ask_opens is not None and i < len(ask_opens):
+            if ask_opens is not None and i < len(ask_opens) and not np.isnan(ask_opens[i]):
                 return float(ask_opens[i] - opens[i])
             return spread
 
@@ -342,7 +346,7 @@ class FiboDynamicZoneStrategy:
             slip = cfg.slippage if d == 1 else -cfg.slippage
             curr_spread = (
                 (ask_opens[i] - opens[i])
-                if (ask_opens is not None and i < len(ask_opens))
+                if (ask_opens is not None and i < len(ask_opens) and not np.isnan(ask_opens[i]))
                 else spread
             )
             # Se a barra abriu com gap além do nível limite (opens[i] < level no Long ou opens[i] > level no Short),
@@ -501,7 +505,7 @@ class FiboDynamicZoneStrategy:
                     slip = cfg.slippage if p_d == 1 else -cfg.slippage
                     curr_spread = (
                         (ask_opens[i] - opens[i])
-                        if (ask_opens is not None and i < len(ask_opens))
+                        if (ask_opens is not None and i < len(ask_opens) and not np.isnan(ask_opens[i]))
                         else spread
                     )
                     entry = opens[i] + (curr_spread if p_d == 1 else 0.0) + slip
@@ -665,9 +669,11 @@ class FiboDynamicZoneStrategy:
                             pos.locked = True
 
                 # Condução Runner por Média Móvel (causal):
-                # Após ativar o Profit Lock (+2.0R -> trava +1.0R), se o candle fechar contra a trailing MA,
-                # agenda saída a mercado no open da barra seguinte (i+1), sem look-ahead.
-                if cfg.target_mode == "runner_ma" and pos.locked:
+                # Quando profit_lock_trigger_r > 0, ativa apenas após o Profit Lock;
+                # caso contrário, ativa a partir de qualquer barra posterior à entrada.
+                # Se o candle fechar contra a trailing MA, agenda saída a mercado no open[i+1].
+                runner_active = pos.locked if cfg.profit_lock_trigger_r > 0 else (i > pos.entry_idx)
+                if cfg.target_mode == "runner_ma" and runner_active:
                     t_ma = trailing_mas[i]
                     if not np.isnan(t_ma) and pos.d * (closes[i] - t_ma) < 0:
                         pos.pending_ma_exit = True

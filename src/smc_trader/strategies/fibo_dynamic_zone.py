@@ -34,7 +34,10 @@ class FiboDynamicZoneConfig:
     rejection_min_wick_ratio: float = 0.25
     rejection_require_directional_body: bool = True
     target_rr: float = 3.0
-    target_mode: Literal["fixed_rr", "structural_0", "partial_0_runner_3r"] = "fixed_rr"
+    target_mode: Literal[
+        "fixed_rr", "structural_0", "partial_0_runner_3r", "runner_ma"
+    ] = "fixed_rr"
+    trailing_ma_period: int = 20
     ema_fast_period: int = 80
     sma_slow_period: int = 200
     min_slope_degrees: float = 20.0
@@ -118,6 +121,7 @@ class _Position:
     be_activated: bool = False
     partial_taken: bool = False
     bos_ref: float = 0.0
+    pending_ma_exit: bool = False
 
 
 def _fractal_swings(highs: np.ndarray, lows: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
@@ -177,10 +181,11 @@ class FiboDynamicZoneStrategy:
         tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         df_res["atr"] = tr.rolling(window=14).mean()
 
-        # MME 80, MMA 200 e MME 960 (equivalente causal à MME 80 do H1 no M5)
+        # MME 80, MMA 200, MME 960 (equivalente causal à MME 80 do H1 no M5) e MME de condução
         df_res["ema80"] = close.ewm(span=self.config.ema_fast_period, adjust=False).mean()
         df_res["sma200"] = close.rolling(window=self.config.sma_slow_period).mean()
         df_res["ema960"] = close.ewm(span=self.config.ema_fast_period * 12, adjust=False).mean()
+        df_res["trailing_ma"] = close.ewm(span=self.config.trailing_ma_period, adjust=False).mean()
 
         # ADX(14) causal
         up_move = high - high.shift(1)
@@ -225,6 +230,7 @@ class FiboDynamicZoneStrategy:
         emas80 = df["ema80"].to_numpy()
         smas200 = df["sma200"].to_numpy()
         emas960 = df["ema960"].to_numpy()
+        trailing_mas = df["trailing_ma"].to_numpy()
         atrs = df["atr"].to_numpy()
         adxs14 = df["adx14"].to_numpy()
         slope_deg = df["slope_deg"].to_numpy()
@@ -348,11 +354,15 @@ class FiboDynamicZoneStrategy:
                 return None
 
             target = (
-                leg.extreme
-                if cfg.target_mode == "structural_0"
-                else entry + d * risk * cfg.target_rr
+                0.0
+                if cfg.target_mode == "runner_ma"
+                else (
+                    leg.extreme
+                    if cfg.target_mode == "structural_0"
+                    else entry + d * risk * cfg.target_rr
+                )
             )
-            if d * (target - entry) <= 0:
+            if cfg.target_mode != "runner_ma" and d * (target - entry) <= 0:
                 return None
             return _Position(
                 d=d,
@@ -497,7 +507,11 @@ class FiboDynamicZoneStrategy:
                     entry = opens[i] + (curr_spread if p_d == 1 else 0.0) + slip
                     risk = p_d * (entry - p_stop)
                     if risk > curr_spread * 1.5:
-                        target = entry + p_d * risk * cfg.target_rr
+                        target = (
+                            0.0
+                            if cfg.target_mode == "runner_ma"
+                            else entry + p_d * risk * cfg.target_rr
+                        )
                         pos = _Position(
                             d=p_d,
                             entry_idx=i,
@@ -517,6 +531,18 @@ class FiboDynamicZoneStrategy:
 
             # 2. Gerenciamento de posição aberta
             if pos is not None:
+                # 2a. Saída pendente a mercado no open da barra i (acionada no fechamento da barra i-1 contra a trailing MA)
+                if pos.pending_ma_exit:
+                    exit_px = (
+                        opens[i] - cfg.slippage
+                        if pos.d == 1
+                        else opens[i] + ask_adj(pos.d, i) + cfg.slippage
+                    )
+                    trades.append(close_trade(pos, i, exit_px, "TRAILING_MA"))
+                    pos = None
+                    leg = None
+                    continue
+
                 # Checa stop loss na abertura (gap) ou no intraday da barra i
                 if stop_hit(pos, i):
                     exit_px = get_stop_exit_price(pos, i)
@@ -542,7 +568,10 @@ class FiboDynamicZoneStrategy:
                     if (cfg.target_mode == "partial_0_runner_3r" and pos.bos_ref > 0)
                     else cfg.partial_trigger_r
                 )
-                target_hit = pos.d * (favorable - pos.target) >= 0
+                target_hit = (
+                    cfg.target_mode != "runner_ma"
+                    and pos.d * (favorable - pos.target) >= 0
+                )
                 if target_hit:
                     # Se havia parcial armada antes do alvo final e ainda não executada, ela cruzou primeiro
                     if (
@@ -634,6 +663,14 @@ class FiboDynamicZoneStrategy:
                         if swing_stop is not None and pos.d * (swing_stop - pos.stop) > 0:
                             pos.stop = swing_stop
                             pos.locked = True
+
+                # Condução Runner por Média Móvel (causal):
+                # Após ativar o Profit Lock (+2.0R -> trava +1.0R), se o candle fechar contra a trailing MA,
+                # agenda saída a mercado no open da barra seguinte (i+1), sem look-ahead.
+                if cfg.target_mode == "runner_ma" and pos.locked:
+                    t_ma = trailing_mas[i]
+                    if not np.isnan(t_ma) and pos.d * (closes[i] - t_ma) < 0:
+                        pos.pending_ma_exit = True
 
                 continue
 

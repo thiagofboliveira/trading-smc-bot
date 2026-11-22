@@ -230,6 +230,38 @@ def test_two_stage_breakeven_partial_and_bos_trailing():
     assert prefix_trades == full_closed_before_cutoff
 
 
+def test_runner_ma_trailing_and_prefix_invariance():
+    """Verifica saída causal runner_ma (sem teto, trailing na MME 20 após profit_lock, saída em open[i+1])."""
+    df_m1 = _generate_synthetic_candles(n=4500, trend=1.2, volatility=3.5)
+    cfg = FiboDynamicZoneConfig(
+        timeframe="M5",
+        min_slope_degrees=0.0,
+        zone_confluence_mode="overlap",
+        fibo_stop=0.920,
+        target_mode="runner_ma",
+        trailing_ma_period=20,
+        breakeven_trigger_r=1.25,
+        breakeven_lock_r=0.1,
+        profit_lock_trigger_r=2.0,
+        profit_lock_lock_r=1.0,
+    )
+    strat = FiboDynamicZoneStrategy(cfg)
+    full_trades = strat.run_backtest(df_m1, symbol="RUNNER_MA", spread=1.0)
+
+    for t in full_trades:
+        assert t.exit_time >= t.entry_time
+        assert t.exit_reason != "TAKE_PROFIT"
+        if t.exit_reason == "TRAILING_MA":
+            assert t.exit_time > t.entry_time
+
+    cutoff_m1 = 3000
+    cutoff_time = df_m1.index[cutoff_m1 - 1]
+    prefix_trades = strat.run_backtest(df_m1.iloc[:cutoff_m1], symbol="RUNNER_MA", spread=1.0)
+    full_closed_before_cutoff = [t for t in full_trades if t.exit_time <= cutoff_time]
+    assert prefix_trades == full_closed_before_cutoff
+
+
+
 
 
 

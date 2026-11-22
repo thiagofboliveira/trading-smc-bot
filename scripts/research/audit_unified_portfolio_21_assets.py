@@ -99,27 +99,47 @@ def main() -> None:
         print(f"  {lote} {s:<8}: {idx[0].date()} -> {idx[-1].date()}  ({yrs:4.2f} anos)")
 
     print("\n" + "=" * 120)
-    print("2) ESTRATÉGIA 3 POR GRAU DE CONTAMINAÇÃO")
+    print("2) ESTRATÉGIA 3 POR GRAU DE CONTAMINAÇÃO (BASELINE 3.0R FIXO vs RUNNER MME 20)")
     print("=" * 120)
-    rec = []
-    for s in ALL_21:
-        trades = FiboDynamicZoneStrategy(replace(CFG_E3, slippage=SLIPPAGES[s])).run_backtest(dfs[s], s, SPREADS[s])
-        for t in trades:
-            rec.append({"strategy": "E3", "sym": s, "entry": t.entry_time, "exit": t.exit_time, "r": t.r_multiple})
-    e3 = pd.DataFrame(rec)
-    for label, syms in [("Lote 1 (in-sample, desenho)", LOTE1), ("Lote 2 (holdout usado na autópsia)", LOTE2),
-                        ("Lote 3 (fora da amostra limpo)", LOTE3), ("Todos os 21 (sem escolher ativos)", ALL_21)]:
-        sub = e3[e3["sym"].isin(syms)]
-        yrs = float(np.mean([spans[s] for s in syms]))
-        pos = sum(1 for s in syms if sub[sub["sym"] == s]["r"].sum() > 0)
-        print(line(f"{label} [{pos}/{len(syms)} ativos +]", sub["r"].tolist(), yrs * len(syms) / len(syms)))
+    cfg_e3_runner = replace(CFG_E3, target_mode="runner_ma", trailing_ma_period=20)
 
-    pos_assets = [s for s in ALL_21 if e3[e3["sym"] == s]["r"].sum() > 0]
-    sel = e3[e3["sym"].isin(pos_assets)]
-    print(line(f"Só ativos positivos ({len(pos_assets)}) — CIRCULAR", sel["r"].tolist()))
+    def run_e3(cfg: FiboDynamicZoneConfig) -> pd.DataFrame:
+        rows = []
+        for s in ALL_21:
+            trades = FiboDynamicZoneStrategy(replace(cfg, slippage=SLIPPAGES[s])).run_backtest(
+                dfs[s], s, SPREADS[s]
+            )
+            for t in trades:
+                rows.append(
+                    {
+                        "strategy": "E3",
+                        "sym": s,
+                        "entry": t.entry_time,
+                        "exit": t.exit_time,
+                        "r": t.r_multiple,
+                        "reason": t.exit_reason,
+                    }
+                )
+        return pd.DataFrame(rows)
+
+    e3_fixed = run_e3(CFG_E3)
+    e3 = run_e3(cfg_e3_runner)
+
+    for tag, df_e3 in [("E3 Baseline (alvo fixo 3.0R)", e3_fixed), ("E3 Runner MME 20 (sem teto pós +2.0R)", e3)]:
+        print(f"\n  [{tag}]")
+        for label, syms in [
+            ("Lote 1 (in-sample, desenho)", LOTE1),
+            ("Lote 2 (holdout usado na autópsia)", LOTE2),
+            ("Lote 3 (fora da amostra limpo)", LOTE3),
+            ("Todos os 21 (sem escolher ativos)", ALL_21),
+        ]:
+            sub = df_e3[df_e3["sym"].isin(syms)]
+            yrs = float(np.mean([spans[s] for s in syms]))
+            pos = sum(1 for s in syms if sub[sub["sym"] == s]["r"].sum() > 0)
+            print(line(f"{label} [{pos}/{len(syms)} ativos +]", sub["r"].tolist(), yrs))
 
     print("\n" + "=" * 120)
-    print("3) CARTEIRA UNIFICADA RECALCULADA")
+    print("3) CARTEIRA ENXUTA (E1 + E3 RUNNER MME 20) vs BASELINE E UNIFICADA")
     print("=" * 120)
     rec1 = []
     for s in ["NAS100", "US30", "SPX500"]:
@@ -132,36 +152,40 @@ def main() -> None:
         rec2 += [{"strategy": "E2", "sym": s, "entry": t.entry_time, "exit": t.exit_time, "r": t.r_multiple} for t in tr]
     e1, e2 = pd.DataFrame(rec1), pd.DataFrame(rec2)
 
-    port = pd.concat([e1, e2, e3], ignore_index=True).sort_values("exit")
-    first, last = port["exit"].min(), port["exit"].max()
+    port_lean_fixed = pd.concat([e1, e3_fixed], ignore_index=True).sort_values("exit")
+    port_lean = pd.concat([e1, e3], ignore_index=True).sort_values("exit")
+    port_full = pd.concat([e1, e2, e3], ignore_index=True).sort_values("exit")
+
+    first, last = port_lean["exit"].min(), port_lean["exit"].max()
     yrs_port = (last - first).days / 365.25
     print(f"  Janela efetiva da carteira: {first.date()} -> {last.date()} ({yrs_port:.2f} anos)")
     print(line("E1 (D1, 3 índices)", e1["r"].tolist(), yrs_port))
-    print(line("E2 (M5, BRENT/NAS100/XAUUSD)", e2["r"].tolist(), yrs_port))
-    print(line("E3 (M5, 21 ativos, sem seleção)", e3["r"].tolist(), yrs_port))
-    print(line("CARTEIRA E1+E2+E3 (21 ativos)", port["r"].tolist(), yrs_port))
-    port_oos = port[port["exit"] >= pd.Timestamp("2025-01-01", tz="UTC")]
-    print(line("CARTEIRA só 2025+ (fora da amostra temporal)", port_oos["r"].tolist()))
+    print(line("E3 Runner MME 20 (M5, 21 ativos)", e3["r"].tolist(), yrs_port))
+    print(line("CARTEIRA ENXUTA E1 + E3 (3.0R fixo)", port_lean_fixed["r"].tolist(), yrs_port))
+    print(line("CARTEIRA ENXUTA E1 + E3 (Runner MME 20)", port_lean["r"].tolist(), yrs_port))
+    print(line("CARTEIRA FULL E1+E2+E3 (Runner MME 20)", port_full["r"].tolist(), yrs_port))
 
-    print("\n  Ano a ano (por data de saída):")
-    port["year"] = port["exit"].dt.year
-    for y, g in port.groupby("year"):
+    lean_oos = port_lean[port_lean["exit"] >= pd.Timestamp("2025-01-01", tz="UTC")]
+    print(line("ENXUTA E1+E3 (Runner) só 2025+ (OOS)", lean_oos["r"].tolist()))
+
+    print("\n  Ano a ano — CARTEIRA ENXUTA E1 + E3 (Runner MME 20):")
+    port_lean["year"] = port_lean["exit"].dt.year
+    for y, g in port_lean.groupby("year"):
         n, wr, tot, _, _, _, pf, dd = summarize(g["r"].tolist())
-        comp = " ".join(f"{k}:{len(g[g['strategy'] == k])}" for k in ["E1", "E2", "E3"])
+        comp = " ".join(f"{k}:{len(g[g['strategy'] == k])}" for k in ["E1", "E3"])
         print(f"    {y}: {n:4d} tr ({comp}) | WR {wr:5.1f}% | {tot:+6.1f}R | PF {pf:4.2f} | DD {dd:4.1f}R")
 
     print("\n" + "=" * 120)
-    print("4) EXPOSIÇÃO SIMULTÂNEA")
+    print("4) EXPOSIÇÃO SIMULTÂNEA (CARTEIRA ENXUTA E1 + E3 RUNNER)")
     print("=" * 120)
-    peak, pct4 = max_concurrency(port)
+    peak, pct4 = max_concurrency(port_lean)
     print(f"  Máximo de posições abertas ao mesmo tempo: {peak}")
     print(f"  Entradas que ocorreram com mais de 4 posições abertas: {pct4:.1f}%")
-    for s in ["XAUUSD", "BRENT"]:
-        a = e2[e2["sym"] == s]
-        b = e3[e3["sym"] == s]
-        overlap = sum(1 for _, x in a.iterrows() for _, y in b.iterrows()
-                      if x["entry"] < y["exit"] and y["entry"] < x["exit"])
-        print(f"  {s}: {overlap} pares de trades E2 x E3 abertos ao mesmo tempo no mesmo ativo")
+    print(f"  Maior trade individual de E3 (Runner MME 20): {e3['r'].max():+.2f}R")
+    print("  Distribuição de saídas E3 (Runner MME 20):")
+    for reason, cnt in e3["reason"].value_counts().items():
+        sub_r = e3[e3["reason"] == reason]["r"]
+        print(f"    {reason:<20}: {cnt:3d} trades | média {sub_r.mean():+.2f}R | soma {sub_r.sum():+.1f}R")
 
 
 if __name__ == "__main__":

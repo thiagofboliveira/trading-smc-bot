@@ -3,6 +3,11 @@ from smc_trader.strategies.d1_mean_reversion import (
     D1MeanReversionStrategy,
     D1Trade,
 )
+from smc_trader.strategies.fibo_dynamic_zone import (
+    DynamicZoneTrade,
+    FiboDynamicZoneConfig,
+    FiboDynamicZoneStrategy,
+)
 from smc_trader.strategies.fibo_ote import FiboOTEConfig, FiboOTEStrategy, FiboTrade
 from smc_trader.strategies.fibo_trap import (
     FiboTrapConfig,
@@ -30,6 +35,9 @@ __all__ = [
     "D1MeanReversionConfig",
     "D1MeanReversionStrategy",
     "D1Trade",
+    "DynamicZoneTrade",
+    "FiboDynamicZoneConfig",
+    "FiboDynamicZoneStrategy",
     "FiboOTEConfig",
     "FiboOTEStrategy",
     "FiboTrade",

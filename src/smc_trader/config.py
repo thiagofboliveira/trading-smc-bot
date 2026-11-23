@@ -209,6 +209,11 @@ class FiboModelConfig(BaseModel):
     session_filter: bool = False
     session_windows: list[tuple[str, str]] | None = None
     force_close_time: str | None = None
+    close_on_friday: bool = False
+    friday_close_time: str = "20:45"
+    max_holding_candles: int = Field(60, ge=1)
+    trend_ma_min_slope: float = 0.0
+    rejection_require_directional_body: bool = False
     max_trades_per_day: int = Field(0, ge=0)
     max_stops_per_day: int = Field(0, ge=0)
     max_gains_per_day: int = Field(0, ge=0)

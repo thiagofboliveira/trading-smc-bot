@@ -86,6 +86,12 @@ class BaseMT5Client(abc.ABC):
     ) -> list[ClosedTradeInfo]:
         pass
 
+    def get_pending_orders(
+        self, symbol: str | None = None, magic: int | None = None
+    ) -> list[int]:
+        """Tickets das ordens pendentes. Backends que não sabem listar devolvem []."""
+        return []
+
 
 class MockMT5Client(BaseMT5Client):
     """Cliente simulador em memória para testes unitários e modo Dry-Run."""
@@ -98,6 +104,7 @@ class MockMT5Client(BaseMT5Client):
             margin=0.0,
             free_margin=initial_balance,
             currency="USD",
+            trade_mode="demo",
         )
         self.symbols: dict[str, SymbolInfo] = {
             "XAUUSD": SymbolInfo(
@@ -280,6 +287,7 @@ class MockMT5Client(BaseMT5Client):
                 r_multiple=r_mult,
                 magic=pos.magic,
                 comment=pos.comment,
+                position_id=ticket,
             )
             self.closed_deals.append(deal)
             return True
@@ -309,6 +317,16 @@ class MockMT5Client(BaseMT5Client):
         if symbol is not None:
             deals = [d for d in deals if d.symbol == symbol]
         return deals
+
+    def get_pending_orders(
+        self, symbol: str | None = None, magic: int | None = None
+    ) -> list[int]:
+        return [
+            t
+            for t, o in self.orders.items()
+            if (symbol is None or o.symbol == symbol)
+            and (magic is None or o.magic == magic)
+        ]
 
 
 class BridgeEAServer:
@@ -462,6 +480,7 @@ class BridgeMT5Client(BaseMT5Client):
             currency=str(data.get("currency", "USD")),
             login=int(data.get("login", 0)),
             server=str(data.get("server", "")),
+            trade_mode=str(data.get("trade_mode", "unknown")),
         )
 
     def get_symbol_info(self, symbol: str) -> SymbolInfo:
@@ -644,20 +663,48 @@ class BridgeMT5Client(BaseMT5Client):
                     r_multiple=float(d.get("r_multiple", 0.0)),
                     magic=int(d.get("magic", 0)),
                     comment=str(d.get("comment", "")),
+                    position_id=int(d.get("position_id", d.get("ticket", 0))),
                 )
             )
         return deals
 
 
 class NativeMT5Client(BaseMT5Client):
-    """Cliente nativo via pacote oficial MetaTrader5 no Windows ou Wine."""
+    """Cliente nativo via pacote oficial MetaTrader5 no Windows ou Wine.
 
-    def __init__(self, login: int = 0, password: str = "", server: str = "") -> None:
+    Fuso horário: o terminal devolve os horários de candles, posições e negócios no fuso
+    do SERVIDOR da corretora (tipicamente UTC+2/UTC+3 com horário de verão), em segundos
+    como se fossem UTC. Este cliente converte tudo para UTC real subtraindo o deslocamento
+    do servidor. O deslocamento vem de `server_utc_offset_hours` (fixo, recomendado) ou é
+    estimado pelo tick do símbolo (arredondado a 30 min), aceito só quando o horário do
+    tick MUDOU desde a consulta anterior (mercado ativo): um tick parado, cuja idade caia
+    perto de um múltiplo de 30 min, daria um fuso errado. Sem deslocamento conhecido,
+    `get_candles` devolve vazio: o motor não opera com horário errado (fail-closed).
+    """
+
+    # Tick considerado fresco para estimar o fuso: atraso de até 2 min em relação ao relógio
+    _MAX_TICK_AGE_S = 120
+    _MAX_TICK_LEAD_S = 5
+
+    def __init__(
+        self,
+        login: int = 0,
+        password: str = "",
+        server: str = "",
+        server_utc_offset_hours: float | None = None,
+    ) -> None:
         self.login = login
         self.password = password
         self.server = server
         self._connected = False
         self._mt5: Any = None
+        self._fixed_offset_s: int | None = (
+            int(round(server_utc_offset_hours * 3600))
+            if server_utc_offset_hours is not None
+            else None
+        )
+        self._offset_s: int | None = None
+        self._last_tick_time: dict[str, int] = {}
 
     def connect(self) -> bool:
         try:
@@ -693,12 +740,69 @@ class NativeMT5Client(BaseMT5Client):
     def is_connected(self) -> bool:
         return self._connected
 
+    # ------------------------------------------------------------------ fuso horário
+    @staticmethod
+    def estimate_offset_seconds(
+        tick_server_time_s: float, now_utc_s: float
+    ) -> int | None:
+        """Deslocamento servidor-UTC a partir de um tick, ou None se o tick não for fresco."""
+        diff = tick_server_time_s - now_utc_s
+        offset = int(round(diff / 1800.0)) * 1800
+        residual = diff - offset
+        if not (
+            -NativeMT5Client._MAX_TICK_AGE_S
+            <= residual
+            <= NativeMT5Client._MAX_TICK_LEAD_S
+        ):
+            return None
+        if not (-12 * 3600 <= offset <= 14 * 3600):
+            return None
+        return offset
+
+    def server_utc_offset_seconds(self, symbol: str | None = None) -> int | None:
+        """Deslocamento do servidor em segundos (servidor = UTC + deslocamento)."""
+        if self._fixed_offset_s is not None:
+            return self._fixed_offset_s
+        if symbol and self._mt5 is not None:
+            tick = self._mt5.symbol_info_tick(symbol)
+            tick_t = int(getattr(tick, "time", 0) or 0) if tick is not None else 0
+            prev_t = self._last_tick_time.get(symbol)
+            if tick_t:
+                self._last_tick_time[symbol] = tick_t
+            if tick_t and prev_t is not None and tick_t != prev_t:
+                est = self.estimate_offset_seconds(float(tick_t), time.time())
+                if est is not None:
+                    if self._offset_s is not None and est != self._offset_s:
+                        logger.warning(
+                            "Fuso do servidor MT5 mudou de %+.1fh para %+.1fh (horário de verão?)",
+                            self._offset_s / 3600,
+                            est / 3600,
+                        )
+                    self._offset_s = est
+        return self._offset_s
+
+    def _to_utc(self, server_seconds: Any, offset_s: int) -> Any:
+        return pd.to_datetime(server_seconds - offset_s, unit="s", utc=True)
+
+    def _require_offset(self, symbol: str | None = None) -> int | None:
+        off = self.server_utc_offset_seconds(symbol)
+        if off is None:
+            logger.error(
+                "Fuso do servidor MT5 desconhecido (sem tick fresco). Informe "
+                "server_utc_offset_hours ou aguarde o mercado abrir; operações bloqueadas."
+            )
+        return off
+
+    # ------------------------------------------------------------------ conta e símbolo
     def get_account_info(self) -> AccountInfo:
         if not self._connected or not self._mt5:
             raise RuntimeError("MT5 nativo desconectado")
         acc = self._mt5.account_info()
         if acc is None:
             raise RuntimeError(f"Falha ao ler conta: {self._mt5.last_error()}")
+        trade_mode = {0: "demo", 1: "contest", 2: "real"}.get(
+            int(getattr(acc, "trade_mode", -1)), "unknown"
+        )
         return AccountInfo(
             balance=acc.balance,
             equity=acc.equity,
@@ -707,6 +811,7 @@ class NativeMT5Client(BaseMT5Client):
             currency=acc.currency,
             login=acc.login,
             server=acc.server,
+            trade_mode=trade_mode,
         )
 
     def get_symbol_info(self, symbol: str) -> SymbolInfo:
@@ -734,6 +839,9 @@ class NativeMT5Client(BaseMT5Client):
     ) -> pd.DataFrame:
         if not self._connected or not self._mt5:
             return pd.DataFrame()
+        offset = self._require_offset(symbol)
+        if offset is None:
+            return pd.DataFrame()
         tf_map = {
             "M1": self._mt5.TIMEFRAME_M1,
             "M5": self._mt5.TIMEFRAME_M5,
@@ -745,10 +853,28 @@ class NativeMT5Client(BaseMT5Client):
         if rates is None or len(rates) == 0:
             return pd.DataFrame()
         df = pd.DataFrame(rates)
-        df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
+        df["time"] = self._to_utc(df["time"], offset)
         df = df.set_index("time")
         df.rename(columns={"tick_volume": "volume"}, inplace=True)
         return df[["open", "high", "low", "close", "volume"]]
+
+    # ------------------------------------------------------------------ ordens
+    def _filling_mode(self, symbol: str, pending: bool) -> int:
+        """Modo de preenchimento aceito pelo símbolo.
+
+        Pendentes usam RETURN. A mercado: FOK ou IOC conforme `symbol_info.filling_mode`
+        (bit 1 = FOK, bit 2 = IOC); sem nenhum dos dois, RETURN.
+        """
+        mt5 = self._mt5
+        if pending:
+            return mt5.ORDER_FILLING_RETURN
+        info = mt5.symbol_info(symbol)
+        mode = int(getattr(info, "filling_mode", 0)) if info is not None else 0
+        if mode & 1:
+            return mt5.ORDER_FILLING_FOK
+        if mode & 2:
+            return mt5.ORDER_FILLING_IOC
+        return mt5.ORDER_FILLING_RETURN
 
     def send_order(self, order: OrderRequest) -> OrderResult:
         if not self._connected or not self._mt5:
@@ -760,23 +886,33 @@ class NativeMT5Client(BaseMT5Client):
             ("short", "limit"): self._mt5.ORDER_TYPE_SELL_LIMIT,
         }
         mt5_type = order_type_map.get((order.direction, order.order_type))
+        if mt5_type is None:
+            return OrderResult(success=False, comment="UNSUPPORTED_ORDER_TYPE")
+        pending = order.order_type == "limit"
+        price = order.price
+        if not pending:
+            # Ordem a mercado executa no preço corrente: compra no ask, venda no bid
+            tick = self._mt5.symbol_info_tick(order.symbol)
+            if tick is None:
+                return OrderResult(success=False, comment="NO_TICK")
+            price = tick.ask if order.direction == "long" else tick.bid
         req = {
             "action": (
                 self._mt5.TRADE_ACTION_PENDING
-                if order.order_type == "limit"
+                if pending
                 else self._mt5.TRADE_ACTION_DEAL
             ),
             "symbol": order.symbol,
             "volume": order.volume,
             "type": mt5_type,
-            "price": order.price,
+            "price": price,
             "sl": order.stop_loss,
             "tp": order.take_profit,
             "deviation": order.deviation,
             "magic": order.magic,
             "comment": order.comment,
             "type_time": self._mt5.ORDER_TIME_GTC,
-            "type_filling": self._mt5.ORDER_FILLING_IOC,
+            "type_filling": self._filling_mode(order.symbol, pending),
         }
         result = self._mt5.order_send(req)
         if result is None or result.retcode != self._mt5.TRADE_RETCODE_DONE:
@@ -818,6 +954,8 @@ class NativeMT5Client(BaseMT5Client):
             else self._mt5.ORDER_TYPE_BUY
         )
         tick = self._mt5.symbol_info_tick(p.symbol)
+        if tick is None:
+            return False
         price = tick.bid if close_type == self._mt5.ORDER_TYPE_SELL else tick.ask
         req = {
             "action": self._mt5.TRADE_ACTION_DEAL,
@@ -829,6 +967,7 @@ class NativeMT5Client(BaseMT5Client):
             "deviation": 20,
             "magic": p.magic,
             "comment": "SMC-Close",
+            "type_filling": self._filling_mode(p.symbol, pending=False),
         }
         res = self._mt5.order_send(req)
         return res is not None and res.retcode == self._mt5.TRADE_RETCODE_DONE
@@ -840,6 +979,16 @@ class NativeMT5Client(BaseMT5Client):
         res = self._mt5.order_send(req)
         return res is not None and res.retcode == self._mt5.TRADE_RETCODE_DONE
 
+    def get_pending_orders(
+        self, symbol: str | None = None, magic: int | None = None
+    ) -> list[int]:
+        if not self._connected or not self._mt5:
+            return []
+        raw = self._mt5.orders_get(symbol=symbol) if symbol else self._mt5.orders_get()
+        if raw is None:
+            return []
+        return [o.ticket for o in raw if magic is None or o.magic == magic]
+
     def get_open_positions(
         self, symbol: str | None = None, magic: int | None = None
     ) -> list[LivePosition]:
@@ -848,6 +997,7 @@ class NativeMT5Client(BaseMT5Client):
         raw = self._mt5.positions_get(symbol=symbol) if symbol else self._mt5.positions_get()
         if raw is None:
             return []
+        offset = self.server_utc_offset_seconds(symbol) or 0
         res = []
         for p in raw:
             if magic is not None and p.magic != magic:
@@ -864,7 +1014,7 @@ class NativeMT5Client(BaseMT5Client):
                     current_price=p.price_current,
                     stop_loss=p.sl,
                     take_profit=p.tp,
-                    open_time=pd.to_datetime(p.time, unit="s", utc=True),
+                    open_time=self._to_utc(p.time, offset),
                     initial_risk=init_risk,
                     magic=p.magic,
                     comment=p.comment,
@@ -875,32 +1025,57 @@ class NativeMT5Client(BaseMT5Client):
     def get_closed_deals(
         self, symbol: str | None = None, days: int = 1
     ) -> list[ClosedTradeInfo]:
+        """Negócios de saída das últimas `days` 24h, com horário em UTC e preço de entrada.
+
+        `r_multiple` fica 0.0: o MT5 não guarda o stop inicial no negócio. O motor calcula
+        o R com o risco inicial que persistiu ao abrir a posição.
+        """
         if not self._connected or not self._mt5:
             return []
-        from_t = time.time() - (days * 86400)
-        deals = self._mt5.history_deals_get(from_t, time.time())
+        offset = self.server_utc_offset_seconds(symbol) or 0
+        # O histórico é consultado em horário do servidor
+        now_server = time.time() + offset
+        deals = self._mt5.history_deals_get(now_server - days * 86400, now_server + 3600)
         if deals is None:
             return []
+        entry_price: dict[int, float] = {}
+        entry_time: dict[int, Any] = {}
+        for d in deals:
+            if d.entry == self._mt5.DEAL_ENTRY_IN:
+                entry_price[d.position_id] = d.price
+                entry_time[d.position_id] = d.time
         res = []
         for d in deals:
             if symbol is not None and d.symbol != symbol:
                 continue
             if d.entry == self._mt5.DEAL_ENTRY_OUT:  # Saída / fechamento
+                if d.position_id not in entry_price:
+                    ins = self._mt5.history_deals_get(position=d.position_id) or []
+                    for d_in in ins:
+                        if d_in.entry == self._mt5.DEAL_ENTRY_IN:
+                            entry_price[d.position_id] = d_in.price
+                            entry_time[d.position_id] = d_in.time
                 direction = "long" if d.type == self._mt5.DEAL_TYPE_SELL else "short"
+                close_t = self._to_utc(d.time, offset)
                 res.append(
                     ClosedTradeInfo(
                         ticket=d.ticket,
                         symbol=d.symbol,
                         direction=direction,
                         volume=d.volume,
-                        open_price=0.0,
+                        open_price=float(entry_price.get(d.position_id, 0.0)),
                         close_price=d.price,
-                        open_time=pd.to_datetime(d.time, unit="s", utc=True),
-                        close_time=pd.to_datetime(d.time, unit="s", utc=True),
+                        open_time=(
+                            self._to_utc(entry_time[d.position_id], offset)
+                            if d.position_id in entry_time
+                            else close_t
+                        ),
+                        close_time=close_t,
                         pnl=d.profit,
                         r_multiple=0.0,
                         magic=d.magic,
                         comment=d.comment,
+                        position_id=d.position_id,
                     )
                 )
         return res

@@ -87,8 +87,13 @@ void SendTelemetry()
    char post[], result[];
    string result_headers;
    
+   // Tipo de conta: o Python só deixa modelos não aprovados operarem em demo/contest
+   long acc_mode = AccountInfoInteger(ACCOUNT_TRADE_MODE);
+   string trade_mode = (acc_mode == ACCOUNT_TRADE_MODE_DEMO) ? "demo"
+                     : (acc_mode == ACCOUNT_TRADE_MODE_CONTEST) ? "contest" : "real";
+
    string payload = StringFormat(
-      "{\"type\":\"telemetry\",\"data\":{\"symbol\":\"%s\",\"bid\":%.5f,\"ask\":%.5f,\"spread\":%.5f,\"point\":%.5f,\"digits\":%d,\"balance\":%.2f,\"equity\":%.2f}}",
+      "{\"type\":\"telemetry\",\"data\":{\"symbol\":\"%s\",\"bid\":%.5f,\"ask\":%.5f,\"spread\":%.5f,\"point\":%.5f,\"digits\":%d,\"balance\":%.2f,\"equity\":%.2f,\"trade_mode\":\"%s\"}}",
       _Symbol,
       SymbolInfoDouble(_Symbol, SYMBOL_BID),
       SymbolInfoDouble(_Symbol, SYMBOL_ASK),
@@ -96,7 +101,8 @@ void SendTelemetry()
       SymbolInfoDouble(_Symbol, SYMBOL_POINT),
       (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS),
       AccountInfoDouble(ACCOUNT_BALANCE),
-      AccountInfoDouble(ACCOUNT_EQUITY)
+      AccountInfoDouble(ACCOUNT_EQUITY),
+      trade_mode
    );
    
    StringToCharArray(payload, post, 0, WHOLE_ARRAY, CP_UTF8);

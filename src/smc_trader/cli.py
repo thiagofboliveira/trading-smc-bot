@@ -179,6 +179,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "--risk", type=float, default=None, help="risco percentual por trade (ex: 1.0)"
     )
     live.add_argument(
+        "--server-utc-offset",
+        type=float,
+        default=None,
+        help=(
+            "fuso do servidor MT5 em horas (ex: 2 ou 3). Sem ele, o modo native estima "
+            "pelo último tick e bloqueia as ordens enquanto não houver tick fresco"
+        ),
+    )
+    live.add_argument(
         "--dry-run",
         action="store_true",
         default=False,
@@ -551,7 +560,7 @@ def _cmd_live(args: argparse.Namespace, cfg: Config) -> int:
         client.connect()
         print("✅ Cliente Mock MT5 conectado com saldo inicial de $1000.00 USD")
     elif args.mode == "native":
-        client = NativeMT5Client()
+        client = NativeMT5Client(server_utc_offset_hours=args.server_utc_offset)
         if not client.connect():
             raise RuntimeError("Falha ao inicializar o cliente nativo MetaTrader 5.")
         print("✅ Cliente Nativo MetaTrader 5 inicializado e conectado.")

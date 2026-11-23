@@ -9,6 +9,13 @@ import pytest
 from smc_trader.config import load_config
 from smc_trader.ui.server import SMCRequestHandler, ThreadingHTTPServer
 
+# Os endpoints de dados leem data/*.parquet (não versionado). Sem os dados, esses testes
+# não dizem nada sobre o código: são pulados em vez de falhar.
+needs_xauusd_data = pytest.mark.skipif(
+    not any(Path("data").glob("XAUUSD_*.parquet")),
+    reason="sem data/XAUUSD_*.parquet local",
+)
+
 
 @pytest.fixture(scope="module")
 def ui_server():
@@ -38,6 +45,7 @@ def test_ui_index_html(ui_server):
         assert "plotly-equity" in content
 
 
+@needs_xauusd_data
 def test_ui_api_symbols(ui_server):
     req = urllib.request.Request(f"{ui_server}/api/symbols")
     with urllib.request.urlopen(req) as resp:
@@ -49,6 +57,7 @@ def test_ui_api_symbols(ui_server):
         assert "XAUUSD" in symbols_names
 
 
+@needs_xauusd_data
 def test_ui_api_backtest(ui_server):
     payload = {
         "symbol": "XAUUSD",
@@ -76,6 +85,7 @@ def test_ui_api_backtest(ui_server):
         assert len(data["equity_curve"]) > 0
 
 
+@needs_xauusd_data
 def test_ui_api_chart(ui_server):
     payload = {
         "symbol": "XAUUSD",

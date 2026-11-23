@@ -63,8 +63,14 @@ class FiboLiveEvaluator:
         current_pos_stop_loss: float = 0.0,
         current_pos_ticket: int = 0,
         current_pos_open_time: pd.Timestamp | None = None,
+        current_pos_initial_risk: float = 0.0,
     ) -> list[FiboLiveAction]:
-        """Avalia a última barra fechada de `df_m5` (candles já resampleados, só fechados)."""
+        """Avalia a última barra fechada de `df_m5` (candles já resampleados, só fechados).
+
+        `current_pos_initial_risk`: distância entrada-stop NO MOMENTO DA ENTRADA, persistida
+        pelo motor. Sem ela, o risco seria inferido do stop atual, que já pode ter sido
+        movido pela trava (após um reinício, isso gerava um stop pior que o vigente).
+        """
         self.evaluated = False
         if len(df_m5) < 2 * self.k + 1:
             return []
@@ -82,6 +88,7 @@ class FiboLiveEvaluator:
                 current_pos_stop_loss,
                 current_pos_ticket,
                 current_pos_open_time,
+                current_pos_initial_risk,
             )
 
         self.profit_lock_applied = False
@@ -122,6 +129,7 @@ class FiboLiveEvaluator:
         stop_loss: float,
         ticket: int,
         open_time: pd.Timestamp | None,
+        initial_risk: float = 0.0,
     ) -> list[FiboLiveAction]:
         cfg = self.config
         last = df_m5.iloc[-1]
@@ -164,7 +172,7 @@ class FiboLiveEvaluator:
             self.profit_lock_ticket = None
 
         d = 1 if direction == "long" else -1
-        risk = abs(open_price - stop_loss)
+        risk = initial_risk if initial_risk > 0 else abs(open_price - stop_loss)
         c_high, c_low, c_close = float(last["high"]), float(last["low"]), float(last["close"])
         adj = self.spread if d == -1 else 0.0  # short recompra no ask
         actions: list[FiboLiveAction] = []
@@ -182,14 +190,17 @@ class FiboLiveEvaluator:
             if d * (favorable - (open_price + d * risk * trigger_r)) >= 0:
                 self.profit_lock_applied = True
                 self.profit_lock_ticket = ticket
-                actions.append(
-                    FiboLiveAction(
-                        action_type="MODIFY_STOP",
-                        stop_loss=open_price + d * lock_r * risk,
-                        ticket=ticket,
-                        reason=f"PROFIT_LOCK_{trigger_r:g}to{lock_r:g}",
+                new_lock_stop = open_price + d * lock_r * risk
+                # o stop só anda a favor da posição (como no backtest)
+                if stop_loss <= 0 or d * (new_lock_stop - stop_loss) > 0:
+                    actions.append(
+                        FiboLiveAction(
+                            action_type="MODIFY_STOP",
+                            stop_loss=new_lock_stop,
+                            ticket=ticket,
+                            reason=f"PROFIT_LOCK_{trigger_r:g}to{lock_r:g}",
+                        )
                     )
-                )
 
         if cfg.bos_swing_trailing and len(df_m5) >= 2 * self.k + 1:
             highs = df_m5["high"].to_numpy(dtype=float)

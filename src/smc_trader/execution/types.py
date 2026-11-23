@@ -16,6 +16,9 @@ class AccountInfo:
     leverage: int = 100
     server: str = ""
     login: int = 0
+    # Tipo de conta: "demo", "contest", "real" ou "unknown". Desconhecido conta como real
+    # (fail-closed) para o bloqueio de modelos não aprovados.
+    trade_mode: str = "unknown"
 
 
 @dataclass
@@ -81,6 +84,7 @@ class ClosedTradeInfo:
     r_multiple: float
     magic: int
     comment: str = ""
+    position_id: int = 0  # Posição a que o negócio pertence (liga a saída à entrada)
 
 
 @dataclass

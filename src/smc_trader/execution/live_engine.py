@@ -28,10 +28,17 @@ from smc_trader.backtest.session import SessionManager
 from smc_trader.backtest.trailing import TrailingManager
 from smc_trader.config import (
     BacktestConfig,
+    FiboModelConfig,
     ProductionConfig,
     ZoneConfig,
 )
+from smc_trader.data.candles import tf_minutes
 from smc_trader.data.resample import resample_ohlc
+from smc_trader.execution.daily_limits import (
+    ConsecutiveLossCounter,
+    ModelDailyLimits,
+    r_multiple_from_prices,
+)
 from smc_trader.execution.fibo_live import FiboLiveAction, FiboLiveEvaluator
 from smc_trader.execution.journal import TradeJournal
 from smc_trader.execution.kill_switch import KillSwitch
@@ -45,6 +52,34 @@ from smc_trader.structure.pivots import find_pivots
 from smc_trader.zones.orderblock import Zone
 
 logger = logging.getLogger("smc.live")
+
+# Campos de FiboModelConfig que não pertencem à FiboOTEConfig (o teste de mapeamento exige
+# que todo o resto seja repassado, para nenhum campo do YAML ser ignorado em silêncio no live).
+MODEL_FIELDS_NOT_IN_STRATEGY = frozenset(
+    {"name", "strategy", "timeframe", "blocks_filter", "require_sweep", "status", "profit_lock"}
+)
+
+# Tipos de conta em que modelos não aprovados podem operar
+NON_REAL_ACCOUNT_MODES = frozenset({"demo", "contest"})
+
+
+def fibo_config_from_model(model_def: FiboModelConfig, timeframe: str) -> FiboOTEConfig:
+    """Constrói a FiboOTEConfig de um modelo de produção (fonte única para o live)."""
+    kwargs = {
+        name: getattr(model_def, name)
+        for name in FiboModelConfig.model_fields
+        if name not in MODEL_FIELDS_NOT_IN_STRATEGY
+    }
+    if kwargs.get("entry_mode") not in ("limit", "m5_close_rejection"):
+        kwargs["entry_mode"] = "limit"
+    if kwargs.get("stop_mode") not in ("fibo", "rejection_candle"):
+        kwargs["stop_mode"] = "fibo"
+    if kwargs.get("session_windows") is not None:
+        kwargs["session_windows"] = [tuple(w) for w in kwargs["session_windows"]]
+    if model_def.profit_lock is not None:
+        kwargs["profit_lock_trigger_r"] = model_def.profit_lock.trigger_r
+        kwargs["profit_lock_guarantee_r"] = model_def.profit_lock.lock_r
+    return FiboOTEConfig(timeframe=timeframe, **kwargs)
 
 
 @dataclass
@@ -68,6 +103,12 @@ class SymbolRuntimeState:
     pending_order_price: float | None = None
     last_processed_m1_time: pd.Timestamp | None = None
     processed_deal_tickets: set[int] = field(default_factory=set)
+    model_status: str = "candidate"
+    # Travas diárias do modelo alimentadas pelos negócios reais (mesma regra do backtest)
+    model_limits: ModelDailyLimits = field(default_factory=ModelDailyLimits)
+    # ticket da posição -> {"direction", "open_price", "initial_risk", "seen_at"}
+    position_risk: dict[str, dict[str, Any]] = field(default_factory=dict)
+    deals_initialized: bool = False
 
 
 class LiveTradingEngine:
@@ -93,9 +134,12 @@ class LiveTradingEngine:
         self.notify = notification_callback or (lambda msg: logger.info(msg))
         self.state_store = StateStore(state_file)
         self.journal = TradeJournal(journal_file)
+        # Estado do kill switch em disco: reiniciar o processo não zera a perda do dia
         self.kill_switch = KillSwitch(
-            production_config.kill_switch if production_config else None
+            production_config.kill_switch if production_config else None,
+            state_file=state_file.with_name(f"{state_file.stem}_kill_switch.json"),
         )
+        self.consecutive_losses = ConsecutiveLossCounter()
 
         self.runtimes: dict[str, SymbolRuntimeState] = {}
         self.session_mgrs: dict[str, SessionManager] = {}
@@ -129,84 +173,34 @@ class LiveTradingEngine:
                     continue
                 magic = magic_base + idx
                 model_def = production_config.models.get(sym_cfg.model)
-                strategy_type = model_def.strategy if model_def else "fibo_ote"
-                model_name = model_def.name if model_def else sym_cfg.model
+                if model_def is None:
+                    raise ValueError(
+                        f"{sym}: modelo '{sym_cfg.model}' não existe em production.yaml"
+                    )
+                if model_def.status == "reproved":
+                    logger.warning(
+                        "⛔ [%s] Modelo '%s' está REPROVADO: símbolo não será operado.",
+                        sym,
+                        sym_cfg.model,
+                    )
+                    self.notify(
+                        f"⛔ [{sym}] Modelo '{sym_cfg.model}' reprovado: símbolo ignorado."
+                    )
+                    continue
+                strategy_type = model_def.strategy
+                model_name = model_def.name
 
-                fibo_cfg = FiboOTEConfig(
-                    timeframe=sym_cfg.macro_tf,
-                    fibo_entry=model_def.fibo_entry if model_def else 0.705,
-                    fibo_stop=model_def.fibo_stop if model_def else 0.790,
-                    fibo_rejection_max=(
-                        model_def.fibo_rejection_max if model_def else None
-                    ),
-                    entry_mode=(
-                        model_def.entry_mode
-                        if (model_def and model_def.entry_mode in ("limit", "m5_close_rejection"))
-                        else "limit"
-                    ),
-                    stop_mode=(
-                        model_def.stop_mode
-                        if (model_def and model_def.stop_mode in ("fibo", "rejection_candle"))
-                        else "fibo"
-                    ),
-                    rejection_min_wick_ratio=(
-                        model_def.rejection_min_wick_ratio if model_def else 0.0
-                    ),
-                    target_mode=model_def.target_mode if model_def else "0_percent",
-                    target_r=model_def.target_r if model_def else 3.0,
-                    pivot_k=model_def.pivot_k if model_def else 3,
-                    trailing_exit_ma=(
-                        model_def.trailing_exit_ma if model_def else "ema8"
-                    ),
-                    profit_lock_trigger_r=(
-                        model_def.profit_lock.trigger_r
-                        if (model_def and model_def.profit_lock)
-                        else None
-                    ),
-                    profit_lock_guarantee_r=(
-                        model_def.profit_lock.lock_r
-                        if (model_def and model_def.profit_lock)
-                        else 0.0
-                    ),
-                    session_filter=(
-                        model_def.session_filter if model_def else False
-                    ),
-                    session_windows=(
-                        list(model_def.session_windows)
-                        if (model_def and model_def.session_windows)
-                        else None
-                    ),
-                    force_close_time=(
-                        model_def.force_close_time if model_def else None
-                    ),
-                    max_trades_per_day=(
-                        model_def.max_trades_per_day if model_def else 0
-                    ),
-                    max_stops_per_day=(
-                        model_def.max_stops_per_day if model_def else 0
-                    ),
-                    max_gains_per_day=(
-                        model_def.max_gains_per_day if model_def else 0
-                    ),
-                    require_inducement=(
-                        model_def.require_inducement if model_def else True
-                    ),
-                    require_leg_fvg=(
-                        model_def.require_leg_fvg if model_def else False
-                    ),
-                    trend_ma=(
-                        model_def.trend_ma if model_def else None
-                    ),
-                    trend_ma_slope=(
-                        model_def.trend_ma_slope if model_def else False
-                    ),
-                    confluence_ma=(
-                        model_def.confluence_ma if model_def else None
-                    ),
-                    bos_swing_trailing=(
-                        model_def.bos_swing_trailing if model_def else False
-                    ),
-                )
+                fibo_cfg = fibo_config_from_model(model_def, sym_cfg.macro_tf)
+                if not model_def.force_close_time and not model_def.close_on_friday:
+                    self.notify(
+                        f"⚠️ [{sym}] Modelo '{sym_cfg.model}' sem zeragem diária nem de sexta: "
+                        "posições podem atravessar a noite e o fim de semana."
+                    )
+                elif not model_def.session_filter:
+                    self.notify(
+                        f"⚠️ [{sym}] Modelo '{sym_cfg.model}' tem zeragem configurada, mas "
+                        "session_filter=false: a zeragem não é aplicada (igual ao backtest)."
+                    )
                 self.fibo_evaluators[sym] = FiboLiveEvaluator(fibo_cfg)
 
                 bt_cfg = BacktestConfig()
@@ -218,6 +212,12 @@ class LiveTradingEngine:
                     model_name=model_name,
                     macro_tf=sym_cfg.macro_tf,
                     order_type=sym_cfg.order_type,
+                    model_status=model_def.status,
+                    model_limits=ModelDailyLimits(
+                        max_trades_per_day=model_def.max_trades_per_day,
+                        max_stops_per_day=model_def.max_stops_per_day,
+                        max_gains_per_day=model_def.max_gains_per_day,
+                    ),
                 )
                 self.session_mgrs[sym] = SessionManager(bt_cfg.session)
                 self.limits_trackers[sym] = DailyLimitsTracker(bt_cfg.limits)
@@ -265,6 +265,7 @@ class LiveTradingEngine:
         persisted = self.state_store.load()
         for sym, state in self.runtimes.items():
             sym_persisted = persisted.get(sym, {})
+            state.position_risk = dict(sym_persisted.get("position_risk", {}) or {})
             pos_ticket = sym_persisted.get("current_position_ticket")
             reconciled_pos = self.state_store.reconcile_with_broker(
                 self.client, sym, state.magic, pos_ticket
@@ -280,27 +281,89 @@ class LiveTradingEngine:
                 state.pending_order_ticket = sym_persisted.get("pending_order_ticket")
                 state.pending_order_price = sym_persisted.get("pending_order_price")
 
+    def _deal_r_multiple(self, state: SymbolRuntimeState, deal: Any) -> float:
+        """R do negócio fechado: pelo risco inicial persistido; senão o R informado pelo
+        cliente; senão o sinal do PnL (±1R), conservador para a contagem de stops."""
+        rec = state.position_risk.get(str(deal.position_id or deal.ticket))
+        if rec is not None:
+            r = r_multiple_from_prices(
+                rec.get("direction", deal.direction),
+                float(deal.open_price or rec.get("open_price", 0.0)),
+                float(deal.close_price),
+                float(rec.get("initial_risk", 0.0)),
+            )
+            if r is not None:
+                return r
+        if deal.r_multiple:
+            return float(deal.r_multiple)
+        logger.warning(
+            "[%s] Negócio #%s sem risco inicial conhecido: R estimado pelo sinal do PnL.",
+            state.symbol,
+            deal.ticket,
+        )
+        if deal.pnl < 0:
+            return -1.0
+        if deal.pnl > 0:
+            return 1.0
+        return 0.0
+
     def _sync_deals_and_limits(self, symbol: str, now: pd.Timestamp) -> None:
-        """Sincroniza histórico de negócios do broker e alimenta o DailyLimitsTracker (L-05)."""
+        """Alimenta as travas diárias com os negócios reais do robô (L-05).
+
+        Só entram negócios com o número mágico do símbolo (ou de posição que o motor
+        registrou): trades manuais e de outros robôs não travam o dia. Na primeira
+        sincronização após a partida, o histórico das últimas 24h reconstrói os contadores
+        sem repetir notificações.
+        """
         state = self.runtimes[symbol]
         tracker = self.limits_trackers[symbol]
         deals = self.client.get_closed_deals(symbol=symbol, days=1)
-        for deal in deals:
-            if deal.ticket not in state.processed_deal_tickets:
-                state.processed_deal_tickets.add(deal.ticket)
-                r_mult = deal.r_multiple
-                tracker.record_trade(deal.close_time, r_multiple=r_mult)
-                self.journal.log_trade_close(
-                    symbol=symbol,
-                    ticket=deal.ticket,
-                    close_price=deal.close_price,
-                    pnl=deal.pnl,
-                    r_multiple=r_mult,
-                    reason=deal.comment or "BROKER_EXECUTION",
-                )
-                self.notify(
-                    f"📊 [{symbol}] Trade fechado no MT5 #{deal.ticket}: PnL ${deal.pnl:.2f} ({r_mult:+.2f}R)"
-                )
+        first_sync = not state.deals_initialized
+        state.deals_initialized = True
+        for deal in sorted(deals, key=lambda d: pd.Timestamp(d.close_time)):
+            if deal.ticket in state.processed_deal_tickets:
+                continue
+            own = deal.magic == state.magic or str(deal.position_id) in state.position_risk
+            if not own:
+                continue
+            state.processed_deal_tickets.add(deal.ticket)
+            r_mult = self._deal_r_multiple(state, deal)
+            close_t = pd.Timestamp(deal.close_time)
+            tracker.record_trade(close_t, r_multiple=r_mult)
+            state.model_limits.record_trade(close_t, r_mult)
+            self.consecutive_losses.record_trade(close_t, r_mult)
+            if first_sync:
+                continue
+            self.journal.log_trade_close(
+                symbol=symbol,
+                ticket=deal.ticket,
+                close_price=deal.close_price,
+                pnl=deal.pnl,
+                r_multiple=r_mult,
+                reason=deal.comment or "BROKER_EXECUTION",
+            )
+            self.notify(
+                f"📊 [{symbol}] Trade fechado no MT5 #{deal.ticket}: PnL ${deal.pnl:.2f} ({r_mult:+.2f}R)"
+            )
+
+    def _emergency_shutdown(self, symbol: str, reason: str) -> None:
+        """Parada de emergência: cancela pendentes e fecha posições SÓ deste robô."""
+        self.kill_switch.trigger_reason = reason
+        self.kill_switch.execute_emergency_shutdown(
+            self.client,
+            magics={rt.magic for rt in self.runtimes.values()},
+            pending_tickets=[
+                rt.pending_order_ticket
+                for rt in self.runtimes.values()
+                if rt.pending_order_ticket
+            ],
+        )
+        for rt in self.runtimes.values():
+            rt.pending_order_ticket = None
+            rt.pending_order_price = None
+            self._save_state(rt.symbol)
+        self.journal.log_block(symbol, "KILL_SWITCH_EMERGENCY_SHUTDOWN", {"reason": reason})
+        self.notify(f"🚨 [{symbol}] {reason}")
 
     def process_symbol_tick(
         self, symbol: str, now_utc: pd.Timestamp | None = None
@@ -321,11 +384,8 @@ class LiveTradingEngine:
         self.kill_switch.reset_daily_equity_if_new_day(acc_info.equity, now)
 
         loss_hit, loss_msg = self.kill_switch.check_daily_loss(acc_info.equity)
-        if loss_hit:
-            self.kill_switch.trigger_reason = loss_msg
-            self.kill_switch.execute_emergency_shutdown(self.client)
-            self.journal.log_block(symbol, "KILL_SWITCH_EMERGENCY_SHUTDOWN", {"reason": loss_msg})
-            self.notify(f"🚨 [{symbol}] {loss_msg}")
+        if loss_hit and not self.kill_switch.is_active:
+            self._emergency_shutdown(symbol, loss_msg)
             return
 
         if self.kill_switch.is_active:
@@ -382,6 +442,7 @@ class LiveTradingEngine:
         )
         if open_positions:
             state.current_position = open_positions[0]
+            self._remember_position_risk(state, state.current_position, now)
         else:
             state.current_position = None
             state.trailing_mgr = None
@@ -394,6 +455,102 @@ class LiveTradingEngine:
 
         # L-07: Persiste estado no final do ciclo
         self._save_state(symbol)
+
+    @staticmethod
+    def _remember_position_risk(
+        state: SymbolRuntimeState, pos: LivePosition, now: pd.Timestamp
+    ) -> None:
+        """Guarda o risco inicial na primeira vez que a posição é vista.
+
+        Nesse momento o stop ainda é o original (o motor só move o stop de posição já
+        observada). O registro vai para o StateStore e sobrevive a reinícios; serve à trava
+        de lucro e ao cálculo do R do negócio fechado.
+        """
+        key = str(pos.ticket)
+        if key in state.position_risk:
+            return
+        risk = abs(pos.open_price - pos.stop_loss) if pos.stop_loss > 0 else 0.0
+        state.position_risk[key] = {
+            "direction": pos.direction,
+            "open_price": pos.open_price,
+            "initial_risk": risk,
+            "seen_at": pd.Timestamp(now).isoformat(),
+        }
+        # descarta registros antigos (posições encerradas há mais de 7 dias)
+        cutoff = pd.Timestamp(now) - pd.Timedelta(days=7)
+        for k in list(state.position_risk):
+            seen = state.position_risk[k].get("seen_at")
+            try:
+                if seen and pd.Timestamp(seen) < cutoff and k != key:
+                    del state.position_risk[k]
+            except (ValueError, TypeError):
+                continue
+
+    def _entry_block_reason(
+        self, symbol: str, act: FiboLiveAction, candles_m1: pd.DataFrame,
+        df_m5: pd.DataFrame, sym_info: Any, acc_info: Any, now: pd.Timestamp,
+    ) -> tuple[str, dict[str, Any]] | None:
+        """Motivo para NÃO enviar uma entrada, ou None se pode enviar."""
+        state = self.runtimes[symbol]
+
+        # Modelo não aprovado só opera em conta demo/contest (tipo desconhecido = real)
+        trade_mode = getattr(acc_info, "trade_mode", "unknown")
+        if state.model_status != "approved" and trade_mode not in NON_REAL_ACCOUNT_MODES:
+            return "MODEL_NOT_APPROVED_FOR_REAL_ACCOUNT", {
+                "status": state.model_status,
+                "trade_mode": trade_mode,
+            }
+
+        # Teto global: posições abertas + ordens pendentes dos OUTROS símbolos
+        total_open = sum(
+            1
+            for sym, rt in self.runtimes.items()
+            if sym != symbol
+            and (rt.current_position is not None or rt.pending_order_ticket is not None)
+        )
+        if total_open >= self.max_open_trades_total:
+            return "MAX_OPEN_TRADES_TOTAL_REACHED", {
+                "total_open": total_open,
+                "limit": self.max_open_trades_total,
+            }
+
+        if not self.limits_trackers[symbol].can_trade(now):
+            return "DAILY_LIMIT_REACHED", {}
+        if not state.model_limits.can_trade(now):
+            return "MODEL_DAILY_LIMIT_REACHED", {}
+
+        consec = self.consecutive_losses.current(now)
+        hit, msg = self.kill_switch.check_consecutive_losses(consec)
+        if hit:
+            return "MAX_CONSECUTIVE_LOSSES", {"details": msg}
+
+        if act.action_type == "MARKET_ENTRY":
+            # Só entra a mercado no primeiro ciclo após o fechamento da barra do sinal.
+            # Se esse ciclo foi bloqueado (spread, latência), o sinal expira em vez de
+            # entrar minutos depois com stop/alvo calculados pelo close antigo.
+            bar_last_m1 = df_m5.index[-1] + pd.Timedelta(
+                minutes=tf_minutes(state.macro_tf) - 1
+            )
+            if candles_m1.index[-1] != bar_last_m1:
+                return "STALE_MARKET_SIGNAL", {
+                    "signal_bar": df_m5.index[-1].isoformat(),
+                    "last_m1": candles_m1.index[-1].isoformat(),
+                }
+            # O preço corrente não pode já ter passado do stop ou do alvo
+            long = act.direction == "long"
+            cur = sym_info.ask if long else sym_info.bid
+            exit_side = sym_info.bid if long else sym_info.ask
+            d = 1 if long else -1
+            if cur > 0 and (
+                d * (exit_side - act.stop_loss) <= 0
+                or (act.take_profit > 0 and d * (cur - act.take_profit) >= 0)
+            ):
+                return "PRICE_BEYOND_STOP_OR_TARGET", {
+                    "price": cur,
+                    "stop": act.stop_loss,
+                    "target": act.take_profit,
+                }
+        return None
 
     def _process_fibo_strategy(
         self,
@@ -437,6 +594,13 @@ class LiveTradingEngine:
             current_pos_open_time=(
                 state.current_position.open_time if is_pos and state.current_position else None
             ),
+            current_pos_initial_risk=(
+                float(
+                    state.position_risk.get(str(pos_ticket), {}).get("initial_risk", 0.0)
+                )
+                if is_pos
+                else 0.0
+            ),
         )
 
         # L-06: a ordem limite armada acompanha o setup. Com posição, a pendente já foi
@@ -463,33 +627,30 @@ class LiveTradingEngine:
 
         for act in actions:
             if act.action_type in ("MARKET_ENTRY", "PLACE_LIMIT"):
-                # L-05: Checa teto global de posições abertas na carteira
-                total_open = sum(
-                    1 for rt in self.runtimes.values() if rt.current_position is not None
-                )
-                if total_open >= self.max_open_trades_total:
-                    self.journal.log_block(
-                        symbol,
-                        "MAX_OPEN_TRADES_TOTAL_REACHED",
-                        {"total_open": total_open, "limit": self.max_open_trades_total},
-                    )
-                    return
-
-                # Checa limites diários e sessão
-                if not self.limits_trackers[symbol].can_trade(now):
-                    self.journal.log_block(symbol, "DAILY_LIMIT_REACHED")
-                    return
-
                 acc_info = self.client.get_account_info()
+                block = self._entry_block_reason(
+                    symbol, act, candles_m1, df_m5, sym_info, acc_info, now
+                )
+                if block is not None:
+                    reason, details = block
+                    self.journal.log_block(symbol, reason, details)
+                    return
+
                 entry_p = round(act.price, sym_info.digits)
                 sl_p = round(act.stop_loss, sym_info.digits)
                 tp_p = round(act.take_profit, sym_info.digits)
 
-                # L-04: Sizing com proteção de blowout
+                # L-04: Sizing com proteção de blowout. A mercado, o risco real é medido
+                # do preço corrente (ask na compra, bid na venda) até o stop.
+                size_ref = entry_p
+                if act.action_type == "MARKET_ENTRY":
+                    cur = sym_info.ask if act.direction == "long" else sym_info.bid
+                    if cur > 0:
+                        size_ref = cur
                 lot = calculate_lot_size(
                     equity=acc_info.equity,
                     risk_pct=self.risk_pct,
-                    entry_price=entry_p,
+                    entry_price=size_ref,
                     stop_loss=sl_p,
                     symbol_info=sym_info,
                 )
@@ -569,6 +730,16 @@ class LiveTradingEngine:
             elif act.action_type == "MODIFY_STOP":
                 new_sl = round(act.stop_loss, sym_info.digits)
                 if is_pos and state.current_position:
+                    cur_pos = state.current_position
+                    d = 1 if cur_pos.direction == "long" else -1
+                    if cur_pos.stop_loss > 0 and d * (new_sl - cur_pos.stop_loss) <= 0:
+                        # o stop só anda a favor: nunca afrouxa a proteção
+                        self.journal.log_block(
+                            symbol,
+                            "STOP_MODIFY_REJECTED_NOT_BETTER",
+                            {"current": cur_pos.stop_loss, "proposed": new_sl, "reason": act.reason},
+                        )
+                        continue
                     success = self.client.modify_position(
                         act.ticket, stop_loss=new_sl, take_profit=state.current_position.take_profit
                     )
@@ -578,8 +749,14 @@ class LiveTradingEngine:
 
             elif act.action_type == "CLOSE_POSITION":
                 self.notify(f"🚪 [{symbol}] Encerrando posição #{act.ticket} ({act.reason})")
-                self.client.close_position(act.ticket)
-                state.current_position = None
+                if self.client.close_position(act.ticket):
+                    state.current_position = None
+                else:
+                    # mantém a posição no estado; a saída é reavaliada na próxima barra
+                    self.journal.log_block(
+                        symbol, "CLOSE_POSITION_FAILED", {"ticket": act.ticket, "reason": act.reason}
+                    )
+                    self.notify(f"❌ [{symbol}] Falha ao encerrar a posição #{act.ticket}")
 
             elif act.action_type == "CANCEL_ORDER":
                 self.notify(f"🚫 [{symbol}] Cancelando ordem pendente #{act.ticket} ({act.reason})")
@@ -706,6 +883,7 @@ class LiveTradingEngine:
             ),
             "pending_order_ticket": state.pending_order_ticket,
             "pending_order_price": state.pending_order_price,
+            "position_risk": state.position_risk,
             "last_processed_m1_time": (
                 state.last_processed_m1_time.isoformat()
                 if state.last_processed_m1_time
